@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f1efe9" />
+    <title>文件脱敏助手 · 功能验证</title>
+    <script>
+      try {
+        const preference = localStorage.getItem("file-mask-theme") || "system";
+        const resolved = preference === "system"
+          ? (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
+          : preference;
+        document.documentElement.dataset.theme = resolved;
+        document.documentElement.dataset.themePreference = preference;
+        document.documentElement.style.colorScheme = resolved;
+      } catch {
+        document.documentElement.dataset.theme = "light";
+      }
+    </script>
+  </head>
+  <body>
+    <!--
+    THESIS: 用一个像文件转换器一样直接的界面完成文件脱敏与还原，拒绝安全后台式的信息堆叠。
+    OWN-WORLD: 暖白底、炭黑文字、钴蓝主动作、墨绿验证状态；两项任务、一个处理台、一个按需证据抽屉。
+    STORY: 用户选择文件、确认识别结果、生成脱敏文件；AI 处理后返回本机，恢复真实内容并检查未处理项。
+    FIRST VIEWPORT: 顶部品牌与本机状态；左侧两项任务和主操作台；右侧安全详情按需展开，主按钮始终位于任务焦点下方。
+    FORM: 用户批准的 Product Design 融合稿；Operate 模式；seed USER-PINNED-COMP-34879E88。
+    FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, and DESIGN.md
+    -->
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

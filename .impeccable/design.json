@@ -1,0 +1,426 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-12T16:30:00+08:00",
+  "title": "Design System: AI安全文件通道",
+  "extensions": {
+    "colorMeta": {
+      "paper": {
+        "role": "neutral",
+        "displayName": "暖白纸面",
+        "tonalRamp": [
+          "oklch(15% 0.0041 91.4)",
+          "oklch(25% 0.0041 91.4)",
+          "oklch(35% 0.0041 91.4)",
+          "oklch(45% 0.0041 91.4)",
+          "oklch(58% 0.0041 91.4)",
+          "oklch(70% 0.0041 91.4)",
+          "oklch(82% 0.0041 91.4)",
+          "oklch(95% 0.0041 91.4)"
+        ]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "白色工作面",
+        "tonalRamp": [
+          "oklch(15% 0 0)",
+          "oklch(25% 0 0)",
+          "oklch(35% 0 0)",
+          "oklch(45% 0 0)",
+          "oklch(58% 0 0)",
+          "oklch(70% 0 0)",
+          "oklch(82% 0 0)",
+          "oklch(95% 0 0)"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "炭黑墨色",
+        "tonalRamp": [
+          "oklch(15% 0.0150 261.6)",
+          "oklch(25% 0.0150 261.6)",
+          "oklch(35% 0.0150 261.6)",
+          "oklch(45% 0.0150 261.6)",
+          "oklch(58% 0.0150 261.6)",
+          "oklch(70% 0.0150 261.6)",
+          "oklch(82% 0.0150 261.6)",
+          "oklch(95% 0.0150 261.6)"
+        ]
+      },
+      "muted": {
+        "role": "neutral",
+        "displayName": "说明灰",
+        "tonalRamp": [
+          "oklch(15% 0.0233 257.5)",
+          "oklch(25% 0.0233 257.5)",
+          "oklch(35% 0.0233 257.5)",
+          "oklch(45% 0.0233 257.5)",
+          "oklch(58% 0.0233 257.5)",
+          "oklch(70% 0.0233 257.5)",
+          "oklch(82% 0.0233 257.5)",
+          "oklch(95% 0.0233 257.5)"
+        ]
+      },
+      "line": {
+        "role": "neutral",
+        "displayName": "精确分隔线",
+        "tonalRamp": [
+          "oklch(15% 0.0081 253.9)",
+          "oklch(25% 0.0081 253.9)",
+          "oklch(35% 0.0081 253.9)",
+          "oklch(45% 0.0081 253.9)",
+          "oklch(58% 0.0081 253.9)",
+          "oklch(70% 0.0081 253.9)",
+          "oklch(82% 0.0081 253.9)",
+          "oklch(95% 0.0081 253.9)"
+        ]
+      },
+      "line-soft": {
+        "role": "neutral",
+        "displayName": "柔和分隔线",
+        "tonalRamp": [
+          "oklch(15% 0.0046 258.3)",
+          "oklch(25% 0.0046 258.3)",
+          "oklch(35% 0.0046 258.3)",
+          "oklch(45% 0.0046 258.3)",
+          "oklch(58% 0.0046 258.3)",
+          "oklch(70% 0.0046 258.3)",
+          "oklch(82% 0.0046 258.3)",
+          "oklch(95% 0.0046 258.3)"
+        ]
+      },
+      "blue": {
+        "role": "primary",
+        "displayName": "行动钴蓝",
+        "tonalRamp": [
+          "oklch(15% 0.2212 261.2)",
+          "oklch(25% 0.2212 261.2)",
+          "oklch(35% 0.2212 261.2)",
+          "oklch(45% 0.2212 261.2)",
+          "oklch(58% 0.2212 261.2)",
+          "oklch(70% 0.2212 261.2)",
+          "oklch(82% 0.2212 261.2)",
+          "oklch(95% 0.2212 261.2)"
+        ]
+      },
+      "blue-deep": {
+        "role": "primary",
+        "displayName": "深钴蓝",
+        "tonalRamp": [
+          "oklch(15% 0.1964 261.1)",
+          "oklch(25% 0.1964 261.1)",
+          "oklch(35% 0.1964 261.1)",
+          "oklch(45% 0.1964 261.1)",
+          "oklch(58% 0.1964 261.1)",
+          "oklch(70% 0.1964 261.1)",
+          "oklch(82% 0.1964 261.1)",
+          "oklch(95% 0.1964 261.1)"
+        ]
+      },
+      "green": {
+        "role": "secondary",
+        "displayName": "核验墨绿",
+        "tonalRamp": [
+          "oklch(15% 0.1211 155.0)",
+          "oklch(25% 0.1211 155.0)",
+          "oklch(35% 0.1211 155.0)",
+          "oklch(45% 0.1211 155.0)",
+          "oklch(58% 0.1211 155.0)",
+          "oklch(70% 0.1211 155.0)",
+          "oklch(82% 0.1211 155.0)",
+          "oklch(95% 0.1211 155.0)"
+        ]
+      },
+      "green-soft": {
+        "role": "secondary",
+        "displayName": "核验浅绿",
+        "tonalRamp": [
+          "oklch(15% 0.0099 155.1)",
+          "oklch(25% 0.0099 155.1)",
+          "oklch(35% 0.0099 155.1)",
+          "oklch(45% 0.0099 155.1)",
+          "oklch(58% 0.0099 155.1)",
+          "oklch(70% 0.0099 155.1)",
+          "oklch(82% 0.0099 155.1)",
+          "oklch(95% 0.0099 155.1)"
+        ]
+      },
+      "amber": {
+        "role": "tertiary",
+        "displayName": "拦截琥珀",
+        "tonalRamp": [
+          "oklch(15% 0.1396 56.7)",
+          "oklch(25% 0.1396 56.7)",
+          "oklch(35% 0.1396 56.7)",
+          "oklch(45% 0.1396 56.7)",
+          "oklch(58% 0.1396 56.7)",
+          "oklch(70% 0.1396 56.7)",
+          "oklch(82% 0.1396 56.7)",
+          "oklch(95% 0.1396 56.7)"
+        ]
+      },
+      "amber-soft": {
+        "role": "tertiary",
+        "displayName": "拦截浅琥珀",
+        "tonalRamp": [
+          "oklch(15% 0.0208 79.1)",
+          "oklch(25% 0.0208 79.1)",
+          "oklch(35% 0.0208 79.1)",
+          "oklch(45% 0.0208 79.1)",
+          "oklch(58% 0.0208 79.1)",
+          "oklch(70% 0.0208 79.1)",
+          "oklch(82% 0.0208 79.1)",
+          "oklch(95% 0.0208 79.1)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "产品显示标题",
+        "purpose": "产品名与最高层级品牌识别。"
+      },
+      "headline": {
+        "displayName": "状态结论",
+        "purpose": "处理、成功与拦截状态的主结论。"
+      },
+      "title": {
+        "displayName": "任务标题",
+        "purpose": "任务选择与主要文件标题。"
+      },
+      "body": {
+        "displayName": "工作正文",
+        "purpose": "流程说明、结果解释与安全边界。"
+      },
+      "label": {
+        "displayName": "状态标签",
+        "purpose": "眉题、紧凑证据与对齐数值。"
+      }
+    },
+    "shadows": [
+      {
+        "name": "file-card-rest",
+        "value": "0 1px 3px rgba(18, 28, 45, 0.035)",
+        "purpose": "让已选文件卡从处理台中轻微分离。"
+      },
+      {
+        "name": "active-task",
+        "value": "0 7px 20px rgba(7, 91, 229, 0.13)",
+        "purpose": "标记当前选中的任务卡。"
+      },
+      {
+        "name": "primary-action-rest",
+        "value": "0 8px 20px rgba(7, 91, 229, 0.17)",
+        "purpose": "在宽阔处理台中定位唯一主动作。"
+      },
+      {
+        "name": "primary-action-hover",
+        "value": "0 10px 25px rgba(7, 91, 229, 0.23)",
+        "purpose": "精细指针设备上的主按钮悬停反馈。"
+      },
+      {
+        "name": "desktop-drawer-seam",
+        "value": "-5px 0 18px rgba(25, 31, 39, 0.025)",
+        "purpose": "强调桌面工作区与证据抽屉的结构接缝。"
+      },
+      {
+        "name": "overlay-drawer",
+        "value": "-18px 0 48px rgba(18, 25, 33, 0.16)",
+        "purpose": "960px 以下模态证据抽屉的覆盖层级。"
+      },
+      {
+        "name": "toast",
+        "value": "0 16px 38px rgba(16, 21, 27, 0.2)",
+        "purpose": "短暂全局反馈。"
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease-out",
+        "value": "cubic-bezier(0.23, 1, 0.32, 1)",
+        "purpose": "按钮缩放、图标按钮和常规状态位移。"
+      },
+      {
+        "name": "ease-drawer",
+        "value": "cubic-bezier(0.32, 0.72, 0, 1)",
+        "purpose": "安全详情抽屉进入。"
+      },
+      {
+        "name": "control-transition",
+        "value": "160ms",
+        "purpose": "按钮、任务卡、边框和背景状态变化。"
+      },
+      {
+        "name": "drawer-enter",
+        "value": "260ms",
+        "purpose": "抽屉从右侧短距离淡入。"
+      },
+      {
+        "name": "drawer-scrim-enter",
+        "value": "180ms ease-out",
+        "purpose": "窄屏抽屉遮罩淡入。"
+      },
+      {
+        "name": "toast-enter",
+        "value": "opacity 180ms, transform 220ms",
+        "purpose": "通知从底部轻移并淡入。"
+      },
+      {
+        "name": "processing-step",
+        "value": "560ms power3.inOut",
+        "purpose": "GSAP 解释性处理序列的每一段进度。"
+      },
+      {
+        "name": "reduced-motion",
+        "value": "CSS 1ms; GSAP 60ms per step",
+        "purpose": "尊重 prefers-reduced-motion 并保留必要状态完成信号。"
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "mobile-max",
+        "value": "640px"
+      },
+      {
+        "name": "drawer-overlay-max",
+        "value": "960px"
+      },
+      {
+        "name": "compact-desktop-max",
+        "value": "1180px"
+      },
+      {
+        "name": "full-desktop-min",
+        "value": "1181px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "每个任务状态中唯一的钴蓝主动作。",
+      "html": "<button class=\"ds-btn-primary\" type=\"button\">生成安全副本<svg viewBox=\"0 0 256 256\" aria-hidden=\"true\"><path d=\"M224.49,136.49l-72,72a12,12,0,0,1-17-17L187,140H40a12,12,0,0,1,0-24H187L135.51,64.48a12,12,0,0,1,17-17l72,72A12,12,0,0,1,224.49,136.49Z\"/></svg></button>",
+      "css": ".ds-btn-primary { min-width: min(100%, 390px); min-height: 82px; display: inline-flex; align-items: center; justify-content: center; gap: 14px; padding: 18px 30px; color: #fff; border: 0; border-radius: 9px; background: linear-gradient(135deg, #1267eb, #0755d4); box-shadow: 0 8px 20px rgba(7, 91, 229, 0.17); font-family: \"Segoe UI Variable\", \"Segoe UI\", \"PingFang SC\", \"Microsoft YaHei UI\", sans-serif; font-size: clamp(21px, 2vw, 27px); font-weight: 720; letter-spacing: -0.02em; cursor: pointer; transition: transform 160ms var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)), box-shadow 160ms ease, background-color 160ms ease; } .ds-btn-primary svg { width: 24px; height: 24px; fill: currentColor; } .ds-btn-primary:hover { box-shadow: 0 10px 25px rgba(7, 91, 229, 0.23); } .ds-btn-primary:focus-visible { outline: 3px solid var(--blue, #075be5); outline-offset: 3px; } .ds-btn-primary:active { transform: scale(0.975); }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "用于重置、返回或补充动作的白色次按钮。",
+      "html": "<button class=\"ds-btn-secondary\" type=\"button\">重新演示</button>",
+      "css": ".ds-btn-secondary { min-height: 56px; padding: 13px 22px; color: #414a55; border: 1px solid var(--line, #d7dbe0); border-radius: 9px; background: var(--surface, #fff); font-family: \"Segoe UI Variable\", \"Segoe UI\", \"PingFang SC\", \"Microsoft YaHei UI\", sans-serif; font-size: 15px; font-weight: 650; cursor: pointer; transition: transform 160ms var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)), box-shadow 160ms ease, background-color 160ms ease; } .ds-btn-secondary:hover { border-color: #aeb8c4; background: #fafbfd; } .ds-btn-secondary:focus-visible { outline: 3px solid var(--blue, #075be5); outline-offset: 3px; } .ds-btn-secondary:active { transform: scale(0.975); }"
+    },
+    {
+      "name": "Active Task Choice",
+      "kind": "nav",
+      "refersTo": "task-choice-active",
+      "description": "以钴蓝选中态明确当前文件任务。",
+      "html": "<button class=\"ds-task-choice\" type=\"button\" aria-pressed=\"true\"><span class=\"ds-task-icon\"><svg viewBox=\"0 0 256 256\" aria-hidden=\"true\"><path d=\"M208,88H152V32Z\" opacity=\"0.2\"/><path d=\"M156,208a8,8,0,0,1-8,8H120a8,8,0,0,1-8-8V152a8,8,0,0,1,16,0v48h20A8,8,0,0,1,156,208ZM92.65,145.49a8,8,0,0,0-11.16,1.86L68,166.24,54.51,147.35a8,8,0,1,0-13,9.3L58.17,180,41.49,203.35a8,8,0,0,0,13,9.3L68,193.76l13.49,18.89a8,8,0,0,0,13-9.3L77.83,180l16.68-23.35A8,8,0,0,0,92.65,145.49Zm98.94,25.82c-4-1.16-8.14-2.35-10.45-3.84-1.25-.82-1.23-1-1.12-1.9a4.54,4.54,0,0,1,2-3.67c4.6-3.12,15.34-1.73,19.82-.56a8,8,0,0,0,4.07-15.48c-2.11-.55-21-5.22-32.83,2.76a20.58,20.58,0,0,0-8.95,14.94c-2,15.89,13.65,20.42,23,23.12,12.06,3.49,13.12,4.92,12.78,7.59-.31,2.41-1.26,3.33-2.15,3.93-4.6,3.06-15.16,1.56-19.54.35A8,8,0,0,0,173.93,214a60.63,60.63,0,0,0,15.19,2c5.82,0,12.3-1,17.49-4.46a20.81,20.81,0,0,0,9.18-15.23C218,179,201.48,174.17,191.59,171.31ZM40,112V40A16,16,0,0,1,56,24h96a8,8,0,0,1,5.66,2.34l56,56A8,8,0,0,1,216,88v24a8,8,0,1,1-16,0V96H152a8,8,0,0,1-8-8V40H56v72a8,8,0,0,1-16,0ZM160,80h28.68L160,51.31Z\"/></svg></span><span class=\"ds-task-copy\"><strong>制作安全文件</strong><span>把 Word、Excel 或 CSV 变成安全副本</span></span></button>",
+      "css": ".ds-task-choice { position: relative; width: 100%; min-height: 152px; display: flex; align-items: center; gap: 20px; padding: 22px 26px; color: #fff; text-align: left; border: 1px solid transparent; border-radius: 11px; background: linear-gradient(135deg, #1169ec, #0756d7 74%); box-shadow: 0 7px 20px rgba(7, 91, 229, 0.13); font-family: \"Segoe UI Variable\", \"Segoe UI\", \"PingFang SC\", \"Microsoft YaHei UI\", sans-serif; cursor: pointer; transition: transform 160ms var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)), border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease; } .ds-task-choice::after { position: absolute; left: 50%; bottom: -12px; width: 24px; height: 12px; clip-path: polygon(0 0, 100% 0, 50% 100%); background: var(--blue-deep, #064ec5); content: \"\"; transform: translateX(-50%); } .ds-task-icon { width: 62px; height: 62px; display: grid; flex: 0 0 auto; place-items: center; color: var(--blue, #075be5); border: 1px solid rgba(255, 255, 255, 0.76); border-radius: 50%; background: #fff; } .ds-task-icon svg { width: 35px; height: 35px; fill: currentColor; } .ds-task-copy { min-width: 0; } .ds-task-copy strong, .ds-task-copy span { display: block; } .ds-task-copy strong { margin-bottom: 7px; font-size: clamp(22px, 2vw, 29px); line-height: 1.24; letter-spacing: -0.025em; } .ds-task-copy span { color: rgba(255, 255, 255, 0.84); font-size: 14px; line-height: 1.55; } .ds-task-choice:hover { box-shadow: 0 10px 25px rgba(7, 91, 229, 0.18); } .ds-task-choice:focus-visible { outline: 3px solid var(--blue, #075be5); outline-offset: 3px; } .ds-task-choice:active { transform: scale(0.975); }"
+    },
+    {
+      "name": "Evidence Trigger",
+      "kind": "button",
+      "refersTo": "evidence-trigger",
+      "description": "在主流程旁按需打开安全证据。",
+      "html": "<button class=\"ds-evidence-trigger\" type=\"button\" aria-expanded=\"false\"><span class=\"ds-evidence-summary\"><svg viewBox=\"0 0 256 256\" aria-hidden=\"true\"><path d=\"M216,56v56c0,96-88,120-88,120S40,208,40,112V56a8,8,0,0,1,8-8H208A8,8,0,0,1,216,56Z\" opacity=\"0.2\"/><path d=\"M208,40H48A16,16,0,0,0,32,56v56c0,52.72,25.52,84.67,46.93,102.19,23.06,18.86,46,25.26,47,25.53a8,8,0,0,0,4.2,0c1-.27,23.91-6.67,47-25.53C198.48,196.67,224,164.72,224,112V56A16,16,0,0,0,208,40Zm0,72c0,37.07-13.66,67.16-40.6,89.42A129.3,129.3,0,0,1,128,223.62a128.25,128.25,0,0,1-38.92-21.81C61.82,179.51,48,149.3,48,112l0-56,160,0ZM82.34,141.66a8,8,0,0,1,11.32-11.32L112,148.69l50.34-50.35a8,8,0,0,1,11.32,11.32l-56,56a8,8,0,0,1-11.32,0Z\"/></svg><strong>已识别 3 类敏感信息</strong></span><span class=\"ds-evidence-action\">查看识别详情<svg viewBox=\"0 0 256 256\" aria-hidden=\"true\"><path d=\"M184.49,136.49l-80,80a12,12,0,0,1-17-17L159,128,87.51,56.49a12,12,0,1,1,17-17l80,80A12,12,0,0,1,184.49,136.49Z\"/></svg></span></button>",
+      "css": ".ds-evidence-trigger { width: min(100%, 555px); min-height: 64px; display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 14px 20px; color: #303741; text-align: left; border: 1px solid #cbd1d8; border-radius: 9px; background: var(--surface, #fff); font-family: \"Segoe UI Variable\", \"Segoe UI\", \"PingFang SC\", \"Microsoft YaHei UI\", sans-serif; cursor: pointer; transition: border-color 160ms ease, background-color 160ms ease, transform 160ms var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)); } .ds-evidence-summary, .ds-evidence-action { display: flex; align-items: center; } .ds-evidence-summary { min-width: 0; gap: 11px; } .ds-evidence-summary svg { width: 25px; height: 25px; flex: 0 0 auto; fill: currentColor; color: var(--green, #167d49); } .ds-evidence-summary strong { font-size: 15px; font-weight: 650; } .ds-evidence-action { flex: 0 0 auto; gap: 5px; color: var(--blue, #075be5); font-size: 14px; font-weight: 650; } .ds-evidence-action svg { width: 16px; height: 16px; fill: currentColor; } .ds-evidence-trigger:hover { border-color: #aeb8c4; background: #fafbfd; } .ds-evidence-trigger:focus-visible { outline: 3px solid var(--blue, #075be5); outline-offset: 3px; } .ds-evidence-trigger:active { transform: scale(0.975); }"
+    },
+    {
+      "name": "Selected File Card",
+      "kind": "card",
+      "refersTo": "file-card",
+      "description": "展示文件类型、名称、元数据与移除动作。",
+      "html": "<div class=\"ds-file-card\"><svg class=\"ds-file-icon\" viewBox=\"0 0 256 256\" aria-hidden=\"true\"><path d=\"M208,88H152V32Z\" opacity=\"0.2\"/><path d=\"M156,208a8,8,0,0,1-8,8H120a8,8,0,0,1-8-8V152a8,8,0,0,1,16,0v48h20A8,8,0,0,1,156,208ZM92.65,145.49a8,8,0,0,0-11.16,1.86L68,166.24,54.51,147.35a8,8,0,1,0-13,9.3L58.17,180,41.49,203.35a8,8,0,0,0,13,9.3L68,193.76l13.49,18.89a8,8,0,0,0,13-9.3L77.83,180l16.68-23.35A8,8,0,0,0,92.65,145.49Zm98.94,25.82c-4-1.16-8.14-2.35-10.45-3.84-1.25-.82-1.23-1-1.12-1.9a4.54,4.54,0,0,1,2-3.67c4.6-3.12,15.34-1.73,19.82-.56a8,8,0,0,0,4.07-15.48c-2.11-.55-21-5.22-32.83,2.76a20.58,20.58,0,0,0-8.95,14.94c-2,15.89,13.65,20.42,23,23.12,12.06,3.49,13.12,4.92,12.78,7.59-.31,2.41-1.26,3.33-2.15,3.93-4.6,3.06-15.16,1.56-19.54.35A8,8,0,0,0,173.93,214a60.63,60.63,0,0,0,15.19,2c5.82,0,12.3-1,17.49-4.46a20.81,20.81,0,0,0,9.18-15.23C218,179,201.48,174.17,191.59,171.31ZM40,112V40A16,16,0,0,1,56,24h96a8,8,0,0,1,5.66,2.34l56,56A8,8,0,0,1,216,88v24a8,8,0,1,1-16,0V96H152a8,8,0,0,1-8-8V40H56v72a8,8,0,0,1-16,0ZM160,80h28.68L160,51.31Z\"/></svg><span class=\"ds-file-copy\"><strong>7月销售明细.xlsx</strong><small>1.28 MB　·　修改于 2026-08-12 10:21</small></span><button class=\"ds-file-remove\" type=\"button\" aria-label=\"移除当前文件\"><svg viewBox=\"0 0 256 256\" aria-hidden=\"true\"><path d=\"M205.66,194.34a8,8,0,0,1-11.32,11.32L128,139.31,61.66,205.66a8,8,0,0,1-11.32-11.32L116.69,128,50.34,61.66A8,8,0,0,1,61.66,50.34L128,116.69l66.34-66.35a8,8,0,0,1,11.32,11.32L139.31,128Z\"/></svg></button></div>",
+      "css": ".ds-file-card { width: 100%; min-height: 116px; display: flex; align-items: center; gap: 22px; padding: 20px 22px; color: var(--ink, #171b22); text-align: left; border: 1px solid var(--line, #d7dbe0); border-radius: 10px; background: var(--surface, #fff); box-shadow: 0 1px 3px rgba(18, 28, 45, 0.035); font-family: \"Segoe UI Variable\", \"Segoe UI\", \"PingFang SC\", \"Microsoft YaHei UI\", sans-serif; } .ds-file-icon { width: 74px; height: 74px; flex: 0 0 auto; fill: currentColor; color: #16834b; } .ds-file-copy { min-width: 0; flex: 1; } .ds-file-copy strong, .ds-file-copy small { display: block; } .ds-file-copy strong { overflow: hidden; margin-bottom: 8px; font-size: clamp(20px, 2vw, 27px); font-weight: 620; line-height: 1.25; letter-spacing: -0.02em; text-overflow: ellipsis; white-space: nowrap; } .ds-file-copy small { color: var(--muted, #626b78); font-size: 14px; line-height: 1.5; font-variant-numeric: tabular-nums; } .ds-file-remove { width: 44px; height: 44px; display: grid; flex: 0 0 auto; place-items: center; padding: 0; color: #6f7883; border: 0; border-radius: 8px; background: transparent; cursor: pointer; transition: color 160ms ease, background-color 160ms ease, transform 160ms var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)); } .ds-file-remove svg { width: 22px; height: 22px; fill: currentColor; } .ds-file-remove:hover { color: #252c35; background: #f0f2f4; } .ds-file-remove:focus-visible { outline: 3px solid var(--blue, #075be5); outline-offset: 3px; } .ds-file-remove:active { transform: scale(0.975); }"
+    },
+    {
+      "name": "Prototype Chip",
+      "kind": "chip",
+      "refersTo": "prototype-chip",
+      "description": "只说明当前工件性质的低调标签。",
+      "html": "<span class=\"ds-prototype-chip\">交互原型</span>",
+      "css": ".ds-prototype-chip { display: inline-flex; align-items: center; padding: 5px 9px; color: #525d69; border: 1px solid #d8dde4; border-radius: 6px; background: var(--surface, #fff); font-family: \"Segoe UI Variable\", \"Segoe UI\", \"PingFang SC\", \"Microsoft YaHei UI\", sans-serif; font-size: 12px; font-weight: 700; letter-spacing: 0.04em; }"
+    },
+    {
+      "name": "Pending Evidence Summary",
+      "kind": "custom",
+      "refersTo": "drawer-summary-pending",
+      "description": "证据尚待处理时使用的信息蓝摘要。",
+      "html": "<div class=\"ds-drawer-summary\"><svg viewBox=\"0 0 256 256\" aria-hidden=\"true\"><path d=\"M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm-4,48a12,12,0,1,1-12,12A12,12,0,0,1,124,72Zm12,112a16,16,0,0,1-16-16V128a8,8,0,0,1,0-16,16,16,0,0,1,16,16v40a8,8,0,0,1,0,16Z\"/></svg><span><strong>已识别 3 类敏感信息</strong><small>安全副本生成后执行原始值残留扫描</small></span></div>",
+      "css": ".ds-drawer-summary { min-height: 78px; display: flex; align-items: center; gap: 13px; padding: 15px 18px; color: var(--blue, #075be5); border: 1px solid #c8d8ef; border-radius: 9px; background: #f2f6fc; font-family: \"Segoe UI Variable\", \"Segoe UI\", \"PingFang SC\", \"Microsoft YaHei UI\", sans-serif; } .ds-drawer-summary svg { width: 29px; height: 29px; flex: 0 0 auto; fill: currentColor; } .ds-drawer-summary strong, .ds-drawer-summary small { display: block; } .ds-drawer-summary strong { margin-bottom: 4px; color: currentColor; font-size: 16px; } .ds-drawer-summary small { color: #67716d; font-size: 12px; font-variant-numeric: tabular-nums; }"
+    },
+    {
+      "name": "Mapping Table",
+      "kind": "custom",
+      "refersTo": "mapping-table",
+      "description": "用三列结构展示原始内容到安全代号的可核验映射。",
+      "html": "<div class=\"ds-mapping-table\" role=\"table\" aria-label=\"脱敏替换示例\"><div class=\"ds-mapping-head\" role=\"row\"><span role=\"columnheader\">原始文件</span><span></span><span role=\"columnheader\">安全副本</span></div><div class=\"ds-mapping-row\" role=\"row\"><span role=\"cell\">浙江ABC染整</span><svg viewBox=\"0 0 256 256\" aria-hidden=\"true\"><path d=\"M224.49,136.49l-72,72a12,12,0,0,1-17-17L187,140H40a12,12,0,0,1,0-24H187L135.51,64.48a12,12,0,0,1,17-17l72,72A12,12,0,0,1,224.49,136.49Z\"/></svg><span role=\"cell\">C001</span></div><div class=\"ds-mapping-row\" role=\"row\"><span role=\"cell\">HT-825GK</span><svg viewBox=\"0 0 256 256\" aria-hidden=\"true\"><path d=\"M224.49,136.49l-72,72a12,12,0,0,1-17-17L187,140H40a12,12,0,0,1,0-24H187L135.51,64.48a12,12,0,0,1,17-17l72,72A12,12,0,0,1,224.49,136.49Z\"/></svg><span role=\"cell\">P017</span></div><div class=\"ds-mapping-row\" role=\"row\"><span role=\"cell\">张三</span><svg viewBox=\"0 0 256 256\" aria-hidden=\"true\"><path d=\"M224.49,136.49l-72,72a12,12,0,0,1-17-17L187,140H40a12,12,0,0,1,0-24H187L135.51,64.48a12,12,0,0,1,17-17l72,72A12,12,0,0,1,224.49,136.49Z\"/></svg><span role=\"cell\">S008</span></div></div>",
+      "css": ".ds-mapping-table { overflow: hidden; color: var(--ink, #171b22); border: 1px solid var(--line, #d7dbe0); border-radius: 8px; background: var(--surface, #fff); font-family: \"Segoe UI Variable\", \"Segoe UI\", \"PingFang SC\", \"Microsoft YaHei UI\", sans-serif; } .ds-mapping-head, .ds-mapping-row { display: grid; align-items: center; grid-template-columns: minmax(0, 1fr) 28px minmax(0, 1fr); text-align: center; } .ds-mapping-head { min-height: 42px; color: #4e5964; background: #f5f7f9; font-size: 12px; font-weight: 720; } .ds-mapping-head > span:last-child { color: var(--green, #167d49); } .ds-mapping-row { min-height: 53px; border-top: 1px solid var(--line-soft, #e8eaed); font-size: 13px; } .ds-mapping-head > span, .ds-mapping-row > span { min-width: 0; padding: 0 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .ds-mapping-row > span:last-child { margin: 6px 9px; padding: 6px 8px; color: #1b633c; border: 1px solid #d3e4d8; border-radius: 6px; background: #f4faf5; font-weight: 680; } .ds-mapping-row svg { width: 15px; height: 15px; justify-self: center; fill: currentColor; color: #77818b; }"
+    },
+    {
+      "name": "Protection Item Editor",
+      "kind": "form",
+      "refersTo": "protection-editor",
+      "description": "在安全详情中补充自动识别之外的保护内容，按文件类型切换为列选择或准确文本输入。",
+      "html": "<section class=\"ds-protection-editor\"><strong>选择需要保护的列</strong><label><input type=\"radio\" checked />内部订单号</label><button type=\"button\">添加并保护</button></section>",
+      "css": ".ds-protection-editor { padding: 15px; border: 1px solid #c8d8ef; border-radius: 8px; background: #f6f9fd; font-family: \"Segoe UI Variable\", \"Segoe UI\", \"PingFang SC\", sans-serif; } .ds-protection-editor label { min-height: 52px; display: flex; align-items: center; gap: 9px; margin: 9px 0 14px; padding: 8px 10px; border: 1px solid #8fb2e8; border-radius: 7px; background: #f4f8ff; } .ds-protection-editor button { min-height: 42px; padding: 10px 15px; color: #fff; border: 0; border-radius: 7px; background: #075be5; font-weight: 700; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "可信文件通道",
+    "overview": "“可信文件通道”把企业内敏感文件的出入处理成一条可见、可复核、低负担的操作路径。界面采用高频内部工具的 Operate 模式：默认只呈现两项任务、当前文件和唯一主动作，证据与自定义保护按需在同一个抽屉展开，不把使用者置于复杂安全后台中。\n\n视觉以暖白纸面和炭黑文本建立安静的文档感，钴蓝只推动关键动作，墨绿只标记已验证结果；细边框承担大部分分层，阴影只提示结构或交互状态。桌面保留主工作区与证据抽屉的并列关系，窄屏将抽屉转为受控模态层。拒绝营销式 AIDA、滚动叙事、复杂仪表盘和夸张动效。",
+    "keyCharacteristics": [
+      "高频、低学习成本的企业内部工具",
+      "默认简单视图，证据按需展开",
+      "暖白纸面、钴蓝主动作、墨绿核验和克制边框",
+      "状态同时由图标、文字和颜色表达"
+    ],
+    "rules": [
+      {
+        "name": "The Cobalt Is Action Rule",
+        "body": "钴蓝推动任务，不能被大面积铺成装饰背景；例外仅限当前任务卡这一明确选中态。",
+        "section": "colors"
+      },
+      {
+        "name": "The Status Meaning Rule",
+        "body": "钴蓝推动、墨绿核验、琥珀拦截；三者不得互换，也不得只靠颜色传达状态。",
+        "section": "colors"
+      },
+      {
+        "name": "The Workhorse Type Rule",
+        "body": "所有文字先服务扫描和操作；不用展示型字体、超大口号或营销式字级跳跃制造气氛。",
+        "section": "typography"
+      },
+      {
+        "name": "The One Task Focus Rule",
+        "body": "每个状态只保留一个视觉主动作；安全证据可以靠近主流程，但必须作为按需检查层而非第二工作台。",
+        "section": "layout"
+      },
+      {
+        "name": "The Structural Shadow Rule",
+        "body": "阴影必须说明选中、边缘层级或临时反馈；普通卡片不得用浓重悬浮阴影制造后台面板感。",
+        "section": "elevation"
+      },
+      {
+        "name": "The Rectangles Stay Rectangular Rule",
+        "body": "主要控件保持克制圆角，不把按钮、卡片和状态条全部胶囊化；圆形只承担图标和步骤语义。",
+        "section": "shapes"
+      }
+    ],
+    "dos": [
+      "Do show one explicit primary action per task state and keep evidence subordinate.",
+      "Do pair every status color with an icon and plain-language text.",
+      "Do preserve the warm-paper base, cobalt action, green verification and hairline structure.",
+      "Do turn the evidence drawer into a focus-contained overlay at the implemented narrow breakpoint.",
+      "Do keep motion brief, state-driven and fully reduced by the existing reduced-motion behavior."
+    ],
+    "donts": [
+      "Don't turn this into a complex security backend, metric dashboard or administration console.",
+      "Don't use marketing AIDA, scroll storytelling, oversized slogans or decorative motion.",
+      "Don't make pills the default silhouette or add heavy shadows to ordinary surfaces.",
+      "Don't use green as a primary action, cobalt as a verification result or amber as decoration.",
+      "Don't hide unresolved states or imply trust through color alone."
+    ]
+  }
+}
