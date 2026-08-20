@@ -44,14 +44,19 @@ export async function inspectHtmlRestoreFile(file) {
     const inspection = inspectHtmlText(html, window, vault.mapping);
     const unknown = inspection.uniqueTokens.filter((token) => !vault.mapping[token]);
     if (unknown.length) throw new SafeFileError("UNRESOLVED_TOKENS", "HTML 中存在本机无法确认的正式代号。", unknown);
-    if (inspection.altered.length) throw new SafeFileError("ALTERED_TOKENS", "HTML 中存在残缺或被改写的已知代号。", inspection.altered.map((item) => `${item.location}：${item.value}`));
     return {
       format: "html", formatLabel: "HTML", taskId, taskName: vault.taskName,
       occurrences: inspection.occurrences.length, uniqueTokens: inspection.uniqueTokens.length,
       usedMappings: inspection.uniqueTokens.length,
+      partialRestore: inspection.altered.length > 0,
+      unresolvedOccurrences: inspection.altered,
       checkedAreas: ["可见文字", "标题、图片说明和无障碍标签"],
       uncheckedAreas: ["图片中的文字"],
-      warnings: ["脚本、表单、嵌入页面、远程资源和事件处理器会从还原版中移除。", "还原版使用严格内容安全策略，原页面动画和联网能力不会保留。"],
+      warnings: [
+        ...(inspection.altered.length ? [`发现 ${inspection.altered.length} 处被改写的代号；系统不会猜测，将原样保留并生成部分还原文件。`] : []),
+        "脚本、表单、嵌入页面、远程资源和事件处理器会从还原版中移除。",
+        "还原版使用严格内容安全策略，原页面动画和联网能力不会保留。",
+      ],
       removedContent: inspection.removed,
     };
   } catch (error) {
@@ -71,12 +76,18 @@ export async function restoreHtmlSafeFile(file, expectedTaskId) {
     const buffer = new TextEncoder().encode(restored.html).buffer;
     const baseName = file.name.replace(/\.html?$/i, "").replace(/_(?:脱敏版|安全副本|还原版)(?:_[A-F0-9]{8})?$/i, "");
     return {
-      buffer, outputName: `${baseName}_还原版_${expectedTaskId}.html`, mimeType: "text/html;charset=utf-8",
+      buffer, outputName: `${baseName}_${restored.partialRestore ? "部分还原" : "还原版"}_${expectedTaskId}.html`, mimeType: "text/html;charset=utf-8",
       format: "html", formatLabel: "HTML", taskId: expectedTaskId, taskName: vault.taskName,
       restoredOccurrences: restored.restoredOccurrences, usedMappings: restored.usedMappings,
+      partialRestore: restored.partialRestore,
+      unresolvedOccurrences: restored.unresolved,
       checkedAreas: ["可见文字", "标题、图片说明和无障碍标签"],
       uncheckedAreas: ["图片中的文字"],
-      warnings: ["已移除脚本、表单、嵌入页面、远程资源和事件处理器。", "请在下载后复核排版和交互退化。"],
+      warnings: [
+        ...(restored.partialRestore ? [`仍有 ${restored.unresolved.length} 处被改写的代号未还原，已原样保留。部分还原文件含有真实信息，请勿再次交给外部 AI。`] : []),
+        "已移除脚本、表单、嵌入页面、远程资源和事件处理器。",
+        "请在下载后复核排版和交互退化。",
+      ],
       removedContent: restored.removed,
     };
   } catch (error) {

@@ -49,6 +49,16 @@ test("HTML rejects unknown, mixed, altered and token-free documents", () => {
   assert.throws(() => restoreHtmlText("<p>无代号</p>", window, mapping), (error) => error.code === "NO_TOKENS");
 });
 
+test("HTML partially restores exact tokens without guessing altered tokens", () => {
+  const altered = `[[C00X@${TASK}]]`;
+  const result = restoreHtmlText(`<p>${C}</p><code>${altered}</code>`, window, mapping);
+  assert.equal(result.restoredOccurrences, 1);
+  assert.equal(result.partialRestore, true);
+  assert.deepEqual(result.unresolved, [{ location: "<code> 可见文字", value: altered }]);
+  assert.match(result.html, /浙江ABC染整有限公司/);
+  assert.match(result.html, /\[\[C00X@7F2A9C4D\]\]/);
+});
+
 test("HTML inspection reports removals without executing the page", () => {
   const inspection = inspectHtmlText(`<script>fetch('https://evil.test')</script><p>${C}</p>`, window, mapping);
   assert.equal(inspection.occurrences.length, 1);

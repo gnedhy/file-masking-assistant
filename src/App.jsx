@@ -387,8 +387,10 @@ function ReadyState({ mode, file, analysis, selectedIds, fieldModes = {}, restor
       {mode === "restore" && (
         <section className="compatibility-check" aria-labelledby="compatibility-check-title">
           <div className="compatibility-check__head">
-            <CheckCircle weight="fill" aria-hidden="true" />
-            <span><strong id="compatibility-check-title">兼容性预检已通过</strong><small>{restoreInspection.formatLabel} 文件与本机任务已匹配，可以安全进入还原。</small></span>
+            {restoreInspection.partialRestore ? <WarningCircle weight="fill" aria-hidden="true" /> : <CheckCircle weight="fill" aria-hidden="true" />}
+            <span><strong id="compatibility-check-title">{restoreInspection.partialRestore ? "可以继续部分还原" : "兼容性预检已通过"}</strong><small>{restoreInspection.partialRestore
+              ? `可确认的代号会正常还原；${restoreInspection.unresolvedOccurrences.length} 处被改写的代号将原样保留。`
+              : `${restoreInspection.formatLabel} 文件与本机任务已匹配，可以安全进入还原。`}</small></span>
           </div>
           <dl>
             <div><dt>会检查并还原</dt><dd>{restoreInspection.checkedAreas.join("、") || "文件文字区域"}</dd></div>
@@ -503,24 +505,28 @@ function SuccessState({ mode, result, downloadRequested, detailsOpen, onDetails,
     <div className="success-state" data-handoff={handoff} role="status" aria-live="polite">
       <span className="success-state__seal" aria-hidden="true"><Check weight="bold" /></span>
       <p className="state-kicker">{handoff ? "脱敏文件已准备好" : "文件已生成"}</p>
-      <h2>{protect ? handoff ? "现在可以交给 AI 处理" : "脱敏文件可以下载" : "还原文件可以下载"}</h2>
+      <h2>{protect ? handoff ? "现在可以交给 AI 处理" : "脱敏文件可以下载" : result.partialRestore ? "部分还原文件可以下载" : "还原文件可以下载"}</h2>
       <p className="state-description">{protect
         ? handoff
           ? "已发起下载。请先确认文件已保存，再交给任意 AI 处理；完成后回到这里导入处理后的文件。"
           : `已替换 ${count} ${valueUnit}，${result.uniqueValues} 个唯一真实值仅保存在本机。请点击下方按钮保存文件。`
-        : `发现并还原 ${count} 处代号，使用 ${result.usedMappings} 条本机映射。${restoreBoundary}`}</p>
+        : result.partialRestore
+          ? `已还原 ${count} 处代号，另有 ${result.unresolvedOccurrences.length} 处被改写的代号未还原并原样保留。此文件已含真实信息，请勿再次交给外部 AI。`
+          : `发现并还原 ${count} 处代号，使用 ${result.usedMappings} 条本机映射。${restoreBoundary}`}</p>
       <div className="output-file">
         <FileMark size="medium" format={result.format ?? "xlsx"} />
         <span>
           <strong className="output-file__name" title={result.outputName}><span>{outputFileName.base}</span><b>{outputFileName.extension}</b></strong>
           <small>{downloadRequested ? "已发起下载 · 请在浏览器下载列表确认" : `已生成 · 等待下载 · 任务 ${result.taskId}`}</small>
         </span>
-        <CheckCircle weight="fill" aria-label="已通过检查" />
+        {result.partialRestore ? <WarningCircle weight="fill" aria-label="部分还原" /> : <CheckCircle weight="fill" aria-label="已通过检查" />}
       </div>
       <button className="evidence-trigger evidence-trigger--success" type="button" onClick={onDetails} aria-expanded={detailsOpen}>
-        <span><ShieldCheck weight="duotone" /><span className="evidence-trigger__summary"><strong>安全检查已通过</strong><small>{protect
+        <span><ShieldCheck weight="duotone" /><span className="evidence-trigger__summary"><strong>{result.partialRestore ? "部分还原已完成" : "安全检查已通过"}</strong><small>{protect
           ? `本机完成 · 已替换 ${count} ${valueUnit} · ${result.uniqueValues} 条映射已保存`
-          : `本机完成 · 已还原 ${count} 处 · 使用 ${result.usedMappings} 条本机映射 · 未发现未还原代号`}</small></span></span>
+          : result.partialRestore
+            ? `本机完成 · 已还原 ${count} 处 · ${result.unresolvedOccurrences.length} 处未还原并已标记`
+            : `本机完成 · 已还原 ${count} 处 · 使用 ${result.usedMappings} 条本机映射 · 未发现未还原代号`}</small></span></span>
         <span className="evidence-trigger__action">查看验证证据<CaretRight weight="bold" /></span>
       </button>
       {handoff && <AiHandoff />}
@@ -691,7 +697,7 @@ function SecurityDrawer({ mode, status, analysis, selectedIds, fieldModes = {}, 
   const detailRows = mode === "restore" && restoreInspection
       ? [["文件格式", restoreInspection.formatLabel], ["匹配任务", restoreInspection.taskName], ["任务指纹", restoreInspection.taskId], ["发现代号", `${restoreInspection.occurrences} 处`], ["使用映射", `${restoreInspection.usedMappings} 条`]]
       : result
-        ? [["任务指纹", result.taskId], [mode === "protect" ? "已替换" : "已还原", `${mode === "protect" ? result.replacedCells : result.restoredOccurrences} 处`], ...(mode === "restore" ? [["使用映射", `${result.usedMappings} 条`]] : []), ["外部请求", "0 次"], ["输出状态", "已通过"]]
+        ? [["任务指纹", result.taskId], [mode === "protect" ? "已替换" : "已还原", `${mode === "protect" ? result.replacedCells : result.restoredOccurrences} 处`], ...(mode === "restore" ? [["使用映射", `${result.usedMappings} 条`], ...(result.partialRestore ? [["未还原", `${result.unresolvedOccurrences.length} 处（已原样保留）`]] : [])] : []), ["外部请求", "0 次"], ["输出状态", result.partialRestore ? "部分还原" : "已通过"]]
         : [["已选择列", `${selectedColumns.length} 列`], ["处理方式", `${wholeColumnCount} 列整格 · ${inlineColumnCount} 列文中`], ["映射位置", "本机加密存储"], ["外部请求", "0 次"]];
 
   return (

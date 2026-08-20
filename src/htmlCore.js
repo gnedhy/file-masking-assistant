@@ -194,7 +194,6 @@ export function restoreHtmlText(html, window, mapping) {
   if (before.taskIds.length !== 1) throw safeError("MIXED_TASKS", "HTML 中混入了多个脱敏任务的代号。", before.taskIds);
   if (before.unsupportedOccurrences.length) throw safeError("UNSUPPORTED_CONTENT", "代号出现在脚本、样式、链接或其他不安全位置，已停止输出。", before.unsupportedOccurrences.map((item) => item.location));
   if (unknown.length) throw safeError("UNRESOLVED_TOKENS", "HTML 中存在本机无法确认的正式代号。", unknown);
-  if (before.altered.length) throw safeError("ALTERED_TOKENS", "HTML 中存在残缺或被改写的已知代号。", before.altered.map((item) => `${item.location}：${item.value}`));
   if (!before.occurrences.length) throw safeError("NO_TOKENS", "HTML 中没有找到可还原的完整代号。");
 
   const removed = removeUnsafeContent(document);
@@ -217,10 +216,13 @@ export function restoreHtmlText(html, window, mapping) {
   ensureSecurityEnvelope(postDocument);
   const clean = serialize(postDocument);
   const post = inspectDocument(postDocument, mapping);
-  if (post.occurrences.length || post.unsupportedOccurrences.length || post.altered.length) {
+  const unresolved = before.altered;
+  const expectedAltered = unresolved.map((item) => `${item.location}\n${item.value}`).sort();
+  const actualAltered = post.altered.map((item) => `${item.location}\n${item.value}`).sort();
+  if (post.occurrences.length || post.unsupportedOccurrences.length || JSON.stringify(actualAltered) !== JSON.stringify(expectedAltered)) {
     throw safeError("RESIDUAL_TOKENS", "HTML 清理并还原后仍有代号残留，已停止输出。");
   }
-  return { html: clean, restoredOccurrences, usedMappings: before.uniqueTokens.length, removed };
+  return { html: clean, restoredOccurrences, usedMappings: before.uniqueTokens.length, removed, partialRestore: unresolved.length > 0, unresolved };
 }
 
 export function decodeHtmlFileBytes(bytes) {
