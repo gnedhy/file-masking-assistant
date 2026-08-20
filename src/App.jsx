@@ -13,6 +13,7 @@ import {
   FileHtml,
   FilePlus,
   FilePpt,
+  FileText,
   FileXls,
   Info,
   LockKey,
@@ -27,8 +28,7 @@ import {
   WarningCircle,
   X,
 } from "@phosphor-icons/react";
-import gsap from "gsap";
-import { useGSAP } from "@gsap/react";
+import { addManualCandidate } from "./textCore.js";
 import {
   discardLocalTask,
   getLocalTaskStatus,
@@ -44,8 +44,6 @@ import {
   inspectRestoreFile,
   restoreSafeFile,
 } from "./fileEngine.js";
-
-gsap.registerPlugin(useGSAP);
 
 const THEME_OPTIONS = [
   { value: "light", label: "浅色", icon: Sun },
@@ -92,7 +90,7 @@ const MODE_COPY = {
   protect: {
     title: "制作脱敏文件",
     subtitle: "把敏感信息替换成代号后再交给 AI",
-    emptyTitle: "拖入待脱敏的 Excel 或 CSV",
+    emptyTitle: "拖入待脱敏的表格或文本文件",
     emptyNote: "文件仅在当前浏览器中读取和处理",
     primary: "生成脱敏文件",
   },
@@ -135,8 +133,8 @@ function spreadsheetColumnLabel(columnNumber) {
   return label;
 }
 
-const FILE_ICONS = { xlsx: FileXls, csv: FileCsv, docx: FileDoc, pptx: FilePpt, html: FileHtml };
-const FILE_CLASSES = { xlsx: "excel", csv: "csv", docx: "word", pptx: "pptx", html: "html" };
+const FILE_ICONS = { xlsx: FileXls, csv: FileCsv, txt: FileText, md: FileText, docx: FileDoc, pptx: FilePpt, html: FileHtml };
+const FILE_CLASSES = { xlsx: "excel", csv: "csv", txt: "text", md: "text", docx: "word", pptx: "pptx", html: "html" };
 
 function FileMark({ size = "large", format = "xlsx" }) {
   const Icon = FILE_ICONS[format] ?? FileXls;
@@ -324,7 +322,7 @@ function EmptyState({ mode, inputRef, localTasks, isDraggingFile }) {
       : restoreReady
         ? `最近任务：${localTasks.latest.taskName} · ${localTasks.latest.taskId}`
         : "请先在本机制作并下载脱敏文件";
-  const supportedCopy = mode === "protect" ? " XLSX 或 CSV 文件" : " XLSX、CSV、DOCX、PPTX 或 HTML 文件";
+  const supportedCopy = mode === "protect" ? " XLSX、CSV、TXT、MD 或 DOCX 文件" : " XLSX、CSV、TXT、MD、DOCX、PPTX 或 HTML 文件";
 
   return (
     <div className="empty-state" data-dragging={isDraggingFile}>
@@ -360,15 +358,18 @@ function SelectedFile({ file, onRemove }) {
 }
 
 function ReadyState({ mode, file, analysis, selectedIds, fieldModes = {}, restoreInspection, regenerationNotice, detailsOpen, onRemove, onPrimary, onDetails }) {
-  const selectedColumns = analysis?.columns
+  const selectedCandidates = analysis?.kind === "text" ? analysis.candidates.filter((candidate) => selectedIds.includes(candidate.id)) : [];
+  const selectedColumns = (analysis?.columns ?? [])
     .filter((column) => selectedIds.includes(column.id))
-    .map((column) => ({ ...column, processingMode: fieldModes[column.id] ?? column.recommendedMode ?? "whole" })) ?? [];
+    .map((column) => ({ ...column, processingMode: fieldModes[column.id] ?? column.recommendedMode ?? "whole" }));
   const wholeColumnCount = selectedColumns.filter((column) => column.processingMode === "whole").length;
-  const hasOnlyInlineFields = mode === "protect" && selectedColumns.length > 0 && wholeColumnCount === 0;
+  const hasOnlyInlineFields = mode === "protect" && analysis?.kind !== "text" && selectedColumns.length > 0 && wholeColumnCount === 0;
   const valueCount = selectedColumns.reduce((sum, column) => sum + column.valueCount, 0);
   const valueUnit = fileFormatFromName(file.name) === "csv" ? "个字段值" : "个单元格";
   const summary = mode === "protect"
-    ? `已选择 ${selectedColumns.length} 列，将检查 ${valueCount} ${valueUnit}`
+    ? analysis?.kind === "text"
+      ? `已选择 ${selectedCandidates.length} 项敏感内容，共出现 ${selectedCandidates.reduce((sum, item) => sum + item.count, 0)} 处`
+      : `已选择 ${selectedColumns.length} 列，将检查 ${valueCount} ${valueUnit}`
     : `已识别 ${restoreInspection.formatLabel} · 发现 ${restoreInspection.occurrences} 处代号 · 使用 ${restoreInspection.usedMappings} 条本机映射`;
 
   return (
@@ -385,7 +386,7 @@ function ReadyState({ mode, file, analysis, selectedIds, fieldModes = {}, restor
       )}
       <p className="recognition-line"><CheckCircle weight="duotone" /><span>{summary}</span></p>
       {mode === "restore" && (
-        <section className="compatibility-check" aria-labelledby="compatibility-check-title">
+        <section className="compatibility-check" data-partial={restoreInspection.partialRestore} aria-labelledby="compatibility-check-title">
           <div className="compatibility-check__head">
             {restoreInspection.partialRestore ? <WarningCircle weight="fill" aria-hidden="true" /> : <CheckCircle weight="fill" aria-hidden="true" />}
             <span><strong id="compatibility-check-title">{restoreInspection.partialRestore ? "可以继续部分还原" : "兼容性预检已通过"}</strong><small>{restoreInspection.partialRestore
@@ -413,7 +414,7 @@ function ReadyState({ mode, file, analysis, selectedIds, fieldModes = {}, restor
         <span><ShieldCheck weight="duotone" /><strong>{mode === "protect" ? "确认需要替换的列" : `任务指纹 ${restoreInspection.taskId}`}</strong></span>
         <span className="evidence-trigger__action">{mode === "protect" ? "查看并调整" : "查看匹配证据"}<CaretRight weight="bold" /></span>
       </button>
-      <button className="primary-button" type="button" onClick={onPrimary} disabled={mode === "protect" && (!selectedColumns.length || hasOnlyInlineFields)}>
+      <button className="primary-button" type="button" onClick={onPrimary} disabled={mode === "protect" && (!(analysis?.kind === "text" ? selectedCandidates.length : selectedColumns.length) || hasOnlyInlineFields)}>
         {MODE_COPY[mode].primary}<ArrowRight weight="bold" />
       </button>
       <div className="trust-line" aria-label="处理边界">
@@ -426,7 +427,7 @@ function ReadyState({ mode, file, analysis, selectedIds, fieldModes = {}, restor
 function ProcessingState({ mode, file }) {
   const format = fileFormatFromName(file.name) || "xlsx";
   const steps = mode === "protect"
-    ? [format === "csv" ? "读取 CSV 表格结构" : "复制工作簿结构", "替换已确认列", "加密保存映射并检查残留"]
+    ? [format === "csv" ? "读取 CSV 表格结构" : ["txt", "md"].includes(format) ? "读取纯文本内容" : format === "docx" ? "复制 Word 文档结构" : "复制工作簿结构", ["txt", "md", "docx"].includes(format) ? "替换已确认内容" : "替换已确认列", "加密保存映射并检查残留"]
     : ["读取本机加密映射", "恢复匹配的真实值", "检查残留代号并准备导出"];
   return (
     <div className="processing-state" aria-live="polite">
@@ -469,7 +470,7 @@ function WorkbookDownloadLink({ mode, result, requested, secondary = false, onRe
           event.preventDefault();
           return;
         }
-        onRequested();
+        window.setTimeout(onRequested, 0);
       }}
     >
       <DownloadSimple weight="duotone" />
@@ -497,13 +498,13 @@ function SuccessState({ mode, result, downloadRequested, detailsOpen, onDetails,
   const count = protect ? result.replacedCells : result.restoredOccurrences;
   const outputFileName = splitFileName(result.outputName);
   const handoff = protect && downloadRequested;
-  const valueUnit = result.format === "csv" ? "个字段值" : "个单元格";
-  const restoreBoundary = result.format === "csv"
-    ? "CSV 全部文本字段已检查；未出现的映射不代表异常。"
+  const valueUnit = result.format === "csv" ? "个字段值" : ["txt", "md", "docx"].includes(result.format) ? "处文字" : "个单元格";
+  const restoreBoundary = ["csv", "txt", "md"].includes(result.format)
+    ? "全部文本内容已检查；未出现的映射不代表异常。"
     : "图片未扫描，未出现的映射不代表异常。";
   return (
-    <div className="success-state" data-handoff={handoff} role="status" aria-live="polite">
-      <span className="success-state__seal" aria-hidden="true"><Check weight="bold" /></span>
+    <div className="success-state" data-handoff={handoff} data-partial={Boolean(result.partialRestore)} role="status" aria-live="polite">
+      <span className="success-state__seal" aria-hidden="true">{result.partialRestore ? <WarningCircle weight="fill" /> : <Check weight="bold" />}</span>
       <p className="state-kicker">{handoff ? "脱敏文件已准备好" : "文件已生成"}</p>
       <h2>{protect ? handoff ? "现在可以交给 AI 处理" : "脱敏文件可以下载" : result.partialRestore ? "部分还原文件可以下载" : "还原文件可以下载"}</h2>
       <p className="state-description">{protect
@@ -585,6 +586,31 @@ const ERROR_PRESENTATION = {
     description: "文件中的任务代号存在，但当前设备或浏览器没有对应的真实映射。",
     guidance: "请回到生成脱敏文件时使用的同一设备和浏览器，或重新制作脱敏文件。",
   },
+  NO_TEXT_CANDIDATES: {
+    title: "还没有选择敏感内容",
+    description: "当前没有可用于生成脱敏文件的已选文字。",
+    guidance: "返回候选列表，勾选自动识别的内容，或手动添加文件中的完整文字。",
+  },
+  VAULT_KEY_MISSING: {
+    title: "本机映射密钥已经丢失",
+    description: "任务记录仍在，但当前浏览器已没有解密它所需的本机密钥，因此无法恢复真实内容。",
+    guidance: "该映射无法找回。请使用原始文件重新制作脱敏任务，并避免清理当前浏览器的网站数据。",
+  },
+  VAULT_DECRYPT_FAILED: {
+    title: "本机映射已经损坏",
+    description: "当前浏览器无法解密这条映射记录，系统已停止还原，避免生成错误实名文件。",
+    guidance: "请使用原始文件重新制作脱敏任务；损坏的映射不能安全继续使用。",
+  },
+  VAULT_SAVE_FAILED: {
+    title: "无法保存本机还原映射",
+    description: "浏览器存储不可用或空间不足，因此系统没有生成无法还原的脱敏文件。",
+    guidance: "请释放浏览器存储空间或允许当前站点使用本机存储后重试。",
+  },
+  VAULT_STORAGE_FAILED: {
+    title: "当前浏览器无法使用本机映射存储",
+    description: "系统无法打开保存还原任务所需的本机存储。",
+    guidance: "请检查隐私模式、浏览器存储权限或可用空间后重试。",
+  },
   MIXED_TASKS: {
     title: "文件中混入了不同任务的代号",
     description: "系统无法确认每个代号应该使用哪一份本机映射，因此已停止还原。",
@@ -597,14 +623,18 @@ const ERROR_PRESENTATION = {
   },
   UNSUPPORTED_FILE: {
     title: "当前还不能处理这种文件",
-    description: "制作脱敏文件支持 XLSX、CSV；还原支持标准 XLSX、CSV、DOCX、PPTX 和安全静态 HTML。",
+    description: "制作脱敏文件支持 XLSX、CSV、TXT、MD、DOCX；还原支持标准 XLSX、CSV、TXT、MD、DOCX、PPTX 和安全静态 HTML。",
     guidance: "请选择支持的标准文件。宏、加密文件和复杂嵌入对象暂不处理。",
   },
   INVALID_CSV: { title: "无法安全读取这个 CSV", description: "文件可能包含二进制内容、损坏的引号或异常分隔结构。", guidance: "请从 Excel 重新另存为 UTF-8 CSV 后再试。" },
   INVALID_CSV_ENCODING: { title: "无法识别 CSV 文字编码", description: "当前文件不是可识别的 UTF-8 或 GB18030 编码。", guidance: "请将文件另存为 UTF-8 CSV 后再试。" },
+  INVALID_TEXT: { title: "无法安全读取这个文本文件", description: "文件包含二进制内容或空字符，不是标准纯文本。", guidance: "请另存为 UTF-8 的 TXT 或 MD 文件后再试。" },
+  INVALID_TEXT_ENCODING: { title: "无法识别文本编码", description: "TXT/MD 仅支持标准 UTF-8 或 UTF-8 BOM。", guidance: "请用文本编辑器另存为 UTF-8 后再试。" },
+  TEXT_TOO_LARGE: { title: "文本文件超过首版安全限制", description: "TXT/MD 文件不能超过 10 MB。", guidance: "请拆分文件后重试。" },
   CSV_TOO_LARGE: { title: "CSV 超过首版安全限制", description: "CSV 文件不能超过 50 MB。", guidance: "请拆分文件后重试。" },
   CSV_LIMIT_EXCEEDED: { title: "CSV 表格规模超过安全限制", description: "文件的行数、列数或字段总量过大，系统已停止处理。", guidance: "请按月份、业务单元或工作表拆分后重试。" },
   INVALID_OFFICE_PACKAGE: { title: "无法安全读取这个 Office 文件", description: "文件可能已损坏、加密，或不是标准 DOCX/PPTX。", guidance: "请从 Word 或 PowerPoint 重新另存为标准文件后再试。" },
+  UNSUPPORTED_DOCX_STRUCTURE: { title: "这个 Word 文件包含首版无法完整脱敏的结构", description: "检测到脚注、尾注、修订、内容控件、域或批注。为避免静默遗漏，系统已停止生成。", guidance: "请接受或拒绝修订，并移除批注、域、脚注/尾注或内容控件后，另存为标准 DOCX 再试。" },
   INVALID_HTML: { title: "无法安全读取这个 HTML 文件", description: "文件不是有效的 UTF-8 静态 HTML，或包含无法识别的二进制内容。", guidance: "请让 AI 导出为 UTF-8 的单文件 HTML 后再试。" },
   FORMAT_MISMATCH: { title: "文件扩展名与内部格式不一致", description: "为避免把伪装文件当作 Office 文件处理，系统已停止输出。", guidance: "请用原应用重新另存文件，不要只修改扩展名。" },
   EMBEDDED_OBJECTS: { title: "文件包含首版不处理的嵌入内容", description: "检测到宏、OLE、ActiveX 或嵌入包，系统已停止输出。", guidance: "请移除嵌入对象并另存为标准 DOCX/PPTX 后再试。" },
@@ -685,20 +715,76 @@ function buildErrorDiagnosis(error) {
   };
 }
 
-function SecurityDrawer({ mode, status, analysis, selectedIds, fieldModes = {}, restoreInspection, result, error, modal, drawerRef, closeButtonRef, onClose, onToggleColumn, onModeChange }) {
+function TextCandidateSelection({ analysis, selectedIds, onToggle, onAdd, onRemove, onSetSelection }) {
+  const [query, setQuery] = useState("");
+  const [manualValue, setManualValue] = useState("");
+  const [manualError, setManualError] = useState("");
+  const normalizedQuery = query.trim().toLocaleLowerCase("zh-CN");
+  const visible = normalizedQuery
+    ? analysis.candidates.filter((item) => `${item.value} ${item.label} ${item.contexts.join(" ")}`.toLocaleLowerCase("zh-CN").includes(normalizedQuery))
+    : analysis.candidates;
+
+  const submitManual = () => {
+    const value = manualValue.trim();
+    if (!value) return;
+    try {
+      onAdd(value);
+      setManualValue("");
+      setManualError("");
+    } catch (error) {
+      setManualError(error.message);
+    }
+  };
+
+  return (
+    <section className="text-candidates" aria-labelledby="text-candidates-title">
+      <div className="protection-section__head"><div><h3 id="text-candidates-title">需要替换的敏感内容</h3><p>系统只提出候选，最终由你确认；替换时会匹配文件中的完整文字</p></div></div>
+      <div className="text-candidates__tools">
+        <label><span>搜索候选</span><input type="search" value={query} placeholder="名称、编码或上下文" onChange={(event) => setQuery(event.target.value)} /></label>
+        <div><button type="button" onClick={() => onSetSelection([...new Set([...selectedIds, ...visible.map((item) => item.id)])])}>选择当前结果</button><button type="button" onClick={() => onSetSelection(selectedIds.filter((id) => !visible.some((item) => item.id === id)))}>取消当前结果</button></div>
+      </div>
+      <div className="text-candidate-list">
+        {visible.map((item) => {
+          const inputId = `candidate-${item.id.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+          return (
+            <article className="text-candidate" key={item.id}>
+              <input id={inputId} type="checkbox" checked={selectedIds.includes(item.id)} onChange={() => onToggle(item.id)} />
+              <label htmlFor={inputId}><strong>{item.value}</strong><small>{item.label} · 出现 {item.count} 次</small><span>{item.contexts[0]}</span></label>
+              {item.manual && <button type="button" aria-label={`移除 ${item.value}`} onClick={() => onRemove(item.id)}><Trash /></button>}
+            </article>
+          );
+        })}
+        {!visible.length && <p className="text-candidates__empty">没有匹配的候选；可以清除搜索或手动添加文件中的完整文字。</p>}
+      </div>
+      <div className="text-candidates__manual">
+        <label htmlFor="manual-sensitive-value">手动添加</label>
+        <div><input id="manual-sensitive-value" value={manualValue} placeholder="粘贴文件中需要替换的完整文字" onChange={(event) => setManualValue(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); submitManual(); } }} /><button type="button" onClick={submitManual}>添加</button></div>
+        {manualError && <small role="alert">{manualError}</small>}
+      </div>
+      <p className="drawer-note"><Info weight="duotone" />{analysis.format === "docx"
+        ? "Word 首版处理正文、普通表格、页眉页脚和文本框；图片文字不扫描，复杂结构会停止生成。"
+        : "Markdown 按纯文本处理，不渲染或执行 HTML、脚本；代码块、链接和 Front Matter 中的已选完整文字也会替换。"}</p>
+    </section>
+  );
+}
+
+function SecurityDrawer({ mode, status, analysis, selectedIds, fieldModes = {}, restoreInspection, result, error, modal, drawerRef, closeButtonRef, onClose, onToggleColumn, onModeChange, onAddCandidate, onRemoveCandidate, onSetSelection }) {
   const [issuesExpanded, setIssuesExpanded] = useState(false);
-  const selectedColumns = analysis?.columns
+  const selectedColumns = (analysis?.columns ?? [])
     .filter((column) => selectedIds.includes(column.id))
-    .map((column) => ({ ...column, processingMode: fieldModes[column.id] ?? column.recommendedMode ?? "whole" })) ?? [];
+    .map((column) => ({ ...column, processingMode: fieldModes[column.id] ?? column.recommendedMode ?? "whole" }));
   const selectedMetricColumns = selectedColumns.filter((column) => column.processingMode === "whole" && METRIC_HEADER_PATTERN.test(column.header));
   const wholeColumnCount = selectedColumns.filter((column) => column.processingMode === "whole").length;
   const inlineColumnCount = selectedColumns.length - wholeColumnCount;
   const errorDiagnosis = error ? buildErrorDiagnosis(error) : null;
+  const textCandidates = analysis?.kind === "text" ? analysis.candidates.filter((item) => selectedIds.includes(item.id)) : [];
   const detailRows = mode === "restore" && restoreInspection
       ? [["文件格式", restoreInspection.formatLabel], ["匹配任务", restoreInspection.taskName], ["任务指纹", restoreInspection.taskId], ["发现代号", `${restoreInspection.occurrences} 处`], ["使用映射", `${restoreInspection.usedMappings} 条`]]
       : result
         ? [["任务指纹", result.taskId], [mode === "protect" ? "已替换" : "已还原", `${mode === "protect" ? result.replacedCells : result.restoredOccurrences} 处`], ...(mode === "restore" ? [["使用映射", `${result.usedMappings} 条`], ...(result.partialRestore ? [["未还原", `${result.unresolvedOccurrences.length} 处（已原样保留）`]] : [])] : []), ["外部请求", "0 次"], ["输出状态", result.partialRestore ? "部分还原" : "已通过"]]
-        : [["已选择列", `${selectedColumns.length} 列`], ["处理方式", `${wholeColumnCount} 列整格 · ${inlineColumnCount} 列文中`], ["映射位置", "本机加密存储"], ["外部请求", "0 次"]];
+        : analysis?.kind === "text"
+          ? [["已选内容", `${textCandidates.length} 项`], ["预计替换", `${textCandidates.reduce((sum, item) => sum + item.count, 0)} 处`], ["映射位置", "本机加密存储"], ["外部请求", "0 次"]]
+          : [["已选择列", `${selectedColumns.length} 列`], ["处理方式", `${wholeColumnCount} 列整格 · ${inlineColumnCount} 列文中`], ["映射位置", "本机加密存储"], ["外部请求", "0 次"]];
 
   return (
     <aside className="security-drawer" id="security-details" ref={drawerRef} role={modal ? "dialog" : undefined} aria-modal={modal || undefined} aria-labelledby="security-details-title">
@@ -757,13 +843,17 @@ function SecurityDrawer({ mode, status, analysis, selectedIds, fieldModes = {}, 
               <p>{`${(result?.removedContent ?? restoreInspection.removedContent).elements} 个不安全元素、${(result?.removedContent ?? restoreInspection.removedContent).attributes} 个危险属性、${(result?.removedContent ?? restoreInspection.removedContent).remoteResources} 个远程资源引用`}</p>
             </div>
           )}
-          <p className="drawer-note restore-scope__note"><Info weight="duotone" />{(result?.format ?? restoreInspection.format) === "csv"
-            ? "CSV 不包含图片、样式和嵌入对象；输出统一为 UTF-8 BOM。未出现的映射不代表异常。"
+          <p className="drawer-note restore-scope__note"><Info weight="duotone" />{["csv", "txt", "md"].includes(result?.format ?? restoreInspection.format)
+            ? "纯文本不包含图片、样式和嵌入对象；未出现的映射不代表异常。"
             : "图片未扫描；未出现的映射不代表异常。真实内容变长后，请在 Office 中复核换行和溢出。"}</p>
         </section>
       )}
 
-      {mode === "protect" && analysis && status === "ready" && (
+      {mode === "protect" && analysis?.kind === "text" && status === "ready" && (
+        <TextCandidateSelection analysis={analysis} selectedIds={selectedIds} onToggle={onToggleColumn} onAdd={onAddCandidate} onRemove={onRemoveCandidate} onSetSelection={onSetSelection} />
+      )}
+
+      {mode === "protect" && analysis && analysis.kind !== "text" && status === "ready" && (
         <section className="protection-section" aria-labelledby="protection-title">
           <div className="protection-section__head"><div><h3 id="protection-title">需要替换的列</h3><p>勾选字段；叙述类字段可以只替换其中已知的客户、产品或人员</p></div></div>
           <div className="column-selection-list">
@@ -854,13 +944,12 @@ function PrinciplePopover({ onClose, triggerRef }) {
         <span><b>1</b>本机识别并替换</span><i aria-hidden="true" /><span><b>2</b>AI 只处理代号</span><i aria-hidden="true" /><span><b>3</b>本机核对并还原</span>
       </div>
 
-      <p className="principle-boundary"><Info weight="duotone" />当前使用浏览器本机加密存储，尚不等同于正式企业密钥库；脱敏制作支持 XLSX、CSV，还原支持 XLSX、CSV、DOCX、PPTX 和安全静态 HTML 的已声明文字区域。</p>
+      <p className="principle-boundary"><Info weight="duotone" />当前使用浏览器本机加密存储，尚不等同于正式企业密钥库；脱敏制作支持 XLSX、CSV、TXT、MD、DOCX，还原支持 XLSX、CSV、TXT、MD、DOCX、PPTX 和安全静态 HTML 的已声明文字区域。</p>
     </section>
   );
 }
 
 export function App() {
-  const appRef = useRef(null);
   const inputRef = useRef(null);
   const dragDepthRef = useRef(0);
   const drawerRef = useRef(null);
@@ -911,12 +1000,6 @@ export function App() {
     try { window.localStorage.setItem("file-mask-theme", themePreference); } catch { /* Preference storage is optional. */ }
     return () => media.removeEventListener("change", applyTheme);
   }, [themePreference]);
-
-  useGSAP(() => {
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    gsap.fromTo(".workspace-intro > *", { y: 6, opacity: 0 }, { y: 0, opacity: 1, duration: 0.22, stagger: 0.025, ease: "power2.out" });
-    gsap.fromTo(".workbench", { y: 6, opacity: 0.94 }, { y: 0, opacity: 1, duration: 0.24, ease: "power2.out" });
-  }, { scope: appRef, dependencies: [mode], revertOnUpdate: true });
 
   useEffect(() => {
     let active = true;
@@ -1012,6 +1095,8 @@ export function App() {
   const showError = (caught) => {
     const normalized = caught instanceof SafeFileError
       ? caught
+      : caught?.code
+        ? new SafeFileError(caught.code, caught.message, caught.details ?? [])
       : new SafeFileError("PROCESSING_ERROR", caught?.message || "文件处理失败，请使用副本重试。");
     setError(normalized); setStatus("error"); setDetailsOpen(false);
   };
@@ -1022,8 +1107,8 @@ export function App() {
     const supportedFormats = mode === "protect" ? SUPPORTED_PROTECT_FORMATS : SUPPORTED_RESTORE_FORMATS;
     if (!supportedFormats.includes(format)) {
       showError(new SafeFileError("UNSUPPORTED_FILE", mode === "protect"
-        ? "制作脱敏文件支持标准 .xlsx 和 .csv 文件。"
-        : "还原处理支持标准 .xlsx、.csv、.docx、.pptx 和 .html 文件。"));
+        ? "制作脱敏文件支持标准 .xlsx、.csv、.txt、.md 和 .docx 文件。"
+        : "还原处理支持标准 .xlsx、.csv、.txt、.md、.docx、.pptx 和 .html 文件。"));
       return;
     }
     setFile(selected); setStatus("inspecting"); setError(null); setDetailsOpen(false); setResult(null); setDownloadRequested(false); setRegenerationNotice(null);
@@ -1031,8 +1116,8 @@ export function App() {
       if (mode === "protect") {
         const nextAnalysis = await inspectProtectionFile(selected);
         setAnalysis(nextAnalysis);
-        setSelectedIds(nextAnalysis.suggestedColumnIds);
-        setFieldModes(Object.fromEntries(nextAnalysis.columns.map((column) => [column.id, column.recommendedMode ?? "whole"])));
+        setSelectedIds(nextAnalysis.kind === "text" ? nextAnalysis.suggestedCandidateIds : nextAnalysis.suggestedColumnIds);
+        setFieldModes(nextAnalysis.kind === "text" ? {} : Object.fromEntries(nextAnalysis.columns.map((column) => [column.id, column.recommendedMode ?? "whole"])));
       } else {
         setRestoreInspection(await inspectRestoreFile(selected));
       }
@@ -1080,10 +1165,12 @@ export function App() {
     try {
       let output;
       if (mode === "protect") {
-        const columns = analysis.columns
-          .filter((column) => selectedIds.includes(column.id))
-          .map((column) => ({ ...column, processingMode: fieldModes[column.id] ?? column.recommendedMode ?? "whole" }));
-        output = await createSafeFile(file, columns);
+        const selection = analysis.kind === "text"
+          ? analysis.candidates.filter((candidate) => selectedIds.includes(candidate.id))
+          : analysis.columns
+            .filter((column) => selectedIds.includes(column.id))
+            .map((column) => ({ ...column, processingMode: fieldModes[column.id] ?? column.recommendedMode ?? "whole" }));
+        output = await createSafeFile(file, selection);
       } else {
         output = await restoreSafeFile(file, restoreInspection.taskId);
       }
@@ -1125,7 +1212,7 @@ export function App() {
 
   const canAdjustFailedProtectionSelection = mode === "protect"
     && Boolean(file && analysis)
-    && ["NO_COLUMNS", "NO_VALUES", "UNSUPPORTED_CELLS"].includes(error?.code);
+    && ["NO_COLUMNS", "NO_TEXT_CANDIDATES", "NO_VALUES", "UNSUPPORTED_CELLS"].includes(error?.code);
 
   const toggleProtectionColumn = (id) => {
     setSelectedIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
@@ -1133,6 +1220,17 @@ export function App() {
 
   const changeProtectionMode = (id, processingMode) => {
     setFieldModes((current) => ({ ...current, [id]: processingMode }));
+  };
+
+  const addTextCandidate = (value) => {
+    const item = addManualCandidate(analysis, value);
+    setAnalysis((current) => ({ ...current, candidates: [...current.candidates, item] }));
+    setSelectedIds((current) => [...current, item.id]);
+  };
+
+  const removeTextCandidate = (id) => {
+    setAnalysis((current) => ({ ...current, candidates: current.candidates.filter((item) => item.id !== id) }));
+    setSelectedIds((current) => current.filter((item) => item !== id));
   };
 
   let mainState;
@@ -1144,7 +1242,7 @@ export function App() {
   else mainState = <ErrorState mode={mode} error={error} canAdjustFields={canAdjustFailedProtectionSelection} onAdjustFields={adjustFailedProtectionSelection} onReset={() => reset(mode)} onDetails={() => setDetailsOpen(true)} onBackToProtect={() => reset("protect")} />;
 
   return (
-    <div className="app" ref={appRef} data-mode={mode}>
+    <div className="app" data-mode={mode}>
       <header className="app-header">
         <div className="brand"><span className="brand__mark" aria-hidden="true"><ShieldCheck weight="duotone" /></span><div><strong>文件脱敏助手</strong><span>本机脱敏后交给 AI，处理完成再还原。</span></div></div>
         <BoundaryRoute />
@@ -1171,11 +1269,11 @@ export function App() {
           </aside>
           <section className="workbench" data-dragging={isDraggingFile} onDragEnter={handleDragEnter} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop} aria-label={MODE_COPY[mode].title}>
             {mainState}
-            <p className="demo-caption"><Info weight="duotone" />{mode === "protect" ? "脱敏制作支持标准 XLSX、CSV。" : "还原支持 XLSX、CSV、DOCX、PPTX、安全静态 HTML；不扫描图片，危险位置中的代号会拦截输出。"}</p>
+            <p className="demo-caption"><Info weight="duotone" />{mode === "protect" ? "脱敏制作支持标准 XLSX、CSV、TXT、MD、DOCX。" : "还原支持 XLSX、CSV、TXT、MD、DOCX、PPTX、安全静态 HTML；不扫描图片，危险位置中的代号会拦截输出。"}</p>
           </section>
-          <input ref={inputRef} className="visually-hidden" type="file" accept={mode === "protect" ? ".xlsx,.csv" : ".xlsx,.csv,.docx,.pptx,.html"} tabIndex={-1} aria-label={mode === "protect" ? "选择待脱敏的 XLSX 或 CSV 文件" : "选择待还原的 XLSX、CSV、DOCX、PPTX 或 HTML 文件"} onChange={handleFileInput} />
+          <input ref={inputRef} className="visually-hidden" type="file" accept={mode === "protect" ? ".xlsx,.csv,.txt,.md,.docx" : ".xlsx,.csv,.txt,.md,.docx,.pptx,.html"} tabIndex={-1} aria-label={mode === "protect" ? "选择待脱敏的 XLSX、CSV、TXT、MD 或 DOCX 文件" : "选择待还原的 XLSX、CSV、TXT、MD、DOCX、PPTX 或 HTML 文件"} onChange={handleFileInput} />
         </section>
-        {detailsOpen && <><button className="drawer-scrim" type="button" tabIndex={-1} onClick={() => setDetailsOpen(false)} aria-label="关闭详情" /><SecurityDrawer mode={mode} status={status} analysis={analysis} selectedIds={selectedIds} fieldModes={fieldModes} restoreInspection={restoreInspection} result={result} error={error} modal drawerRef={drawerRef} closeButtonRef={closeButtonRef} onClose={() => setDetailsOpen(false)} onToggleColumn={toggleProtectionColumn} onModeChange={changeProtectionMode} /></>}
+        {detailsOpen && <><button className="drawer-scrim" type="button" tabIndex={-1} onClick={() => setDetailsOpen(false)} aria-label="关闭详情" /><SecurityDrawer mode={mode} status={status} analysis={analysis} selectedIds={selectedIds} fieldModes={fieldModes} restoreInspection={restoreInspection} result={result} error={error} modal drawerRef={drawerRef} closeButtonRef={closeButtonRef} onClose={() => setDetailsOpen(false)} onToggleColumn={toggleProtectionColumn} onModeChange={changeProtectionMode} onAddCandidate={addTextCandidate} onRemoveCandidate={removeTextCandidate} onSetSelection={setSelectedIds} /></>}
         {localTasksOpen && <><button className="drawer-scrim drawer-scrim--local" type="button" tabIndex={-1} onClick={closeLocalTasks} aria-label="关闭本机任务" /><LocalTasksDrawer localTasks={localTasks} currentTaskId={result?.taskId ?? restoreInspection?.taskId ?? null} pendingDeleteId={pendingDeleteId} deletingTaskId={deletingTaskId} error={taskManagerError} modal drawerRef={localTasksDrawerRef} closeButtonRef={localTasksCloseButtonRef} onClose={closeLocalTasks} onRequestDelete={setPendingDeleteId} onCancelDelete={() => setPendingDeleteId(null)} onConfirmDelete={deleteLocalTask} /></>}
       </main>
       {principleOpen && <PrinciplePopover triggerRef={principleButtonRef} onClose={() => setPrincipleOpen(false)} />}

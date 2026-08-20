@@ -5,16 +5,17 @@ import {
   restoreSafeWorkbook,
 } from "./xlsxEngine.js";
 import { createSafeCsv, inspectCsvProtectionFile, inspectCsvRestoreFile, restoreSafeCsv } from "./csvEngine.js";
-import { inspectOfficeRestoreFile, restoreOfficeSafeFile } from "./officeOpenXmlEngine.js";
-import { inspectHtmlRestoreFile, restoreHtmlSafeFile } from "./htmlEngine.js";
+import { preflightFile } from "./filePreflight.js";
 
-export const SUPPORTED_PROTECT_FORMATS = ["xlsx", "csv"];
-export const SUPPORTED_RESTORE_FORMATS = ["xlsx", "csv", "docx", "pptx", "html"];
+export const SUPPORTED_PROTECT_FORMATS = ["xlsx", "csv", "txt", "md", "docx"];
+export const SUPPORTED_RESTORE_FORMATS = ["xlsx", "csv", "txt", "md", "docx", "pptx", "html"];
 
 export const FORMAT_CAPABILITIES = {
   xlsx: { protect: true, restore: true },
   csv: { protect: true, restore: true },
-  docx: { protect: false, restore: true },
+  txt: { protect: true, restore: true },
+  md: { protect: true, restore: true },
+  docx: { protect: true, restore: true },
   pptx: { protect: false, restore: true },
   html: { protect: false, restore: true },
 };
@@ -22,6 +23,8 @@ export const FORMAT_CAPABILITIES = {
 export const FILE_FORMAT_META = {
   xlsx: { label: "Excel", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
   csv: { label: "CSV", mimeType: "text/csv;charset=utf-8" },
+  txt: { label: "TXT", mimeType: "text/plain;charset=utf-8" },
+  md: { label: "Markdown", mimeType: "text/plain;charset=utf-8" },
   docx: { label: "Word", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" },
   pptx: { label: "PowerPoint", mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation" },
   html: { label: "HTML", mimeType: "text/html;charset=utf-8" },
@@ -32,25 +35,55 @@ export function fileFormatFromName(filename) {
 }
 
 export async function inspectProtectionFile(file) {
-  const format = fileFormatFromName(file.name);
-  if (format === "csv") return inspectCsvProtectionFile(file);
+  const evidence = await preflightFile(file, SUPPORTED_PROTECT_FORMATS);
+  const format = evidence.format;
+  if (format === "docx") {
+    const { inspectDocxProtectionFile } = await import("./officeOpenXmlEngine.js");
+    return { ...await inspectDocxProtectionFile(file), ...evidence };
+  }
+  if (format === "txt" || format === "md") {
+    const { inspectTextProtectionFile } = await import("./textEngine.js");
+    return { ...await inspectTextProtectionFile(file, format), ...evidence };
+  }
+  if (format === "csv") {
+    const analysis = await inspectCsvProtectionFile(file);
+    return { ...analysis, ...evidence, formatLabel: FILE_FORMAT_META.csv.label };
+  }
   const analysis = await inspectXlsxProtectionFile(file);
-  return { ...analysis, format: "xlsx", formatLabel: FILE_FORMAT_META.xlsx.label };
+  return { ...analysis, ...evidence, formatLabel: FILE_FORMAT_META.xlsx.label };
 }
 
-export async function createSafeFile(file, selectedColumns) {
-  return fileFormatFromName(file.name) === "csv"
-    ? createSafeCsv(file, selectedColumns)
-    : createSafeWorkbook(file, selectedColumns);
+export async function createSafeFile(file, selection) {
+  const { format } = await preflightFile(file, SUPPORTED_PROTECT_FORMATS);
+  if (format === "docx") {
+    const { createSafeDocx } = await import("./officeOpenXmlEngine.js");
+    return createSafeDocx(file, selection);
+  }
+  if (format === "txt" || format === "md") {
+    const { createSafeText } = await import("./textEngine.js");
+    return createSafeText(file, selection, format);
+  }
+  return format === "csv"
+    ? createSafeCsv(file, selection)
+    : createSafeWorkbook(file, selection);
 }
 
 export async function inspectRestoreFile(file) {
-  const format = fileFormatFromName(file.name);
-  if (format === "html") return inspectHtmlRestoreFile(file);
+  const evidence = await preflightFile(file, SUPPORTED_RESTORE_FORMATS);
+  const format = evidence.format;
+  if (format === "txt" || format === "md") {
+    const { inspectTextRestoreFile } = await import("./textEngine.js");
+    return { ...await inspectTextRestoreFile(file, format), ...evidence };
+  }
+  if (format === "html") {
+    const { inspectHtmlRestoreFile } = await import("./htmlEngine.js");
+    return { ...await inspectHtmlRestoreFile(file), ...evidence };
+  }
   if (format === "csv") {
     const inspection = await inspectCsvRestoreFile(file);
     return {
       ...inspection,
+      ...evidence,
       format,
       formatLabel: FILE_FORMAT_META[format].label,
       usedMappings: inspection.uniqueTokens,
@@ -63,6 +96,7 @@ export async function inspectRestoreFile(file) {
     const inspection = await inspectXlsxRestoreFile(file);
     return {
       ...inspection,
+      ...evidence,
       format,
       formatLabel: FILE_FORMAT_META[format].label,
       usedMappings: inspection.uniqueTokens,
@@ -71,12 +105,20 @@ export async function inspectRestoreFile(file) {
       warnings: ["图片未扫描，未出现的映射不代表异常。"],
     };
   }
-  return inspectOfficeRestoreFile(file);
+  const { inspectOfficeRestoreFile } = await import("./officeOpenXmlEngine.js");
+  return { ...await inspectOfficeRestoreFile(file), ...evidence };
 }
 
 export async function restoreSafeFile(file, expectedTaskId) {
-  const format = fileFormatFromName(file.name);
-  if (format === "html") return restoreHtmlSafeFile(file, expectedTaskId);
+  const { format } = await preflightFile(file, SUPPORTED_RESTORE_FORMATS);
+  if (format === "txt" || format === "md") {
+    const { restoreSafeText } = await import("./textEngine.js");
+    return restoreSafeText(file, expectedTaskId, format);
+  }
+  if (format === "html") {
+    const { restoreHtmlSafeFile } = await import("./htmlEngine.js");
+    return restoreHtmlSafeFile(file, expectedTaskId);
+  }
   if (format === "csv") {
     const result = await restoreSafeCsv(file, expectedTaskId);
     return {
@@ -102,5 +144,6 @@ export async function restoreSafeFile(file, expectedTaskId) {
       warnings: ["图片未扫描，未出现的映射不代表异常。"],
     };
   }
+  const { restoreOfficeSafeFile } = await import("./officeOpenXmlEngine.js");
   return restoreOfficeSafeFile(file, expectedTaskId);
 }

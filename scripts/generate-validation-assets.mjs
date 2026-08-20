@@ -15,9 +15,7 @@ import {
   TextRun,
 } from "docx";
 
-const outputRoot = process.argv[2];
-const skillRoot = process.argv[3];
-if (!outputRoot || !skillRoot) throw new Error("Usage: node generate-validation-assets.mjs <output-dir> <guizang-skill-dir>");
+const outputRoot = path.resolve(process.argv[2] || "tests/output/validation-assets");
 
 const taskId = "A14F2026";
 const tokens = {
@@ -184,6 +182,26 @@ async function writePptxAssets() {
 }
 
 async function writeDocxAssets() {
+  const originalDoc = new Document({
+    creator: "文件脱敏助手验证",
+    title: "销售分析 DOCX 原始版",
+    sections: [{
+      headers: { default: new Header({ children: [new Paragraph("客户名称：NOVA Textiles (Vietnam) Co., Ltd.")] }) },
+      footers: { default: new Footer({ children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun("销售人员：Alice Chen")] })] }) },
+      children: [
+        new Paragraph({ children: [new TextRun({ text: "销售经营分析", bold: true, size: 38 })] }),
+        new Paragraph({ children: [new TextRun("客户名称："), new TextRun({ text: "浙江ABC", bold: true }), new TextRun({ text: "染整有限公司", italics: true })] }),
+        new Table({ rows: [
+          new TableRow({ children: [new TableCell({ children: [new Paragraph("产品内部编码")]}), new TableCell({ children: [new Paragraph("销售人员")]})] }),
+          new TableRow({ children: [new TableCell({ children: [new Paragraph("HT-825GK")]}), new TableCell({ children: [new Paragraph("张三")]})] }),
+          new TableRow({ children: [new TableCell({ children: [new Paragraph("染整助剂-A+B（试制）")]}), new TableCell({ children: [new Paragraph("王·小明 / XM-Wang")]})] }),
+        ] }),
+        new Paragraph("建议：由张三跟进浙江ABC染整有限公司的 ECO/Soft-X2.0 复购。"),
+      ],
+    }],
+  });
+  await fs.writeFile(path.join(outputRoot, "04_DOCX样本", "销售经营分析_原始版.docx"), await Packer.toBuffer(originalDoc));
+
   const split = tokens.customer1;
   const doc = new Document({
     creator: "文件脱敏助手验证",
@@ -219,7 +237,6 @@ const page = (id, layout, number, title, body, theme = "light") => `
 </section>`;
 
 async function writeHtmlAssets() {
-  const template = await fs.readFile(path.join(skillRoot, "assets", "template-swiss.html"), "utf8");
   const slides = [
     `<section class="slide accent" data-layout="SWISS-COVER-ASCII" data-animate="hero" data-slide-id="cover"><div class="canvas-card"><canvas class="ascii-bg" aria-hidden="true"></canvas><div class="chrome-min"><div class="l">SAFE SALES · TEST DECK</div><div class="r">01 / 08</div></div><div style="flex:1;display:grid;grid-template-rows:auto 1fr auto;gap:2.6vh"><div data-anim="kicker" class="t-meta" style="color:rgba(255,255,255,.78);letter-spacing:.22em">LOCAL TOKEN ROUND TRIP</div><h1 data-anim="title" style="align-self:center;font-family:var(--sans),var(--sans-zh);font-weight:200;font-size:min(8vw,14vh);line-height:.94;letter-spacing:-.025em;color:#fff">销售经营分析<br><span style="font-style:italic;font-weight:300">${tokens.customer1}</span></h1><div data-anim="lead" class="lead" style="color:rgba(255,255,255,.86)">任务 ${taskId} · AI 只看到可分析、可还原的代号</div></div></div></section>`,
     page("overview", "S06", 2, "销售总览", `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:3vw"><div><strong style="font-size:5vw;color:var(--accent)">642,100</strong><br>累计销售额</div><div><strong style="font-size:5vw">3</strong><br>客户代号</div><div><strong style="font-size:5vw">3</strong><br>产品代号</div></div>`),
@@ -245,20 +262,14 @@ async function writeHtmlAssets() {
     note("cross", "客户产品交叉", "机会判断", 0.8, "识别交叉销售机会", "收束为行动建议"),
     note("closing", "行动建议", "收束", 0.6, "给出可执行的复核动作", "结束演示并进入人工验收"),
   ], null, 2)};\nwindow.__SPEAKER_NOTES__ = SPEAKER_NOTES;`;
-  let html = template.replace("[必填] 替换为 PPT 标题 · Deck Title", "销售经营分析 · 安全还原测试");
-  const slideMarker = html.indexOf("<!-- SLIDES_HERE");
-  const navMarker = html.indexOf('<div id="nav">');
-  if (slideMarker < 0 || navMarker < 0 || navMarker <= slideMarker) throw new Error("Guizang Swiss template markers were not found");
-  html = `${html.slice(0, slideMarker)}${slides}\n\n</div>\n\n${html.slice(navMarker)}`;
-  const notesStart = html.indexOf("const SPEAKER_NOTES = [");
-  const notesEndMarker = "window.__SPEAKER_NOTES__ = SPEAKER_NOTES;";
-  const notesEnd = html.indexOf(notesEndMarker, notesStart);
-  if (notesStart < 0 || notesEnd < 0) throw new Error("Guizang presenter notes markers were not found");
-  html = `${html.slice(0, notesStart)}${notes}${html.slice(notesEnd + notesEndMarker.length)}`;
+  const html = `<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>销售经营分析 · 安全还原测试</title><style>
+:root{--sans:Arial;--sans-zh:"Microsoft YaHei";--text-primary:#111827;--text-secondary:#4b5563;--accent:#2563eb;--ink:#111827}
+*{box-sizing:border-box}body{margin:0;background:#eef2f7;color:var(--text-primary)}.slide{min-height:100vh;padding:5vh 5vw;background:#fff}.slide.dark{background:#111827;color:#fff}.slide.accent{background:#2563eb;color:#fff}.canvas-card{min-height:90vh;display:flex;flex-direction:column;gap:4vh}.chrome-min{display:flex;justify-content:space-between;font:12px var(--sans);letter-spacing:.16em}.split-half{display:grid;grid-template-columns:1fr 1fr;min-height:90vh}.half{min-width:0}.b-accent{background:#2563eb}.lead{font:20px var(--sans-zh)}
+</style></head><body><main class="deck">${slides}</main><div id="nav"></div><script>${notes}</script></body></html>`;
   const baseline = path.join(outputRoot, "05_HTML样本", `销售经营分析_Swiss代号版_${taskId}.html`);
   await fs.writeFile(baseline, html, "utf8");
-  await fs.mkdir(path.join(outputRoot, "05_HTML样本", "assets"), { recursive: true });
-  await fs.copyFile(path.join(skillRoot, "assets", "motion.min.js"), path.join(outputRoot, "05_HTML样本", "assets", "motion.min.js"));
   const variants = {
     "异常_脚本位置含代号": html.replace("window.__SPEAKER_NOTES__", `window.__unsafeCustomer='${tokens.customer1}';\nwindow.__SPEAKER_NOTES__`),
     "异常_URL位置含代号": html.replace("<div id=\"nav\"></div>", `<a href="https://example.test/${tokens.customer1}">外部链接</a><div id="nav"></div>`),
@@ -269,11 +280,34 @@ async function writeHtmlAssets() {
   for (const [name, content] of Object.entries(variants)) await fs.writeFile(path.join(outputRoot, "05_HTML样本", `${name}_${taskId}.html`), content, "utf8");
 }
 
+async function writeTextAssets() {
+  const originalTxt = [
+    "客户名称：浙江ABC染整有限公司",
+    "产品内部编码：HT-825GK",
+    "销售人员：张三",
+    "业务备注：浙江ABC染整有限公司计划复购 HT-825GK，由张三继续跟进。",
+  ].join("\r\n") + "\r\n";
+  const safeTxt = originalTxt
+    .replaceAll("浙江ABC染整有限公司", tokens.customer1)
+    .replaceAll("HT-825GK", tokens.product1)
+    .replaceAll("张三", tokens.sales1);
+  const originalMd = `---\n负责人: Alice Chen\n---\n\n| 客户名称 | 产品内部编码 | 销售人员 |\n| --- | --- | --- |\n| NOVA Textiles (Vietnam) Co., Ltd. | ECO/Soft-X2.0 | Alice Chen |\n\n\`\`\`text\nNOVA Textiles (Vietnam) Co., Ltd. / ECO/Soft-X2.0\n\`\`\`\n`;
+  const safeMd = originalMd
+    .replaceAll("NOVA Textiles (Vietnam) Co., Ltd.", tokens.customer2)
+    .replaceAll("ECO/Soft-X2.0", tokens.product2)
+    .replaceAll("Alice Chen", tokens.sales2);
+  await fs.writeFile(path.join(outputRoot, "08_文本样本", "业务跟进_原始版.txt"), `\uFEFF${originalTxt}`, "utf8");
+  await fs.writeFile(path.join(outputRoot, "08_文本样本", `业务跟进_脱敏版_${taskId}.txt`), `\uFEFF${safeTxt}`, "utf8");
+  await fs.writeFile(path.join(outputRoot, "08_文本样本", "客户分析_原始版.md"), originalMd, "utf8");
+  await fs.writeFile(path.join(outputRoot, "08_文本样本", `客户分析_脱敏版_${taskId}.md`), safeMd, "utf8");
+}
+
 await Promise.all([
-  "00_测试说明", "01_输入数据", "02_脱敏样本", "03_PPTX样本", "04_DOCX样本", "05_HTML样本", "06_还原输出", "07_验证证据",
+  "00_测试说明", "01_输入数据", "02_脱敏样本", "03_PPTX样本", "04_DOCX样本", "05_HTML样本", "06_还原输出", "07_验证证据", "08_文本样本",
 ].map((name) => fs.mkdir(path.join(outputRoot, name), { recursive: true })));
 await writeCsvAssets();
 await writePptxAssets();
 await writeDocxAssets();
 await writeHtmlAssets();
+await writeTextAssets();
 console.log(JSON.stringify({ outputRoot, taskId, mappings: Object.keys(mapping).length }, null, 2));

@@ -1,6 +1,6 @@
 import { SafeFileError } from "./xlsxEngine.js";
-import { listVaultSummaries, loadVault } from "./vaultStore.js";
-import { OFFICE_FORMATS, findAlteredTokens, inspectOfficePackage, loadOfficePackage, restoreOfficePackage } from "./officeOpenXmlCore.js";
+import { listVaultSummaries, loadVault, saveVault } from "./vaultStore.js";
+import { OFFICE_FORMATS, analyzeDocxProtectionPackage, findAlteredTokens, inspectOfficePackage, loadOfficePackage, restoreOfficePackage, tokenizeDocxPackage } from "./officeOpenXmlCore.js";
 
 function extensionOf(filename) {
   return filename.toLowerCase().match(/\.([a-z0-9]+)$/)?.[1] ?? "";
@@ -51,6 +51,47 @@ async function detectAlteredWithoutFormalToken(zip, format) {
 
 async function checkedPackage(file) {
   return loadOfficePackage(await file.arrayBuffer(), extensionOf(file.name));
+}
+
+function createTaskId() {
+  return [...crypto.getRandomValues(new Uint8Array(4))].map((byte) => byte.toString(16).padStart(2, "0")).join("").toUpperCase();
+}
+
+export async function inspectDocxProtectionFile(file) {
+  try {
+    const { zip, format } = await checkedPackage(file);
+    if (format !== "docx") throw new SafeFileError("FORMAT_MISMATCH", "DOCX 脱敏入口只处理标准 Word 文件。");
+    return await analyzeDocxProtectionPackage(zip);
+  } catch (error) {
+    throw asSafeFileError(error);
+  }
+}
+
+export async function createSafeDocx(file, selectedCandidates) {
+  try {
+    if (!selectedCandidates.length) throw new SafeFileError("NO_TEXT_CANDIDATES", "请至少选择一项需要替换的敏感内容。");
+    const { zip, format } = await checkedPackage(file);
+    if (format !== "docx") throw new SafeFileError("FORMAT_MISMATCH", "DOCX 脱敏入口只处理标准 Word 文件。");
+    await analyzeDocxProtectionPackage(zip);
+    const taskId = createTaskId();
+    const taskName = cleanBaseName(file.name);
+    const result = await tokenizeDocxPackage(zip, selectedCandidates, taskId);
+    if (!result.replacedOccurrences || !result.uniqueValues) throw new SafeFileError("NO_VALUES", "没有找到可替换的完整文字。");
+    const postCheck = await inspectOfficePackage(zip, "docx");
+    const unknown = postCheck.uniqueTokens.filter((token) => !result.mapping[token]);
+    if (postCheck.unsupportedOccurrences.length || unknown.length) throw new SafeFileError("UNSUPPORTED_CONTENT", "代号出现在 DOCX 首版不处理的区域。", [...postCheck.unsupportedOccurrences.map((item) => `${item.location}：${item.token}`), ...unknown]);
+    await saveVault({ version: 1, taskId, taskName, createdAt: new Date().toISOString(), sourceFileName: file.name, mapping: result.mapping });
+    return {
+      buffer: await zip.generateAsync({ type: "arraybuffer", compression: "DEFLATE", compressionOptions: { level: 6 } }),
+      outputName: `${taskName}_脱敏版_${taskId}.docx`, mimeType: OFFICE_FORMATS.docx.mimeType,
+      format: "docx", formatLabel: "Word", taskId, taskName,
+      replacedCells: result.replacedOccurrences, uniqueValues: result.uniqueValues,
+      checkedAreas: result.checkedAreas, uncheckedAreas: OFFICE_FORMATS.docx.unchecked,
+      warnings: ["图片未扫描；真实内容变长后可能换行或溢出，请在 Word 中复核。"], notices: [],
+    };
+  } catch (error) {
+    throw asSafeFileError(error);
+  }
 }
 
 export async function inspectOfficeRestoreFile(file) {
@@ -108,18 +149,11 @@ export async function restoreOfficeSafeFile(file, expectedTaskId) {
       ]);
     }
     const restored = await restoreOfficePackage(zip, format, vault.mapping);
-    const postCheck = await inspectOfficePackage(zip, format, vault.mapping);
-    const residualAltered = [];
-    for (const entry of Object.values(zip.files)) {
-      if (entry.dir || !entry.name.toLowerCase().endsWith(".xml")) continue;
-      const xml = await entry.async("string");
-      residualAltered.push(...findAlteredTokens(xml, format, vault.mapping).map((value) => `${entry.name}：${value}`));
-    }
-    if (postCheck.occurrences.length || postCheck.unsupportedOccurrences.length || residualAltered.length) {
-      throw new SafeFileError("RESIDUAL_TOKENS", "还原后仍检测到正式代号或残缺代号，已停止输出。", [
+    const postCheck = await inspectOfficePackage(zip, format);
+    if (postCheck.occurrences.length || postCheck.unsupportedOccurrences.length) {
+      throw new SafeFileError("RESIDUAL_TOKENS", "还原后仍检测到正式代号，已停止输出。", [
         ...postCheck.occurrences.map((item) => `${item.location}：${item.token}`),
         ...postCheck.unsupportedOccurrences.map((item) => `${item.location}：${item.token}`),
-        ...residualAltered,
       ]);
     }
     const buffer = await zip.generateAsync({ type: "arraybuffer", compression: "DEFLATE", compressionOptions: { level: 6 } });

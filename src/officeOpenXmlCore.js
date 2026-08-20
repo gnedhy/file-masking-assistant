@@ -1,5 +1,6 @@
 import JSZip from "jszip";
-import { findKnownShortTokens, tokenPattern } from "./xlsxCore.js";
+import { classifyHeader, findKnownShortTokens, tokenPattern } from "./xlsxCore.js";
+import { analyzeText } from "./textCore.js";
 
 export const OFFICE_LIMITS = {
   compressedBytes: 50 * 1024 * 1024,
@@ -90,6 +91,13 @@ function textStreams(xml, config) {
   return streams;
 }
 
+function isIndependentMatch(text, source, index) {
+  const before = text[index - 1] ?? "";
+  const after = text[index + source.length] ?? "";
+  return !(/[A-Za-z0-9]/.test(source[0]) && /[A-Za-z0-9]/.test(before))
+    && !(/[A-Za-z0-9]/.test(source.at(-1)) && /[A-Za-z0-9]/.test(after));
+}
+
 function allXmlText(xml) {
   const values = [];
   for (const match of xml.matchAll(/>([^<>]+)</g)) values.push(decodeXml(match[1]));
@@ -156,6 +164,147 @@ export function replaceSupportedXml(xml, format, mapping) {
     count += replaced.count;
   }
   return { xml: output, count };
+}
+
+function replaceParagraphValues(paragraph, replacementsByValue) {
+  const combined = paragraph.nodes.map((node) => node.text).join("");
+  const entries = [...replacementsByValue].sort((left, right) => right[0].length - left[0].length);
+  const replacements = [];
+  for (let cursor = 0; cursor < combined.length;) {
+    const entry = entries.find(([source]) => combined.startsWith(source, cursor) && isIndependentMatch(combined, source, cursor));
+    if (!entry) { cursor += 1; continue; }
+    replacements.push({ start: cursor, end: cursor + entry[0].length, value: entry[1] });
+    cursor += entry[0].length;
+  }
+  if (!replacements.length) return { xml: paragraph.raw, count: 0 };
+
+  const values = paragraph.nodes.map((node) => node.text);
+  const offsets = [];
+  let cursor = 0;
+  for (const value of values) {
+    offsets.push({ start: cursor, end: cursor + value.length });
+    cursor += value.length;
+  }
+  for (const replacement of replacements.reverse()) {
+    const startIndex = offsets.findIndex((range) => replacement.start >= range.start && replacement.start < range.end);
+    const endIndex = offsets.findIndex((range) => replacement.end > range.start && replacement.end <= range.end);
+    if (startIndex < 0 || endIndex < 0) continue;
+    const prefix = values[startIndex].slice(0, replacement.start - offsets[startIndex].start);
+    const suffix = values[endIndex].slice(replacement.end - offsets[endIndex].start);
+    values[startIndex] = `${prefix}${replacement.value}${startIndex === endIndex ? suffix : ""}`;
+    for (let index = startIndex + 1; index < endIndex; index += 1) values[index] = "";
+    if (endIndex !== startIndex) values[endIndex] = suffix;
+  }
+  let output = paragraph.raw;
+  for (let index = paragraph.nodes.length - 1; index >= 0; index -= 1) {
+    const node = paragraph.nodes[index];
+    output = `${output.slice(0, node.start)}${encodeXml(values[index])}${output.slice(node.end)}`;
+  }
+  return { xml: output, count: replacements.length };
+}
+
+function replaceSupportedValues(xml, replacementsByValue) {
+  const paragraphs = collectParagraphs(xml, OFFICE_FORMATS.docx);
+  let output = xml;
+  let count = 0;
+  for (const paragraph of paragraphs.reverse()) {
+    const replaced = replaceParagraphValues(paragraph, replacementsByValue);
+    output = `${output.slice(0, paragraph.start)}${replaced.xml}${output.slice(paragraph.end)}`;
+    count += replaced.count;
+  }
+  return { xml: output, count };
+}
+
+function tableCandidates(xml, sourceText) {
+  const values = [];
+  for (const table of xml.matchAll(/<w:tbl\b[^>]*>[\s\S]*?<\/w:tbl>/gi)) {
+    const rows = [...table[0].matchAll(/<w:tr\b[^>]*>[\s\S]*?<\/w:tr>/gi)].map((row) =>
+      [...row[0].matchAll(/<w:tc\b[^>]*>[\s\S]*?<\/w:tc>/gi)].map((cell) => collectTextNodes(cell[0], "w:t").map((node) => node.text).join("").trim()));
+    if (rows.length < 2) continue;
+    const headers = rows[0].map((header, column) => ({ header, column, ...classifyHeader(header) })).filter((item) => item.category !== "custom");
+    for (const row of rows.slice(1)) headers.forEach(({ header, column, category, prefix }) => {
+      const value = row[column]?.trim();
+      if (!value || tokenPattern("").test(value)) return;
+      const count = sourceText.split(value).length - 1;
+      if (count) values.push({ value, label: header, category, prefix, count });
+    });
+  }
+  return values;
+}
+
+export async function validateDocxProtectionStructure(zip) {
+  const details = [];
+  for (const entry of Object.values(zip.files)) {
+    if (entry.dir || !/^word\/.*\.xml$/i.test(entry.name)) continue;
+    const xml = await entry.async("string");
+    if (/^word\/comments\d*\.xml$/i.test(entry.name) && /<w:comment\b/i.test(xml)) details.push(`${entry.name}：批注`);
+    if (/<w:(?:ins|del|moveFrom|moveTo|sdt|fldSimple|instrText|trackRevisions)\b/i.test(xml)) details.push(`${entry.name}：修订、内容控件或域`);
+    if (/^word\/(?:footnotes|endnotes)\.xml$/i.test(entry.name) && /<w:(?:footnote|endnote)\b[^>]*w:id="(?:[1-9]\d*)"/i.test(xml)) details.push(`${entry.name}：脚注或尾注`);
+  }
+  if (details.length) throw Object.assign(new Error("DOCX 包含首版无法完整脱敏的结构。"), { code: "UNSUPPORTED_DOCX_STRUCTURE", details });
+}
+
+export async function analyzeDocxProtectionPackage(zip) {
+  await validateDocxProtectionStructure(zip);
+  const streams = [];
+  const tableValues = [];
+  const checkedAreas = new Set();
+  for (const entry of Object.values(zip.files)) {
+    const area = supportedArea(entry.name, OFFICE_FORMATS.docx);
+    if (entry.dir || !area) continue;
+    const xml = await entry.async("string");
+    const entryStreams = textStreams(xml, OFFICE_FORMATS.docx);
+    if (entryStreams.length) checkedAreas.add(area.area);
+    streams.push(...entryStreams);
+  }
+  const sourceText = streams.join("\n");
+  for (const entry of Object.values(zip.files)) {
+    if (entry.dir || !supportedArea(entry.name, OFFICE_FORMATS.docx)) continue;
+    tableValues.push(...tableCandidates(await entry.async("string"), sourceText));
+  }
+  const analysis = analyzeText(sourceText, "docx");
+  const byValue = new Map(analysis.candidates.map((item) => [item.value, item]));
+  tableValues.forEach((item) => {
+    if (!byValue.has(item.value)) byValue.set(item.value, {
+      id: `TEXT::${encodeURIComponent(item.value)}`, ...item,
+      contexts: sourceText.split(/\r\n|\r|\n/).filter((line) => line.includes(item.value)).slice(0, 3),
+      suggested: true, manual: false,
+    });
+  });
+  const candidates = [...byValue.values()];
+  return { ...analysis, format: "docx", formatLabel: "Word", sourceText, candidates, suggestedCandidateIds: candidates.map((item) => item.id), checkedAreas: [...checkedAreas], uncheckedAreas: OFFICE_FORMATS.docx.unchecked };
+}
+
+export async function tokenizeDocxPackage(zip, selectedCandidates, taskId) {
+  const counters = { C: 0, P: 0, S: 0, X: 0 };
+  const mapping = {};
+  const replacements = new Map();
+  selectedCandidates.forEach((item) => {
+    const prefix = item.prefix || "X";
+    counters[prefix] += 1;
+    const token = `[[${prefix}${String(counters[prefix]).padStart(3, "0")}@${taskId}]]`;
+    replacements.set(item.value, token);
+    mapping[token] = { value: { type: "string", value: item.value }, category: item.category, header: item.label };
+  });
+  let replacedOccurrences = 0;
+  for (const entry of Object.values(zip.files)) {
+    if (entry.dir || !supportedArea(entry.name, OFFICE_FORMATS.docx)) continue;
+    const replaced = replaceSupportedValues(await entry.async("string"), replacements);
+    if (replaced.count) zip.file(entry.name, replaced.xml);
+    replacedOccurrences += replaced.count;
+  }
+  const residual = [];
+  for (const entry of Object.values(zip.files)) {
+    if (entry.dir || !entry.name.toLowerCase().endsWith(".xml")) continue;
+    const xml = decodeXml(await entry.async("string"));
+    for (const value of replacements.keys()) if (xml.includes(value)) residual.push(`${entry.name}：${value}`);
+  }
+  if (residual.length) throw Object.assign(new Error("所选敏感内容仍出现在未处理区域。"), { code: "UNSUPPORTED_CONTENT", details: residual });
+  const usedTokens = new Set();
+  const inspection = await inspectOfficePackage(zip, "docx", mapping);
+  inspection.occurrences.forEach((item) => usedTokens.add(item.token));
+  const usedMapping = Object.fromEntries(Object.entries(mapping).filter(([token]) => usedTokens.has(token)));
+  return { mapping: usedMapping, replacedOccurrences, uniqueValues: Object.keys(usedMapping).length, checkedAreas: inspection.checkedAreas };
 }
 
 function scanText(text, location) {

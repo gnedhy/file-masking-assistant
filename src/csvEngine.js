@@ -157,12 +157,8 @@ export async function restoreSafeCsv(file, expectedTaskId) {
     throw new SafeFileError("UNRESOLVED_TOKENS", "CSV 中存在无法安全还原的代号，已停止输出。", result.unresolved.map((item) => `${item.location}：${item.reason}`));
   }
   const postCheck = inspectCsvTokens(document);
-  const postAltered = inspectCsvAlteredTokens(document, vault.mapping);
-  if (postCheck.occurrences.length || postAltered.length) {
-    throw new SafeFileError("RESIDUAL_TOKENS", "还原后仍检测到代号，已停止导出。", [
-      ...postCheck.occurrences.map((item) => item.location),
-      ...postAltered.map((item) => `${item.location}：${item.value}`),
-    ]);
+  if (postCheck.occurrences.length) {
+    throw new SafeFileError("RESIDUAL_TOKENS", "还原后仍检测到代号，已停止导出。", postCheck.occurrences.map((item) => item.location));
   }
   return {
     buffer: encodeCsv(document),
