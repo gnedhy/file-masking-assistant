@@ -79,6 +79,9 @@ for (const format of ["docx", "pptx"]) {
 test("DOCX original completes candidate selection, protection and restoration", async () => {
   const bytes = await fs.readFile(path.join(root, "04_DOCX样本", "销售经营分析_原始版.docx"));
   const { zip } = await loadOfficePackage(bytes, "docx");
+  const documentXml = await zip.file("word/document.xml").async("string");
+  assert.match(documentXml, /<w:tblW w:type="dxa" w:w="8640"\/>/);
+  assert.equal((documentXml.match(/<w:gridCol w:w="4320"\/>/g) ?? []).length, 2);
   const analysis = await analyzeDocxProtectionPackage(zip);
   assert.ok(analysis.candidates.length >= 6);
   const protectedResult = await tokenizeDocxPackage(zip, analysis.candidates, taskId);

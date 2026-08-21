@@ -13,9 +13,11 @@ import {
   TableCell,
   TableRow,
   TextRun,
+  WidthType,
 } from "docx";
 
 const outputRoot = path.resolve(process.argv[2] || "tests/output/validation-assets");
+const docxTableWidth = { width: { size: 8640, type: WidthType.DXA }, columnWidths: [4320, 4320] };
 
 const taskId = "A14F2026";
 const tokens = {
@@ -191,7 +193,7 @@ async function writeDocxAssets() {
       children: [
         new Paragraph({ children: [new TextRun({ text: "销售经营分析", bold: true, size: 38 })] }),
         new Paragraph({ children: [new TextRun("客户名称："), new TextRun({ text: "浙江ABC", bold: true }), new TextRun({ text: "染整有限公司", italics: true })] }),
-        new Table({ rows: [
+        new Table({ ...docxTableWidth, rows: [
           new TableRow({ children: [new TableCell({ children: [new Paragraph("产品内部编码")]}), new TableCell({ children: [new Paragraph("销售人员")]})] }),
           new TableRow({ children: [new TableCell({ children: [new Paragraph("HT-825GK")]}), new TableCell({ children: [new Paragraph("张三")]})] }),
           new TableRow({ children: [new TableCell({ children: [new Paragraph("染整助剂-A+B（试制）")]}), new TableCell({ children: [new Paragraph("王·小明 / XM-Wang")]})] }),
@@ -212,7 +214,7 @@ async function writeDocxAssets() {
       children: [
         new Paragraph({ children: [new TextRun({ text: "销售经营分析", bold: true, size: 38 })] }),
         new Paragraph({ children: [new TextRun("客户："), new TextRun({ text: split.slice(0, 6), bold: true }), new TextRun({ text: split.slice(6, 13), italics: true }), new TextRun(split.slice(13))] }),
-        new Table({ rows: [
+        new Table({ ...docxTableWidth, rows: [
           new TableRow({ children: [new TableCell({ children: [new Paragraph("产品")]}), new TableCell({ children: [new Paragraph("负责人")]})] }),
           new TableRow({ children: [new TableCell({ children: [new Paragraph(tokens.product1)]}), new TableCell({ children: [new Paragraph(tokens.sales1)]})] }),
           new TableRow({ children: [new TableCell({ children: [new Paragraph(tokens.product3)]}), new TableCell({ children: [new Paragraph(tokens.sales3)]})] }),
