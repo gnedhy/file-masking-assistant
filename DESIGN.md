@@ -273,20 +273,20 @@ components:
 ### Protection Items
 
 - **Placement:** 只在“制作脱敏文件”的安全详情中出现，不增加主界面步骤，也不形成独立高级模式。
-- **Column input:** XLSX 与 CSV 使用相同的候选列确认方式。已添加项可移除，自动识别项保持只读。
+- **Column input:** XLSX 与 CSV 使用相同的候选列确认方式。TXT、MD 与 DOCX 使用“敏感内容候选—上下文—出现次数—手动增删”的共用确认方式。
 - **Safety cue:** 金额、日期等分析指标默认保留并解释原因；任务标识在抽屉底部用普通语言说明，短代号仅用于界面展示。
-- **Format identity:** 制作端根据 XLSX、CSV 切换文件标记；还原端根据 XLSX、CSV、DOCX、PPTX 自动切换文件图标、格式说明和原格式下载扩展名。
+- **Format identity:** 制作端根据 XLSX、CSV、TXT、MD、DOCX 切换文件标记；还原端根据 XLSX、CSV、TXT、MD、DOCX、PPTX、HTML 自动切换文件图标、格式说明和原格式下载扩展名。
 - **Restore evidence:** 安全详情显示文件格式、任务指纹、发现代号数、使用映射数、已检查区域和首版不承诺范围，并明确图片未扫描、未出现的映射不代表异常。
 
 ### Status, Progress & Mapping
 
 - **Pending / Success / Blocked:** 信息蓝、核验绿和拦截琥珀分别配套图标与文字；成功和错误结果使用圆形印章强化结论。
-- **Progress:** 三步列表与水平进度条同步；GSAP 只驱动这段解释性序列，标准单段为 560ms `power3.inOut`，减少动态时缩短至 60ms。
+- **Progress:** 三步列表与水平进度条同步；常规状态反馈使用不超过 300ms 的 CSS 动效。减少动态时移除位移动画，但保留短促的颜色与边框反馈。
 - **Mapping:** 三列映射表以箭头连接原始内容和安全代号/实名结果，结果列用淡绿字段；未还原项切换为琥珀拦截表。
 
 ### Chip
 
-- **Prototype chip:** 小型白底灰边标签只标注“交互原型”，不承担筛选、导航或主状态职责。
+- **Validation chip:** 小型白底灰边标签只标注“验证版”，不承担筛选、导航或主状态职责。
 
 ## Do's and Don'ts
 

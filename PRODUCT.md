@@ -18,7 +18,7 @@ Reviewers such as business owners or IT may inspect safety evidence, but they ar
 
 ## Product Purpose
 
-Create a tokenized safe XLSX or CSV locally, let the user work with any external AI outside this product, then restore an AI-generated or modified XLSX, CSV, DOCX, or PPTX to real enterprise names locally. Success means ordinary users can complete the round trip without learning security terminology, while unresolved or unsupported content is never silently exported.
+Create a tokenized safe XLSX, CSV, TXT, MD, or DOCX locally, let the user work with any external AI outside this product, then restore an AI-generated or modified XLSX, CSV, TXT, MD, DOCX, PPTX, or safe static HTML to real enterprise names locally. Success means ordinary users can complete the round trip without learning security terminology, while unresolved or unsupported content is never silently exported.
 
 ## Positioning
 
@@ -26,19 +26,19 @@ The external AI can understand what happened to an entity without receiving the 
 
 ## Operating Context
 
-The first validation scenario uses a sales-detail XLSX or CSV containing customer, product, and salesperson identifiers. The same two-task workflow creates a safe XLSX or CSV and restores XLSX, CSV, DOCX, or PPTX produced from it. The product does not analyze the source data itself, connect to CRM or ERP, or write back into production systems.
+The first validation scenario uses sales-detail files containing customer, product, and salesperson identifiers. The same two-task workflow creates a safe XLSX, CSV, TXT, MD, or DOCX and restores supported AI outputs. The product does not analyze the source data itself, connect to CRM or ERP, or write back into production systems.
 
 ## Capabilities and Constraints
 
-- Safe-file creation formats: XLSX and CSV. Restore formats: XLSX, CSV, DOCX, and PPTX.
+- Safe-file creation formats: XLSX, CSV, TXT, MD, and DOCX. Restore formats: XLSX, CSV, TXT, MD, DOCX, PPTX, and safe static HTML.
 - Users confirm detected sensitive categories before creating a de-identified file.
 - Users may add protected columns after automatic recognition.
 - Every formal token carries a task-specific identifier even though the interface shows a short code such as `C001`.
 - Restoration automatically matches the local task before showing the count of restorable tokens.
 - Safety evidence is available on demand through a detail drawer; it does not change processing behavior.
 - A persistent `原理说明` entry explains the distinction from ordinary field masking: task-bound Tokens, encrypted local mappings, and fail-closed restoration checks.
-- Restoration must surface unresolved tokens and stop incomplete export rather than report silent success.
-- The functional proof performs real XLSX parsing, token replacement, download, task matching, and restoration in the browser.
+- Restoration must surface unresolved tokens rather than report silent success. XLSX, CSV, TXT, MD, DOCX, and PPTX stop incomplete export; safe static HTML may produce an explicitly warned partial restoration when exact tokens can be restored and altered tokens remain unchanged in allowed visible text.
+- The functional proof performs real local parsing, token replacement, download, task matching, and restoration for the declared formats in the browser.
 - Local mappings are encrypted with AES-GCM using a non-exportable browser key and stored in IndexedDB. This is not yet an enterprise Token Vault, OS-keystore integration, managed key lifecycle, or secure deletion guarantee.
 - Unsupported cells in a selected protected column, unknown Tokens, mixed task fingerprints, missing local mappings, and formula-contained Tokens stop export.
 - A completed transformation is shown as `文件已生成`, not `已下载`. Download is a separate explicit action through a persistent file link because a browser page cannot reliably prove that the operating system saved the file.
@@ -50,7 +50,9 @@ The first validation scenario uses a sales-detail XLSX or CSV containing custome
 - Before a generated safe file has been requested for download, users can return to field selection without re-uploading; the undelivered task mapping is deleted before editing or switching files.
 - After a safe-file download has been requested, the primary action becomes restoration. Returning to field selection creates a new task and keeps the old encrypted mapping so the previously delivered file remains restorable.
 - The first validation rejects legacy XLS, macro-enabled workbooks, and encrypted workbooks.
-- Safe static HTML remains a later validation stage. DOCX/PPTX creation-side tokenization, PDF, OCR, chart text, SmartArt, comments, and embedded objects are out of scope.
+- PPTX creation-side tokenization, PDF, OCR, image text, chart text, SmartArt, macros, and embedded objects remain out of scope.
+- TXT and Markdown are processed as non-executable UTF-8 text. Candidates come from explicit labels and Markdown tables, can be searched or supplemented manually, and preserve UTF-8 BOM plus CRLF/LF. JSON, XML, and logs are not treated as supported aliases.
+- DOCX protection covers body text, ordinary tables, headers, footers, text boxes, and values split across adjacent runs. Actual comments, footnotes/endnotes, revisions, content controls, and fields stop protection instead of being silently skipped.
 - CSV supports comma, tab, and semicolon delimiters; quoted fields and embedded line breaks; UTF-8, UTF-8 BOM, and GB18030 input. Output is normalized to UTF-8 BOM for reliable Chinese display in Excel. Files over 50 MB, 200,000 rows, 500 columns, or 5,000,000 fields stop safely.
 - DOCX restore covers body text, tables, headers, footers, and text boxes; PPTX restore covers slide text, tables, and speaker notes. Exact tokens split across adjacent Office text runs are reassembled and inherit the first token run's style.
 - Office files are processed locally with strict package limits: 50 MB compressed, 250 MB uncompressed, and 5,000 entries. Macros, encrypted/corrupt files, OLE/embedded packages, unknown or mixed tokens, altered token syntax, unsupported-area tokens, and post-restore residuals stop output.
@@ -79,7 +81,7 @@ The approved visual reference uses a warm off-white surface, dark charcoal text,
 - Show verifiable checks instead of abstract security promises.
 - Explain that the product is designed for a reversible AI file round trip, not only for hiding source values.
 - Keep real identities and mapping inside the enterprise boundary.
-- Fail closed when restoration is incomplete or a format is unsupported.
+- Fail closed when restoration is incomplete or a format is unsupported, except for the documented safe-static-HTML partial-restoration path.
 - Preserve the original file and require a deliberate export action.
 
 ## Accessibility & Inclusion

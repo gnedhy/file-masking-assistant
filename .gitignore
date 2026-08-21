@@ -1,6 +1,8 @@
 node_modules/
 dist/
 .playwright-cli/
+playwright-report/
+test-results/
 tests/output/
 *.log
 *.err.log

@@ -1,5 +1,7 @@
 # Design QA
 
+> 历史记录：本文仅记录 2026-08-12 的交互原型视觉验收，不代表当前格式能力或工程验证状态。现役能力与证据以 [README.md](README.md) 和 [项目现状与验证基线](docs/2026-08-19_项目现状与验证基线.md) 为准。
+
 ## Evidence
 
 - Source visual truth: `E:\Work\Daily\2026-08-12_AI安全文件通道原型\.impeccable\review\source.png`

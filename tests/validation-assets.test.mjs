@@ -5,11 +5,11 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { JSDOM } from "jsdom";
 import { parseCsvText, restoreCsvValues, stringifyCsv } from "../src/csvCore.js";
-import { inspectOfficePackage, loadOfficePackage, restoreOfficePackage } from "../src/officeOpenXmlCore.js";
+import { analyzeDocxProtectionPackage, inspectOfficePackage, loadOfficePackage, restoreOfficePackage, tokenizeDocxPackage } from "../src/officeOpenXmlCore.js";
 import { inspectHtmlText, restoreHtmlText } from "../src/htmlCore.js";
+import { inspectTextTokens, restoreText } from "../src/textCore.js";
 
-const root = process.env.VALIDATION_ASSET_DIR;
-if (!root) throw new Error("VALIDATION_ASSET_DIR is required");
+const root = path.resolve(process.env.VALIDATION_ASSET_DIR || "tests/output/validation-assets");
 const mapFile = path.join(root, "00_测试说明", "本机映射_仅测试_A14F2026.json");
 const vault = JSON.parse(await fs.readFile(mapFile, "utf8"));
 const { mapping, taskId } = vault;
@@ -28,6 +28,21 @@ test("CSV sample restores all formal tokens and matches original values", async 
   assert.match(output, /浙江ABC染整有限公司/);
   await fs.writeFile(path.join(outputDir, `销售测试数据_还原版_${taskId}.csv`), `\uFEFF${output.replace(/^\uFEFF/, "")}`, "utf8");
 });
+
+for (const format of ["txt", "md"]) {
+  test(`${format.toUpperCase()} sample restores all formal tokens and preserves text format`, async () => {
+    const stem = format === "txt" ? "业务跟进" : "客户分析";
+    const safe = await fs.readFile(path.join(root, "08_文本样本", `${stem}_脱敏版_${taskId}.${format}`), "utf8");
+    const original = await fs.readFile(path.join(root, "08_文本样本", `${stem}_原始版.${format}`), "utf8");
+    const inspection = inspectTextTokens(safe);
+    assert.equal(inspection.taskIds[0], taskId);
+    const restored = restoreText(safe, mapping);
+    assert.equal(restored.unresolved.length, 0);
+    assert.equal(restored.text, original);
+    assert.doesNotMatch(restored.text, /\[\[/);
+    await fs.writeFile(path.join(outputDir, `${stem}_还原版_${taskId}.${format}`), restored.text, "utf8");
+  });
+}
 
 for (const format of ["docx", "pptx"]) {
   test(`${format.toUpperCase()} baseline restores and keeps unmodified package parts byte-identical`, async () => {
@@ -60,6 +75,29 @@ for (const format of ["docx", "pptx"]) {
     await fs.writeFile(path.join(outputDir, `销售经营分析_还原版_${taskId}.${format}`), await zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" }));
   });
 }
+
+test("DOCX original completes candidate selection, protection and restoration", async () => {
+  const bytes = await fs.readFile(path.join(root, "04_DOCX样本", "销售经营分析_原始版.docx"));
+  const { zip } = await loadOfficePackage(bytes, "docx");
+  const documentXml = await zip.file("word/document.xml").async("string");
+  assert.match(documentXml, /<w:tblW w:type="dxa" w:w="8640"\/>/);
+  assert.equal((documentXml.match(/<w:gridCol w:w="4320"\/>/g) ?? []).length, 2);
+  const analysis = await analyzeDocxProtectionPackage(zip);
+  assert.ok(analysis.candidates.length >= 6);
+  const protectedResult = await tokenizeDocxPackage(zip, analysis.candidates, taskId);
+  assert.ok(protectedResult.replacedOccurrences >= 9);
+  assert.equal((await inspectOfficePackage(zip, "docx", protectedResult.mapping)).unsupportedOccurrences.length, 0);
+  await fs.writeFile(path.join(outputDir, `销售经营分析_脱敏版_${taskId}.docx`), await zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" }));
+  await restoreOfficePackage(zip, "docx", protectedResult.mapping);
+  const after = await inspectOfficePackage(zip, "docx", protectedResult.mapping);
+  assert.equal(after.occurrences.length, 0);
+  const visible = ["word/document.xml", "word/header1.xml", "word/footer1.xml"]
+    .map((name) => zip.file(name)).filter(Boolean);
+  const xml = (await Promise.all(visible.map((entry) => entry.async("string")))).join("\n");
+  assert.match(xml, /浙江ABC染整有限公司/);
+  assert.match(xml, /NOVA Textiles \(Vietnam\) Co., Ltd\./);
+  await fs.writeFile(path.join(outputDir, `销售经营分析_完整往返还原版_${taskId}.docx`), await zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" }));
+});
 
 test("PPTX failure variants are blocked with the expected reason", async () => {
   const cases = [
@@ -105,10 +143,17 @@ test("HTML token placement and tampering variants fail closed", async () => {
   const cases = [
     ["异常_脚本位置含代号", "UNSUPPORTED_CONTENT"], ["异常_URL位置含代号", "UNSUPPORTED_CONTENT"],
     ["异常_事件属性含代号", "UNSUPPORTED_CONTENT"], ["异常_混合任务", "MIXED_TASKS"],
-    ["异常_残缺代号", "ALTERED_TOKENS"],
   ];
   for (const [name, expected] of cases) {
     const html = await fs.readFile(path.join(root, "05_HTML样本", `${name}_${taskId}.html`), "utf8");
     assert.throws(() => restoreHtmlText(html, window, mapping), (error) => error.code === expected, name);
   }
+});
+
+test("HTML with one altered token restores exact tokens and reports a partial result", async () => {
+  const html = await fs.readFile(path.join(root, "05_HTML样本", `异常_残缺代号_${taskId}.html`), "utf8");
+  const result = restoreHtmlText(html, window, mapping);
+  assert.equal(result.partialRestore, true);
+  assert.ok(result.restoredOccurrences > 0);
+  assert.ok(result.unresolved.length > 0);
 });

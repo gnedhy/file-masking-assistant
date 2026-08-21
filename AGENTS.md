@@ -21,11 +21,12 @@ Build app UI in `src/`. Keep `.openai/hosting.json`, `worker/index.js`, `scripts
 - The product is a local file utility, not an AI analysis product, report generator, data-security admin console, or model platform.
 - Keep claims evidence-based. Show what was checked, what stayed local, what was restored, and what remains unresolved; never claim absolute security.
 - Keep a discoverable `原理说明` entry in the header. Its primary message is that ordinary masking focuses on hiding values, while this product adds task-bound Tokens, local encrypted mappings, and complete-match restoration for an AI file round trip.
-- The current functional proof reads, tokenizes, exports, matches, and restores real standard XLSX workbooks in the browser. Do not describe it as a simulation.
-- Confirmed validation scope: `XLSX/CSV → safe XLSX/CSV → AI-generated or modified XLSX/CSV/DOCX/PPTX/safe static HTML → restored file in the same output format`.
+- The current functional proof processes real local files in the browser. Protection supports XLSX, CSV, TXT, MD, and DOCX; restoration supports XLSX, CSV, TXT, MD, DOCX, PPTX, and safe static HTML. Do not describe it as a simulation or a production-stable release.
+- Confirmed validation scope: `XLSX/CSV/TXT/MD/DOCX → safe file → AI-generated or modified XLSX/CSV/TXT/MD/DOCX/PPTX/safe static HTML → local restoration in the AI output format`.
 - HTML is restore-only in this validation stage. It must be converted to a safe static page locally: remove scripts, forms, frames, remote resources, and event handlers; do not add HTML protection input yet.
-- DOCX restoration covers body text, tables, headers, footers, and text boxes. PPTX restoration covers slide text, tables, and speaker notes. Split Office text runs must be reassembled before exact-token replacement.
+- DOCX protection and restoration cover body text, tables, headers, footers, and text boxes. PPTX restoration covers slide text, tables, and speaker notes. Split Office text runs must be reassembled before exact-token replacement.
 - Office restoration fails closed for unknown, mixed, altered, unsupported-area, or residual tokens. It does not scan images or treat an absent mapping as an error. Reject macros, encryption/corruption, OLE/embedded packages, files over 50 MB compressed, packages over 250 MB uncompressed, or packages over 5,000 entries.
+- Partial restoration is limited to safe static HTML: exact matching tokens may be restored while altered tokens in allowed visible text remain unchanged with an explicit warning. Other formats continue to fail closed on altered or incomplete tokens.
 - After automatic recognition, users can add protected columns inside the safety drawer. Keep the default two-task flow unchanged.
 - Show short tokens such as `C001` in the interface, but explain that formal tokens include a task-specific identifier to prevent cross-file mismatches.
 - Restoration must visibly match the local task before showing the restorable-token count.

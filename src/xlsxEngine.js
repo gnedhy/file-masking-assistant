@@ -194,12 +194,11 @@ export async function restoreSafeWorkbook(file, expectedTaskId) {
     );
   }
   const postCheck = inspectWorkbookTokens(workbook);
-  const postAltered = inspectWorkbookAlteredTokens(workbook, vault.mapping);
-  if (postCheck.occurrences.length || postAltered.length) {
+  if (postCheck.occurrences.length) {
     throw new SafeFileError(
       "RESIDUAL_TOKENS",
       "还原后仍检测到代号，已停止导出。",
-      [...postCheck.occurrences.map((item) => `${item.sheetName}!${item.address}`), ...postAltered.map((item) => `${item.sheetName}!${item.address}：${item.value}`)],
+      postCheck.occurrences.map((item) => `${item.sheetName}!${item.address}`),
     );
   }
   removeTaskMarker(workbook);

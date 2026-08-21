@@ -2,10 +2,13 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import JSZip from "jszip";
 import {
+  analyzeDocxProtectionPackage,
   findAlteredTokens,
   inspectOfficePackage,
   loadOfficePackage,
   restoreOfficePackage,
+  tokenizeDocxPackage,
+  validateDocxProtectionStructure,
 } from "../src/officeOpenXmlCore.js";
 
 const TASK = "7F2A9C4D";
@@ -64,6 +67,39 @@ test("DOCX restores body, tables, text boxes, headers, footers and split tokens"
   assert.deepEqual(await zip.file("word/media/image1.png").async("uint8array"), new Uint8Array([1, 2, 3, 4]));
   const after = await inspectOfficePackage(zip, format, mapping);
   assert.equal(after.occurrences.length, 0);
+});
+
+test("DOCX protection identifies labeled content and preserves first-run style", async () => {
+  const customer = "浙江ABC染整有限公司";
+  const bytes = await packageBytes("docx", {
+    "word/document.xml": `<w:document><w:body>${wParagraph("客户名称：", customer.slice(0, 4), customer.slice(4))}<w:tbl><w:tr><w:tc>${wParagraph("产品内部编码")}</w:tc><w:tc>${wParagraph("销售人员")}</w:tc></w:tr><w:tr><w:tc>${wParagraph("HT-825GK")}</w:tc><w:tc>${wParagraph("张三")}</w:tc></w:tr></w:tbl>${wParagraph(`建议由张三继续跟进${customer}`)}</w:body></w:document>`,
+    "word/header1.xml": `<w:hdr>${wParagraph(`客户名称：${customer}`)}</w:hdr>`,
+    "word/footer1.xml": `<w:ftr>${wParagraph("销售人员：张三")}</w:ftr>`,
+  });
+  const { zip } = await loadOfficePackage(bytes, "docx");
+  const analysis = await analyzeDocxProtectionPackage(zip);
+  assert.deepEqual(new Set(analysis.candidates.map((item) => item.value)), new Set([customer, "HT-825GK", "张三"]));
+  const tokenized = await tokenizeDocxPackage(zip, analysis.candidates, TASK);
+  assert.equal(tokenized.uniqueValues, 3);
+  assert.equal(tokenized.replacedOccurrences, 7);
+  const xml = await zip.file("word/document.xml").async("string");
+  assert.match(xml, /<w:rPr><w:b w:val="0"\/><\/w:rPr><w:t>\[\[C001@7F2A9C4D\]\]<\/w:t>/);
+  assert.doesNotMatch(xml, /浙江ABC染整有限公司|HT-825GK|张三/);
+  const restored = await restoreOfficePackage(zip, "docx", tokenized.mapping);
+  assert.equal(restored.restoredOccurrences, 7);
+});
+
+test("DOCX protection fails closed on comments, revisions, controls, fields and notes", async () => {
+  for (const files of [
+    { "word/document.xml": `<w:document>${wParagraph("正文")}</w:document>`, "word/comments.xml": `<w:comments><w:comment w:id="0">${wParagraph("批注")}</w:comment></w:comments>` },
+    { "word/document.xml": `<w:document><w:ins>${wParagraph("修订")}</w:ins></w:document>` },
+    { "word/document.xml": `<w:document><w:sdt>${wParagraph("控件")}</w:sdt></w:document>` },
+    { "word/document.xml": `<w:document><w:fldSimple w:instr="DATE">${wParagraph("域")}</w:fldSimple></w:document>` },
+    { "word/document.xml": `<w:document>${wParagraph("正文")}</w:document>`, "word/footnotes.xml": `<w:footnotes><w:footnote w:id="1">${wParagraph("脚注")}</w:footnote></w:footnotes>` },
+  ]) {
+    const { zip } = await loadOfficePackage(await packageBytes("docx", files), "docx");
+    await assert.rejects(() => validateDocxProtectionStructure(zip), (error) => error.code === "UNSUPPORTED_DOCX_STRUCTURE");
+  }
 });
 
 test("PPTX restores slide text, tables, notes, repeated and split tokens", async () => {
