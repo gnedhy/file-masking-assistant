@@ -286,7 +286,7 @@ components:
 
 ### Chip
 
-- **Prototype chip:** 小型白底灰边标签只标注“交互原型”，不承担筛选、导航或主状态职责。
+- **Validation chip:** 小型白底灰边标签只标注“验证版”，不承担筛选、导航或主状态职责。
 
 ## Do's and Don'ts
 

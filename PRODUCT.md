@@ -37,8 +37,8 @@ The first validation scenario uses sales-detail files containing customer, produ
 - Restoration automatically matches the local task before showing the count of restorable tokens.
 - Safety evidence is available on demand through a detail drawer; it does not change processing behavior.
 - A persistent `原理说明` entry explains the distinction from ordinary field masking: task-bound Tokens, encrypted local mappings, and fail-closed restoration checks.
-- Restoration must surface unresolved tokens and stop incomplete export rather than report silent success.
-- The functional proof performs real XLSX parsing, token replacement, download, task matching, and restoration in the browser.
+- Restoration must surface unresolved tokens rather than report silent success. XLSX, CSV, TXT, MD, DOCX, and PPTX stop incomplete export; safe static HTML may produce an explicitly warned partial restoration when exact tokens can be restored and altered tokens remain unchanged in allowed visible text.
+- The functional proof performs real local parsing, token replacement, download, task matching, and restoration for the declared formats in the browser.
 - Local mappings are encrypted with AES-GCM using a non-exportable browser key and stored in IndexedDB. This is not yet an enterprise Token Vault, OS-keystore integration, managed key lifecycle, or secure deletion guarantee.
 - Unsupported cells in a selected protected column, unknown Tokens, mixed task fingerprints, missing local mappings, and formula-contained Tokens stop export.
 - A completed transformation is shown as `文件已生成`, not `已下载`. Download is a separate explicit action through a persistent file link because a browser page cannot reliably prove that the operating system saved the file.
@@ -81,7 +81,7 @@ The approved visual reference uses a warm off-white surface, dark charcoal text,
 - Show verifiable checks instead of abstract security promises.
 - Explain that the product is designed for a reversible AI file round trip, not only for hiding source values.
 - Keep real identities and mapping inside the enterprise boundary.
-- Fail closed when restoration is incomplete or a format is unsupported.
+- Fail closed when restoration is incomplete or a format is unsupported, except for the documented safe-static-HTML partial-restoration path.
 - Preserve the original file and require a deliberate export action.
 
 ## Accessibility & Inclusion
