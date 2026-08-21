@@ -13,7 +13,13 @@ test("核心工作台、主题和说明抽屉可用", async ({ page }) => {
   await expect(page).toHaveTitle(/文件脱敏助手/);
   await expect(page.getByRole("heading", { name: "让文件安全进入 AI 工作流" })).toBeVisible();
 
-  await page.getByRole("button", { name: "深色模式" }).click();
+  const themeSelect = page.getByRole("combobox", { name: "界面颜色模式" });
+  const setTheme = async (value, buttonName) => {
+    if (await themeSelect.isVisible()) await themeSelect.selectOption(value);
+    else await page.getByRole("button", { name: buttonName }).click();
+  };
+
+  await setTheme("dark", "深色模式");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   const darkContrast = await page.evaluate(() => {
     const parse = (value) => value.match(/[\d.]+/g).slice(0, 3).map(Number);
@@ -27,7 +33,7 @@ test("核心工作台、主题和说明抽屉可用", async ({ page }) => {
     return (Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05);
   });
   expect(darkContrast).toBeGreaterThanOrEqual(4.5);
-  await page.getByRole("button", { name: "浅色模式" }).click();
+  await setTheme("light", "浅色模式");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   const lightContrast = await page.evaluate(() => {
     const parse = (value) => value.match(/[\d.]+/g).slice(0, 3).map(Number);
@@ -41,7 +47,7 @@ test("核心工作台、主题和说明抽屉可用", async ({ page }) => {
     return (Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05);
   });
   expect(lightContrast).toBeGreaterThanOrEqual(4.5);
-  await page.getByRole("button", { name: "系统模式" }).click();
+  await setTheme("system", "系统模式");
   await expect(page.locator("html")).toHaveAttribute("data-theme-preference", "system");
 
   await page.getByRole("button", { name: "原理说明" }).click();
@@ -53,6 +59,74 @@ test("核心工作台、主题和说明抽屉可用", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "把处理结果恢复为实名文件" })).toBeVisible();
   await expect(page.locator("body")).not.toHaveCSS("overflow-x", "scroll");
   expect(errors).toEqual([]);
+});
+
+test("390px 原理说明可访问且两种模式保持一致布局", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+
+  const themeControl = page.getByRole("combobox", { name: "界面颜色模式" });
+  const principleButton = page.getByRole("button", { name: "原理说明" });
+  const brandBox = await page.locator(".brand").boundingBox();
+  const themeBox = await themeControl.boundingBox();
+  expect(Math.abs((brandBox.y + brandBox.height / 2) - (themeBox.y + themeBox.height / 2))).toBeLessThanOrEqual(1);
+  expect((await page.locator(".workspace-intro h1").boundingBox()).height).toBeLessThanOrEqual(32);
+  expect((await page.locator(".workspace-intro span").boundingBox()).height).toBeLessThanOrEqual(20);
+  await expect(page.getByText("真实内容留在本机", { exact: true })).toBeVisible();
+  for (const control of [themeControl, principleButton]) {
+    const box = await control.boundingBox();
+    expect(box.width).toBeGreaterThanOrEqual(44);
+    expect(box.height).toBeGreaterThanOrEqual(44);
+  }
+
+  await principleButton.click();
+  const principleDialog = page.getByRole("dialog", { name: "它和一般脱敏工具有什么不同？" });
+  await expect(principleDialog).toHaveAttribute("aria-modal", "true");
+  await expect(page.locator("body")).toHaveCSS("overflow", "hidden");
+  await expect(page.getByRole("button", { name: "关闭原理说明" })).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("button", { name: "关闭原理说明" })).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(principleDialog).toBeHidden();
+
+  const taskPanel = page.locator(".local-task-panel");
+  const workbench = page.locator(".workbench");
+  await expect(taskPanel).toBeHidden();
+  await expect(page.getByText("选择待脱敏文件", { exact: true })).toBeVisible();
+  const chooseFileBox = await page.getByRole("button", { name: "选择文件" }).boundingBox();
+  expect(chooseFileBox.y + chooseFileBox.height).toBeLessThanOrEqual(844);
+
+  await page.evaluate(async () => {
+    const store = await import("/src/vaultStore.js");
+    await store.saveVault({
+      version: 1,
+      taskId: "MOBILE01",
+      taskName: "移动端续接任务",
+      createdAt: new Date().toISOString(),
+      mapping: { "[[C001@MOBILE01]]": { value: { type: "string", value: "测试客户" } } },
+    });
+  });
+  await page.reload();
+  await expect(taskPanel).toBeVisible();
+  let taskBox = await taskPanel.boundingBox();
+  let workbenchBox = await workbench.boundingBox();
+  expect(taskBox.y).toBeLessThan(workbenchBox.y);
+  expect(taskBox.height).toBeLessThan(170);
+
+  await page.getByRole("button", { name: "还原处理文件" }).click();
+  taskBox = await taskPanel.boundingBox();
+  workbenchBox = await workbench.boundingBox();
+  expect(taskBox.y).toBeLessThan(workbenchBox.y);
+  const noHorizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
+  expect(noHorizontalOverflow).toBe(true);
+
+  await page.setViewportSize({ width: 844, height: 390 });
+  const taskChoices = page.locator(".task-choice");
+  const firstChoice = await taskChoices.nth(0).boundingBox();
+  const secondChoice = await taskChoices.nth(1).boundingBox();
+  expect(firstChoice.y).toBe(secondChoice.y);
+  expect(firstChoice.height).toBeLessThanOrEqual(60);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
 test("CSV 文件选择、任务抽屉和失败关闭可用", async ({ page }) => {
@@ -71,7 +145,7 @@ test("CSV 文件选择、任务抽屉和失败关闭可用", async ({ page }) =>
 
   await page.getByRole("button", { name: "换一个文件" }).click();
   await expect(page.getByRole("heading", { name: "让文件安全进入 AI 工作流" })).toBeVisible();
-  await expect(page.getByText("拖入待脱敏的表格或文本文件")).toBeVisible();
+  await expect(page.locator(".empty-state__title")).toContainText("待脱敏");
   await input.setInputFiles(path.resolve("tests/fixtures/05_异常_未闭合引号.csv"));
   await expect(page.getByRole("heading", { name: "无法安全读取这个 CSV" })).toBeVisible();
   await page.getByRole("button", { name: "查看技术详情" }).click();
