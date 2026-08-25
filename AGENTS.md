@@ -16,6 +16,8 @@ Build app UI in `src/`. Keep `.openai/hosting.json`, `worker/index.js`, `scripts
 - Open the local-task drawer from the left as an overlay so it extends the left task rail without pushing the active file workbench; use a full-screen panel on mobile.
 - Keep the app header identity restrained: the product name stays around 24px on desktop and 18–21px on narrow screens; task titles and empty-state copy must remain visually subordinate and be QA'd at both 1440px and 390px widths.
 - The selected visual target is `C:\Users\gnedhy\.codex\generated_images\019fdc85-0678-7d72-9091-ea72203e8c24\exec-34879e88-f755-4e0a-b550-f5f8c362ec0d.png`.
+- Keep motion restrained, trustworthy, and task-oriented: short CSS feedback under 300ms, no perpetual decorative sweeps, no playful icon rotation, and complete reduced-motion coverage. Do not add GSAP unless a future interaction genuinely needs timeline choreography.
+- On phones, use a compact task-first workspace rather than stacking the desktop composition: a small aligned header, single-line task context, a two-option segmented task switcher, an optional local-task continuation strip, then the file action surface and a quiet three-step local-processing boundary. The primary file action should be visible in the initial 390x844 viewport, use tap-first copy, and preserve the same order in protect and restore modes.
 - Product name is `文件脱敏助手`; default to the low-learning-cost two-task interface: `制作脱敏文件` and `还原处理文件`.
 - Do not create separate simple and expert processing modes. Processing behavior stays identical; `安全详情` is progressive disclosure in a drawer.
 - The product is a local file utility, not an AI analysis product, report generator, data-security admin console, or model platform.

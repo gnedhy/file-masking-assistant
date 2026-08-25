@@ -65,24 +65,35 @@ const WORKSPACE_COPY = {
 };
 
 function ThemeSwitcher({ value, onChange }) {
+  const activeOption = THEME_OPTIONS.find((option) => option.value === value) ?? THEME_OPTIONS[2];
+  const ActiveIcon = activeOption.icon;
   return (
-    <div className="theme-switcher" role="group" aria-label="界面颜色模式">
-      {THEME_OPTIONS.map(({ value: option, label, icon: Icon }) => (
-        <button
-          key={option}
-          className="theme-switcher__option"
-          data-active={value === option}
-          type="button"
-          title={`${label}模式`}
-          aria-label={`${label}模式`}
-          aria-pressed={value === option}
-          onClick={() => onChange(option)}
-        >
-          <Icon weight={value === option ? "fill" : "regular"} />
-          <span>{label}</span>
-        </button>
-      ))}
-    </div>
+    <>
+      <div className="theme-switcher" role="group" aria-label="界面颜色模式">
+        {THEME_OPTIONS.map(({ value: option, label, icon: Icon }) => (
+          <button
+            key={option}
+            className="theme-switcher__option"
+            data-active={value === option}
+            type="button"
+            title={`${label}模式`}
+            aria-label={`${label}模式`}
+            aria-pressed={value === option}
+            onClick={() => onChange(option)}
+          >
+            <Icon weight={value === option ? "fill" : "regular"} />
+            <span>{label}</span>
+          </button>
+        ))}
+      </div>
+      <label className="theme-select" title={`${activeOption.label}模式，点击切换`}>
+        <ActiveIcon weight="fill" aria-hidden="true" />
+        <span>{activeOption.label}</span>
+        <select aria-label="界面颜色模式" value={value} onChange={(event) => onChange(event.target.value)}>
+          {THEME_OPTIONS.map(({ value: option, label }) => <option key={option} value={option}>{label}模式</option>)}
+        </select>
+      </label>
+    </>
   );
 }
 
@@ -173,7 +184,7 @@ function LocalTaskPanel({ localTasks, disabled, onContinue, onViewAll, viewAllBu
   const hasTasks = ready && localTasks.count > 0 && localTasks.latest;
 
   return (
-    <section className="local-task-panel" aria-labelledby="local-task-title" aria-live="polite">
+    <section className="local-task-panel" data-has-tasks={Boolean(hasTasks)} aria-labelledby="local-task-title" aria-live="polite">
       <div className="local-task-panel__head">
         <span className="local-task-panel__mark" aria-hidden="true"><LockKey weight="duotone" /></span>
         <div>
@@ -183,7 +194,7 @@ function LocalTaskPanel({ localTasks, disabled, onContinue, onViewAll, viewAllBu
             : localTasks.status === "error"
               ? "暂时无法读取记录"
               : hasTasks
-                ? `${localTasks.count} 个任务 · ${localTasks.mappingCount} 条映射`
+                ? `${localTasks.count} 个任务 · 映射保存在本机`
                 : "还没有可继续的任务"}</p>
         </div>
       </div>
@@ -193,11 +204,11 @@ function LocalTaskPanel({ localTasks, disabled, onContinue, onViewAll, viewAllBu
           <div className="local-task-panel__latest">
             <span>最近任务</span>
             <strong title={localTasks.latest.taskName}>{localTasks.latest.taskName}</strong>
-            <small>{formatTaskTime(localTasks.latest.createdAt)} · {localTasks.latest.uniqueValues} 条映射 · 任务 {localTasks.latest.taskId}</small>
+            <small>{formatTaskTime(localTasks.latest.createdAt)} · 任务 {localTasks.latest.taskId}</small>
             <em><CheckCircle weight="fill" />映射保存在当前浏览器</em>
           </div>
           <button className="local-task-panel__action" type="button" disabled={disabled} onClick={onContinue}>
-            导入处理后的文件<ArrowRight weight="bold" />
+            继续还原<ArrowRight weight="bold" />
           </button>
           <button ref={viewAllButtonRef} className="local-task-panel__view" type="button" onClick={onViewAll}>
             查看全部任务
@@ -333,10 +344,12 @@ function EmptyState({ mode, inputRef, localTasks, isDraggingFile }) {
         </span>
       )}
       <span className="empty-state__icon" aria-hidden="true"><UploadSimple weight="regular" /></span>
-      <strong className="empty-state__title" aria-live="polite">{isDraggingFile ? "松开鼠标，开始读取文件" : copy.emptyTitle}</strong>
+      <strong className="empty-state__title" aria-live="polite">{isDraggingFile
+        ? "松开鼠标，开始读取文件"
+        : <><span className="desktop-copy">{copy.emptyTitle}</span><span className="mobile-copy">{mode === "protect" ? "选择待脱敏文件" : "选择 AI 处理后的文件"}</span></>}</strong>
       <span className="empty-state__note">{isDraggingFile
         ? <>文件只在当前浏览器中处理，不会自动上传到网络</>
-        : <>{copy.emptyNote}<br />也可以点击按钮选择{supportedCopy}</>}</span>
+        : <><span className="desktop-copy">{copy.emptyNote}<br />也可以点击按钮选择{supportedCopy}</span><span className="mobile-copy">文件只在当前浏览器中处理<br />支持{supportedCopy}</span></>}</span>
       {!isDraggingFile && <button className="small-button" type="button" onClick={() => inputRef.current?.click()}>选择文件</button>}
       {mode === "restore" && <span className="same-device-note"><DesktopTower weight="duotone" />请在生成脱敏文件时使用的同一设备和浏览器中还原</span>}
     </div>
@@ -899,20 +912,40 @@ function SecurityDrawer({ mode, status, analysis, selectedIds, fieldModes = {}, 
 function PrinciplePopover({ onClose, triggerRef }) {
   const panelRef = useRef(null);
   const closeRef = useRef(null);
+  const compactViewport = window.matchMedia("(max-width: 640px)").matches;
 
   useEffect(() => {
+    const oldOverflow = document.body.style.overflow;
+    if (compactViewport) document.body.style.overflow = "hidden";
     window.requestAnimationFrame(() => closeRef.current?.focus());
 
     const handleKeyDown = (event) => {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape") {
+        onClose();
+        return;
+      }
+      if (!compactViewport || event.key !== "Tab") return;
+      const focusable = Array.from(panelRef.current?.querySelectorAll('button:not(:disabled), [href], input:not(:disabled), [tabindex]:not([tabindex="-1"])') ?? [])
+        .filter((element) => !element.hasAttribute("hidden") && element.getClientRects().length > 0);
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     };
     const handlePointerDown = (event) => {
-      if (!panelRef.current?.contains(event.target) && !triggerRef.current?.contains(event.target)) onClose();
+      if (!compactViewport && !panelRef.current?.contains(event.target) && !triggerRef.current?.contains(event.target)) onClose();
     };
 
     window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("pointerdown", handlePointerDown);
     return () => {
+      document.body.style.overflow = oldOverflow;
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("pointerdown", handlePointerDown);
       triggerRef.current?.focus();
@@ -920,7 +953,7 @@ function PrinciplePopover({ onClose, triggerRef }) {
   }, []);
 
   return (
-    <section className="principle-popover" ref={panelRef} role="dialog" aria-modal="false" aria-labelledby="principle-title">
+    <section className="principle-popover" ref={panelRef} role="dialog" aria-modal={compactViewport} aria-labelledby="principle-title">
       <div className="principle-popover__head">
         <div>
           <span className="principle-popover__icon" aria-hidden="true"><Question weight="bold" /></span>
@@ -1270,6 +1303,10 @@ export function App() {
           <section className="workbench" data-dragging={isDraggingFile} onDragEnter={handleDragEnter} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop} aria-label={MODE_COPY[mode].title}>
             {mainState}
             <p className="demo-caption"><Info weight="duotone" />{mode === "protect" ? "脱敏制作支持标准 XLSX、CSV、TXT、MD、DOCX。" : "还原支持 XLSX、CSV、TXT、MD、DOCX、PPTX、安全静态 HTML；不扫描图片，危险位置中的代号会拦截输出。"}</p>
+          </section>
+          <section className="mobile-boundary" aria-label="本机安全处理边界">
+            <div><LockKey weight="duotone" /><strong>真实内容留在本机</strong></div>
+            <p><span>本机识别</span><ArrowRight /><span>AI 只见代号</span><ArrowRight /><span>本机还原</span></p>
           </section>
           <input ref={inputRef} className="visually-hidden" type="file" accept={mode === "protect" ? ".xlsx,.csv,.txt,.md,.docx" : ".xlsx,.csv,.txt,.md,.docx,.pptx,.html"} tabIndex={-1} aria-label={mode === "protect" ? "选择待脱敏的 XLSX、CSV、TXT、MD 或 DOCX 文件" : "选择待还原的 XLSX、CSV、TXT、MD、DOCX、PPTX 或 HTML 文件"} onChange={handleFileInput} />
         </section>
