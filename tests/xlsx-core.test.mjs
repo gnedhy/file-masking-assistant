@@ -116,6 +116,8 @@ test("XLSX 脱敏与还原保留公式和样式", async () => {
   const inspection = inspectWorkbookTokens(roundTripped);
   assert.deepEqual(inspection.taskIds, [taskId]);
   assert.equal(roundTripped.getWorksheet("__AI安全任务").state, "veryHidden");
+  assert.equal(roundTripped.getWorksheet("__AI安全任务").getColumn(1).values.includes("任务名称"), false);
+  assert.equal(JSON.stringify(roundTripped.getWorksheet("__AI安全任务").getSheetValues()).includes("7月销售明细"), false);
 
   const restored = restoreWorkbookValues(roundTripped, protectedResult.mapping);
   assert.equal(restored.unresolved.length, 0);

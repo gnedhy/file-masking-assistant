@@ -8,6 +8,7 @@ import {
   restoreCsvValues,
   stringifyCsv,
   tokenizeCsv,
+  findCsvFormulaCells,
 } from "../src/csvCore.js";
 
 function sampleCsv() {
@@ -140,4 +141,12 @@ test("两个字母的英文姓名只在独立出现时进行文中替换", () =>
 
   assert.equal(result.replacedCells, 2);
   assert.equal(document.rows[1][1], "[[S001@7F2A9C4D]] 已完成；Boon 不是同一姓名");
+});
+
+test("CSV 识别可能被 Excel 执行的公式型字段", () => {
+  const document = parseCsvText("客户,备注\nA,=HYPERLINK(\"https://example.test\")\nB,-120\nC,+cmd|' /C calc'!A0");
+  const findings = findCsvFormulaCells(document);
+  assert.equal(findings.length, 2);
+  assert.match(findings[0].value, /^=/);
+  assert.match(findings[1].value, /^\+/);
 });

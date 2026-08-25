@@ -44,6 +44,7 @@ import {
   inspectRestoreFile,
   restoreSafeFile,
 } from "./fileEngine.js";
+import { ENTERPRISE_VAULT_ENABLED } from "./vaultStore.js";
 
 const THEME_OPTIONS = [
   { value: "light", label: "浅色", icon: Sun },
@@ -63,6 +64,7 @@ const WORKSPACE_COPY = {
     description: "核对任务标记与本机映射，匹配通过后才生成还原文件。",
   },
 };
+const VAULT_LABEL = ENTERPRISE_VAULT_ENABLED ? "企业 Vault" : "本机映射";
 
 function ThemeSwitcher({ value, onChange }) {
   const activeOption = THEME_OPTIONS.find((option) => option.value === value) ?? THEME_OPTIONS[2];
@@ -646,6 +648,10 @@ const ERROR_PRESENTATION = {
   TEXT_TOO_LARGE: { title: "文本文件超过首版安全限制", description: "TXT/MD 文件不能超过 10 MB。", guidance: "请拆分文件后重试。" },
   CSV_TOO_LARGE: { title: "CSV 超过首版安全限制", description: "CSV 文件不能超过 50 MB。", guidance: "请拆分文件后重试。" },
   CSV_LIMIT_EXCEEDED: { title: "CSV 表格规模超过安全限制", description: "文件的行数、列数或字段总量过大，系统已停止处理。", guidance: "请按月份、业务单元或工作表拆分后重试。" },
+  CSV_FORMULA_INJECTION: { title: "CSV 中包含可能执行的公式", description: "AI 处理结果中出现了 Excel 可能自动执行的公式型字段，因此没有生成还原文件。", guidance: "请在 AI 输出中将这些字段改为普通文字后再试。" },
+  SUSPICIOUS_TEXT: { title: "文件中包含不可见控制字符", description: "这些字符可能隐藏内容或改变代号识别，系统已停止处理。", guidance: "请用纯文本编辑器显示并移除不可见字符后重试。" },
+  EXTERNAL_RELATIONSHIPS: { title: "文件包含外部链接或远程连接", description: "为避免文件打开时连接外部资源，系统已停止处理。", guidance: "请在 Office 中断开外部链接并另存为标准文件。" },
+  SENSITIVE_RESIDUALS: { title: "脱敏后仍发现真实内容", description: "所选真实值仍存在于 Office 的未处理区域，因此没有生成脱敏文件。", guidance: "请根据技术详情清理对应位置，或将内容转为普通单元格后重试。" },
   INVALID_OFFICE_PACKAGE: { title: "无法安全读取这个 Office 文件", description: "文件可能已损坏、加密，或不是标准 DOCX/PPTX。", guidance: "请从 Word 或 PowerPoint 重新另存为标准文件后再试。" },
   UNSUPPORTED_DOCX_STRUCTURE: { title: "这个 Word 文件包含首版无法完整脱敏的结构", description: "检测到脚注、尾注、修订、内容控件、域或批注。为避免静默遗漏，系统已停止生成。", guidance: "请接受或拒绝修订，并移除批注、域、脚注/尾注或内容控件后，另存为标准 DOCX 再试。" },
   INVALID_HTML: { title: "无法安全读取这个 HTML 文件", description: "文件不是有效的 UTF-8 静态 HTML，或包含无法识别的二进制内容。", guidance: "请让 AI 导出为 UTF-8 的单文件 HTML 后再试。" },
@@ -792,12 +798,12 @@ function SecurityDrawer({ mode, status, analysis, selectedIds, fieldModes = {}, 
   const errorDiagnosis = error ? buildErrorDiagnosis(error) : null;
   const textCandidates = analysis?.kind === "text" ? analysis.candidates.filter((item) => selectedIds.includes(item.id)) : [];
   const detailRows = mode === "restore" && restoreInspection
-      ? [["文件格式", restoreInspection.formatLabel], ["匹配任务", restoreInspection.taskName], ["任务指纹", restoreInspection.taskId], ["发现代号", `${restoreInspection.occurrences} 处`], ["使用映射", `${restoreInspection.usedMappings} 条`]]
+      ? [["文件格式", restoreInspection.formatLabel], ["匹配任务", restoreInspection.taskName], ["任务指纹", restoreInspection.taskId], ["发现代号", `${restoreInspection.occurrences} 处`], ["使用映射", `${restoreInspection.usedMappings} 条`], ...(restoreInspection.occurrenceComparison ? [["原始 / 返回", `${restoreInspection.occurrenceComparison.original} / ${restoreInspection.occurrenceComparison.returned} 处`], ["缺失 / 新增", `${restoreInspection.occurrenceComparison.missing} / ${restoreInspection.occurrenceComparison.added} 处`]] : [])]
       : result
         ? [["任务指纹", result.taskId], [mode === "protect" ? "已替换" : "已还原", `${mode === "protect" ? result.replacedCells : result.restoredOccurrences} 处`], ...(mode === "restore" ? [["使用映射", `${result.usedMappings} 条`], ...(result.partialRestore ? [["未还原", `${result.unresolvedOccurrences.length} 处（已原样保留）`]] : [])] : []), ["外部请求", "0 次"], ["输出状态", result.partialRestore ? "部分还原" : "已通过"]]
         : analysis?.kind === "text"
-          ? [["已选内容", `${textCandidates.length} 项`], ["预计替换", `${textCandidates.reduce((sum, item) => sum + item.count, 0)} 处`], ["映射位置", "本机加密存储"], ["外部请求", "0 次"]]
-          : [["已选择列", `${selectedColumns.length} 列`], ["处理方式", `${wholeColumnCount} 列整格 · ${inlineColumnCount} 列文中`], ["映射位置", "本机加密存储"], ["外部请求", "0 次"]];
+          ? [["已选内容", `${textCandidates.length} 项`], ["预计替换", `${textCandidates.reduce((sum, item) => sum + item.count, 0)} 处`], ["映射位置", VAULT_LABEL], ["外部请求", "0 次"]]
+          : [["已选择列", `${selectedColumns.length} 列`], ["处理方式", `${wholeColumnCount} 列整格 · ${inlineColumnCount} 列文中`], ["映射位置", VAULT_LABEL], ["外部请求", "0 次"]];
 
   return (
     <aside className="security-drawer" id="security-details" ref={drawerRef} role={modal ? "dialog" : undefined} aria-modal={modal || undefined} aria-labelledby="security-details-title">
@@ -839,6 +845,9 @@ function SecurityDrawer({ mode, status, analysis, selectedIds, fieldModes = {}, 
         <dl className="evidence-list" data-complete={status === "success"}>
           {detailRows.map(([label, value]) => <div key={`${label}-${value}`}><CheckCircle weight="fill" /><dt>{label}</dt><dd>{value}</dd></div>)}
         </dl>
+      )}
+      {mode === "protect" && analysis?.riskFindings?.length > 0 && status === "ready" && (
+        <p className="drawer-note drawer-note--warning"><WarningCircle weight="duotone" /><span><strong>还发现可能需要保护的信息：</strong>{analysis.riskFindings.map((item) => `${item.label} ${item.count} 处`).join("、")}。请确认对应字段或内容是否已经加入替换范围。</span></p>
       )}
       {mode === "restore" && !error && (result || restoreInspection) && (
         <section className="restore-scope" aria-label="还原检查范围">
@@ -1277,10 +1286,10 @@ export function App() {
   return (
     <div className="app" data-mode={mode}>
       <header className="app-header">
-        <div className="brand"><span className="brand__mark" aria-hidden="true"><ShieldCheck weight="duotone" /></span><div><strong>文件脱敏助手</strong><span>本机脱敏后交给 AI，处理完成再还原。</span></div></div>
+        <div className="brand"><span className="brand__mark" aria-hidden="true"><ShieldCheck weight="duotone" /></span><div><strong>文件脱敏助手</strong><span>{ENTERPRISE_VAULT_ENABLED ? "文件本机处理，映射同步到企业 Vault。" : "本机脱敏后交给 AI，处理完成再还原。"}</span></div></div>
         <BoundaryRoute />
         <div className="local-status">
-          <span className="prototype-chip prototype-chip--quiet">验证版</span><span><DesktopTower weight="duotone" />本机模式</span><i aria-hidden="true" />
+          <span className="prototype-chip prototype-chip--quiet">V2 验证版</span><span><DesktopTower weight="duotone" />{ENTERPRISE_VAULT_ENABLED ? "企业模式" : "本机预览"}</span><i aria-hidden="true" />
           <ThemeSwitcher value={themePreference} onChange={setThemePreference} />
           <i aria-hidden="true" />
           <button ref={principleButtonRef} className="principle-trigger" type="button" aria-label="原理说明" aria-haspopup="dialog" aria-expanded={principleOpen} onClick={() => setPrincipleOpen((open) => !open)}><Question weight="bold" /><span>原理说明</span></button>

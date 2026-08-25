@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import JSZip from "jszip";
-import { preflightXlsxPackage } from "../src/xlsxPackageCore.js";
+import { assertNoSensitiveValuesInXlsxPackage, preflightXlsxPackage } from "../src/xlsxPackageCore.js";
 
 async function xlsxBytes(files = {}, contentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml") {
   const zip = new JSZip();
@@ -29,4 +29,17 @@ test("XLSX package preflight applies compressed, unpacked, entry and worksheet l
   await assert.rejects(() => preflightXlsxPackage(bytes, { compressedBytes: 999999, uncompressedBytes: 1, entries: 999, worksheets: 999 }), (error) => error.code === "PACKAGE_TOO_LARGE");
   await assert.rejects(() => preflightXlsxPackage(bytes, { compressedBytes: 999999, uncompressedBytes: 999999, entries: 1, worksheets: 999 }), (error) => error.code === "PACKAGE_TOO_LARGE");
   await assert.rejects(() => preflightXlsxPackage(bytes, { compressedBytes: 999999, uncompressedBytes: 999999, entries: 999, worksheets: 0 }), (error) => error.code === "PACKAGE_TOO_LARGE");
+});
+
+test("XLSX rejects external relationships and residual selected values", async () => {
+  const external = await xlsxBytes({
+    "xl/_rels/workbook.xml.rels": '<Relationships><Relationship TargetMode="External" Target="https://example.test/data.xlsx"/></Relationships>',
+  });
+  await assert.rejects(() => preflightXlsxPackage(external), (error) => error.code === "EXTERNAL_RELATIONSHIPS");
+
+  const residual = await xlsxBytes({ "docProps/core.xml": "<root>浙江ABC染整</root>" });
+  await assert.rejects(
+    () => assertNoSensitiveValuesInXlsxPackage(residual, { "[[C001@A1B2C3D4]]": { value: { type: "string", value: "浙江ABC染整" } } }),
+    (error) => error.code === "SENSITIVE_RESIDUALS",
+  );
 });

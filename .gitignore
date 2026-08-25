@@ -9,3 +9,5 @@ tests/output/
 .env
 .env.*
 !.env.example
+!.env.enterprise.example
+secrets/

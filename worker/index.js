@@ -4,12 +4,21 @@ export default {
     const acceptsHtml = request.headers.get("accept")?.includes("text/html");
 
     if (response.status !== 404 || !acceptsHtml || !["GET", "HEAD"].includes(request.method)) {
-      return response;
+      return withSecurityHeaders(response);
     }
 
     const indexUrl = new URL(request.url);
     indexUrl.pathname = "/index.html";
     indexUrl.search = "";
-    return env.ASSETS.fetch(new Request(indexUrl, request));
+    return withSecurityHeaders(await env.ASSETS.fetch(new Request(indexUrl, request)));
   },
 };
+
+function withSecurityHeaders(response) {
+  const headers = new Headers(response.headers);
+  headers.set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'");
+  headers.set("X-Content-Type-Options", "nosniff");
+  headers.set("Referrer-Policy", "no-referrer");
+  headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()");
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+}

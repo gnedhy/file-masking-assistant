@@ -1,5 +1,6 @@
 import {
   analyzeCsv,
+  findCsvFormulaCells,
   inspectCsvAlteredTokens,
   inspectCsvTokens,
   parseCsvText,
@@ -7,6 +8,7 @@ import {
   stringifyCsv,
   tokenizeCsv,
 } from "./csvCore.js";
+import { highRiskTextFindings, occurrenceBaseline, occurrenceComparison, protectedOutputName, suspiciousTextFindings } from "./fileSafety.js";
 import { SafeFileError } from "./xlsxEngine.js";
 import { listVaultSummaries, loadVault, saveVault } from "./vaultStore.js";
 
@@ -44,6 +46,8 @@ async function loadCsv(file) {
   const bytes = new Uint8Array(await file.arrayBuffer());
   if (bytes.includes(0)) throw new SafeFileError("INVALID_CSV", "文件中包含二进制内容，无法作为 CSV 安全处理。");
   const decoded = decodeCsv(bytes);
+  const suspicious = suspiciousTextFindings(decoded.text.replace(/^\uFEFF/, ""));
+  if (suspicious.length) throw new SafeFileError("SUSPICIOUS_TEXT", "CSV 包含不可见控制字符，已停止处理。", suspicious);
   let document;
   try {
     document = parseCsvText(decoded.text);
@@ -79,7 +83,7 @@ export async function inspectCsvProtectionFile(file) {
   const document = await loadCsv(file);
   const analysis = analyzeCsv(document);
   if (!analysis.columns.length) throw new SafeFileError("NO_TABLE", "没有识别到可处理的 CSV 表头。");
-  return { ...analysis, sourceEncoding: document.sourceEncoding };
+  return { ...analysis, sourceEncoding: document.sourceEncoding, riskFindings: highRiskTextFindings(stringifyCsv(document)) };
 }
 
 export async function createSafeCsv(file, selectedColumns) {
@@ -98,10 +102,10 @@ export async function createSafeCsv(file, selectedColumns) {
     );
   }
 
-  await saveVault({ version: 1, taskId: id, taskName, createdAt, sourceFileName: file.name, mapping: result.mapping });
+  await saveVault({ version: 2, taskId: id, taskName, createdAt, sourceFormat: "csv", occurrenceBaseline: occurrenceBaseline(inspectCsvTokens(document).occurrences), mapping: result.mapping });
   return {
     buffer: encodeCsv(document),
-    outputName: `${taskName}_脱敏版_${id}.csv`,
+    outputName: protectedOutputName("csv", id),
     mimeType: "text/csv;charset=utf-8",
     format: "csv",
     taskId: id,
@@ -115,6 +119,8 @@ export async function createSafeCsv(file, selectedColumns) {
 
 export async function inspectCsvRestoreFile(file) {
   const document = await loadCsv(file);
+  const formulas = findCsvFormulaCells(document);
+  if (formulas.length) throw new SafeFileError("CSV_FORMULA_INJECTION", "CSV 中包含可能被 Excel 执行的公式型字段，已停止输出。", formulas.map((item) => `${item.location}：${item.value}`));
   const inspection = inspectCsvTokens(document);
   if (!inspection.occurrences.length) {
     const altered = inspectCsvAlteredTokens(document, await combinedLocalMapping());
@@ -137,11 +143,13 @@ export async function inspectCsvRestoreFile(file) {
       ...altered.map((item) => `${item.location}：代号已改写为 ${item.value}`),
     ]);
   }
-  return { taskId: id, taskName: vault.taskName, occurrences: inspection.occurrences.length, uniqueTokens: inspection.uniqueTokens.length };
+  return { taskId: id, taskName: vault.taskName, occurrences: inspection.occurrences.length, uniqueTokens: inspection.uniqueTokens.length, occurrenceComparison: occurrenceComparison(vault.occurrenceBaseline, inspection.occurrences) };
 }
 
 export async function restoreSafeCsv(file, expectedTaskId) {
   const document = await loadCsv(file);
+  const formulas = findCsvFormulaCells(document);
+  if (formulas.length) throw new SafeFileError("CSV_FORMULA_INJECTION", "CSV 中包含可能被 Excel 执行的公式型字段，已停止输出。", formulas.map((item) => `${item.location}：${item.value}`));
   const inspection = inspectCsvTokens(document);
   if (inspection.taskIds.length !== 1 || inspection.taskIds[0] !== expectedTaskId) {
     throw new SafeFileError("TASK_CHANGED", "CSV 与刚才检查通过的任务不一致，已停止还原。", inspection.taskIds);

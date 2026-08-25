@@ -3,12 +3,14 @@ import assert from "node:assert/strict";
 import JSZip from "jszip";
 import {
   analyzeDocxProtectionPackage,
+  assertNoSensitiveValuesInOfficePackage,
   findAlteredTokens,
   inspectOfficePackage,
   loadOfficePackage,
   restoreOfficePackage,
   tokenizeDocxPackage,
   validateDocxProtectionStructure,
+  scrubOfficeMetadata,
 } from "../src/officeOpenXmlCore.js";
 
 const TASK = "7F2A9C4D";
@@ -100,6 +102,31 @@ test("DOCX protection fails closed on comments, revisions, controls, fields and 
     const { zip } = await loadOfficePackage(await packageBytes("docx", files), "docx");
     await assert.rejects(() => validateDocxProtectionStructure(zip), (error) => error.code === "UNSUPPORTED_DOCX_STRUCTURE");
   }
+});
+
+test("DOCX protection rejects external relationships and scrubs document metadata", async () => {
+  const bytes = await packageBytes("docx", {
+    "word/document.xml": `<w:document>${wParagraph("客户名称：浙江ABC染整")}</w:document>`,
+    "word/_rels/document.xml.rels": '<Relationships><Relationship TargetMode="External" Target="https://example.test/template.dotx"/></Relationships>',
+    "docProps/core.xml": "<cp:coreProperties><dc:title>客户项目</dc:title><dc:creator>张三</dc:creator></cp:coreProperties>",
+    "docProps/app.xml": "<Properties><Company>浙江ABC染整</Company><Manager>张三</Manager></Properties>",
+    "docProps/custom.xml": '<Properties><property name="客户名称"><vt:lpwstr>浙江ABC染整</vt:lpwstr></property></Properties>',
+  });
+  const { zip } = await loadOfficePackage(bytes, "docx");
+  await assert.rejects(() => validateDocxProtectionStructure(zip), (error) => error.code === "UNSUPPORTED_DOCX_STRUCTURE" && error.details.some((item) => item.includes("外部链接")));
+  zip.remove("word/_rels/document.xml.rels");
+  await scrubOfficeMetadata(zip);
+  assert.equal((await zip.file("docProps/core.xml").async("string")).includes("张三"), false);
+  assert.equal((await zip.file("docProps/app.xml").async("string")).includes("浙江ABC染整"), false);
+  assert.equal((await zip.file("docProps/custom.xml").async("string")).includes("客户名称"), false);
+});
+
+test("DOCX protection blocks selected values left in an unhandled XML part", async () => {
+  const { zip } = await loadOfficePackage(await packageBytes("docx", {
+    "word/document.xml": `<w:document>${wParagraph(C)}</w:document>`,
+    "word/charts/chart1.xml": "<c:chart><c:v>浙江ABC染整有限公司</c:v></c:chart>",
+  }), "docx");
+  await assert.rejects(() => assertNoSensitiveValuesInOfficePackage(zip, mapping), (error) => error.code === "SENSITIVE_RESIDUALS" && error.details[0].includes("chart1.xml"));
 });
 
 test("PPTX restores slide text, tables, notes, repeated and split tokens", async () => {

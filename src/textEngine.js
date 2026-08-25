@@ -1,6 +1,7 @@
 import { addManualCandidate, analyzeText, inspectAlteredTextTokens, inspectTextTokens, restoreText, tokenizeText } from "./textCore.js";
 import { SafeFileError } from "./xlsxEngine.js";
 import { listVaultSummaries, loadVault, saveVault } from "./vaultStore.js";
+import { highRiskTextFindings, occurrenceBaseline, occurrenceComparison, protectedOutputName, suspiciousTextFindings } from "./fileSafety.js";
 
 const MAX_TEXT_BYTES = 10 * 1024 * 1024;
 
@@ -23,6 +24,8 @@ async function loadText(file) {
   } catch {
     throw new SafeFileError("INVALID_TEXT_ENCODING", "TXT/MD 仅支持标准 UTF-8 或 UTF-8 BOM 编码。");
   }
+  const suspicious = suspiciousTextFindings(text);
+  if (suspicious.length) throw new SafeFileError("SUSPICIOUS_TEXT", "文件包含不可见控制字符，已停止处理。", suspicious);
   if (!text.trim()) throw new SafeFileError("EMPTY_TEXT", "文件中没有可处理的文字内容。");
   return { text, hadBom, newline: text.includes("\r\n") ? "CRLF" : "LF" };
 }
@@ -39,7 +42,7 @@ async function combinedLocalMapping() {
 
 export async function inspectTextProtectionFile(file, format) {
   const document = await loadText(file);
-  return { ...analyzeText(document.text, format), format, formatLabel: format === "md" ? "Markdown" : "TXT", encoding: document.hadBom ? "UTF-8 BOM" : "UTF-8", newline: document.newline };
+  return { ...analyzeText(document.text, format), format, formatLabel: format === "md" ? "Markdown" : "TXT", encoding: document.hadBom ? "UTF-8 BOM" : "UTF-8", newline: document.newline, riskFindings: highRiskTextFindings(document.text) };
 }
 
 export function addManualTextCandidate(analysis, value) {
@@ -53,9 +56,9 @@ export async function createSafeText(file, selectedCandidates, format) {
   const taskName = baseName(file.name);
   const result = tokenizeText(document.text, selectedCandidates, taskId);
   if (!result.replacedOccurrences) throw new SafeFileError("NO_VALUES", "没有找到可替换的完整文字。");
-  await saveVault({ version: 1, taskId, taskName, createdAt: new Date().toISOString(), sourceFileName: file.name, mapping: result.mapping });
+  await saveVault({ version: 2, taskId, taskName, createdAt: new Date().toISOString(), sourceFormat: format, occurrenceBaseline: occurrenceBaseline(inspectTextTokens(result.text).occurrences), mapping: result.mapping });
   return {
-    buffer: encodeText(result.text, document.hadBom), outputName: `${taskName}_脱敏版_${taskId}.${format}`,
+    buffer: encodeText(result.text, document.hadBom), outputName: protectedOutputName(format, taskId),
     mimeType: "text/plain;charset=utf-8", format, taskId, taskName,
     replacedCells: result.replacedOccurrences, uniqueValues: result.uniqueValues,
     warnings: [], notices: [`保留 ${document.hadBom ? "UTF-8 BOM" : "UTF-8"} 与 ${document.newline} 换行`],
@@ -80,6 +83,7 @@ export async function inspectTextRestoreFile(file, format) {
   return {
     format, formatLabel: format === "md" ? "Markdown" : "TXT", taskId, taskName: vault.taskName,
     occurrences: inspection.occurrences.length, usedMappings: inspection.uniqueTokens.length,
+    occurrenceComparison: occurrenceComparison(vault.occurrenceBaseline, inspection.occurrences),
     checkedAreas: ["全部纯文本内容"], uncheckedAreas: ["图片、脚本和嵌入对象（纯文本本身不包含）"],
     warnings: ["未出现的映射不代表异常；Markdown 不会被渲染或执行。"],
   };

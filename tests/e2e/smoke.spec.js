@@ -114,8 +114,9 @@ test("390px 原理说明可访问且两种模式保持一致布局", async ({ pa
   expect(taskBox.height).toBeLessThan(170);
 
   await page.getByRole("button", { name: "还原处理文件" }).click();
-  taskBox = await taskPanel.boundingBox();
-  workbenchBox = await workbench.boundingBox();
+  await expect(taskPanel).toBeVisible();
+  taskBox = await taskPanel.evaluate((element) => element.getBoundingClientRect().toJSON());
+  workbenchBox = await workbench.evaluate((element) => element.getBoundingClientRect().toJSON());
   expect(taskBox.y).toBeLessThan(workbenchBox.y);
   const noHorizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
   expect(noHorizontalOverflow).toBe(true);
@@ -127,6 +128,23 @@ test("390px 原理说明可访问且两种模式保持一致布局", async ({ pa
   expect(firstChoice.y).toBe(secondChoice.y);
   expect(firstChoice.height).toBeLessThanOrEqual(60);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
+
+test("两个浏览器标签页首次并发创建任务不会覆盖加密密钥", async ({ browser }) => {
+  const context = await browser.newContext();
+  const [pageA, pageB] = await Promise.all([context.newPage(), context.newPage()]);
+  await Promise.all([pageA.goto("/"), pageB.goto("/")]);
+  const save = (page, taskId) => page.evaluate(async (id) => {
+    const store = await import("/src/vaultStore.js");
+    await store.saveVault({ version: 2, taskId: id, taskName: id, createdAt: new Date().toISOString(), sourceFormat: "txt", mapping: { [`[[C001@${id}]]`]: id } });
+  }, taskId);
+  await Promise.all([save(pageA, "AAAA0001"), save(pageB, "BBBB0002")]);
+  const loaded = await pageA.evaluate(async () => {
+    const store = await import("/src/vaultStore.js");
+    return Promise.all([store.loadVault("AAAA0001"), store.loadVault("BBBB0002")]);
+  });
+  expect(loaded.map((item) => item.taskId)).toEqual(["AAAA0001", "BBBB0002"]);
+  await context.close();
 });
 
 test("CSV 文件选择、任务抽屉和失败关闭可用", async ({ page }) => {
@@ -166,7 +184,7 @@ test("并发任务共用同一密钥，密钥丢失后失败关闭", async ({ pa
     await Promise.all([store.saveVault(vault("AAAA0001")), store.saveVault(vault("BBBB0002"))]);
     const loaded = await Promise.all([store.loadVault("AAAA0001"), store.loadVault("BBBB0002")]);
     const database = await new Promise((resolve, reject) => {
-      const request = indexedDB.open("ai-safe-file-vault", 1);
+      const request = indexedDB.open("file-masking-assistant-v2-vault", 1);
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
     });
@@ -198,7 +216,7 @@ test("损坏密文不会生成错误映射", async ({ page }) => {
       mapping: { "[[C001@BROKEN01]]": { value: { type: "string", value: "真实名称" } } },
     });
     const database = await new Promise((resolve, reject) => {
-      const request = indexedDB.open("ai-safe-file-vault", 1);
+      const request = indexedDB.open("file-masking-assistant-v2-vault", 1);
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
     });

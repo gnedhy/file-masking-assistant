@@ -369,7 +369,6 @@ export function addTaskMarker(workbook, metadata) {
     ["文件脱敏助手", "请勿修改此页"],
     ["版本", "1"],
     ["任务指纹", metadata.taskId],
-    ["任务名称", metadata.taskName],
     ["生成时间", metadata.createdAt],
   ]);
   sheet.state = "veryHidden";

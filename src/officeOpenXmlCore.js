@@ -235,13 +235,48 @@ function tableCandidates(xml, sourceText) {
 export async function validateDocxProtectionStructure(zip) {
   const details = [];
   for (const entry of Object.values(zip.files)) {
-    if (entry.dir || !/^word\/.*\.xml$/i.test(entry.name)) continue;
+    if (entry.dir || !/^word\/.*\.(?:xml|rels)$/i.test(entry.name)) continue;
     const xml = await entry.async("string");
     if (/^word\/comments\d*\.xml$/i.test(entry.name) && /<w:comment\b/i.test(xml)) details.push(`${entry.name}：批注`);
     if (/<w:(?:ins|del|moveFrom|moveTo|sdt|fldSimple|instrText|trackRevisions)\b/i.test(xml)) details.push(`${entry.name}：修订、内容控件或域`);
     if (/^word\/(?:footnotes|endnotes)\.xml$/i.test(entry.name) && /<w:(?:footnote|endnote)\b[^>]*w:id="(?:[1-9]\d*)"/i.test(xml)) details.push(`${entry.name}：脚注或尾注`);
+    if (/\.rels$/i.test(entry.name) && /TargetMode=["']External["']/i.test(xml)) details.push(`${entry.name}：外部链接或远程模板`);
   }
   if (details.length) throw Object.assign(new Error("DOCX 包含首版无法完整脱敏的结构。"), { code: "UNSUPPORTED_DOCX_STRUCTURE", details });
+}
+
+export async function assertNoSensitiveValuesInOfficePackage(zip, mapping) {
+  const values = [...new Set(Object.values(mapping).map(serializedValueAsText).filter(Boolean))];
+  const findings = [];
+  for (const entry of Object.values(zip.files)) {
+    if (entry.dir || !/\.(?:xml|rels)$/i.test(entry.name)) continue;
+    const text = allXmlText(await entry.async("string"));
+    for (const value of values) if (text.includes(value)) findings.push(`${entry.name}：仍包含已选真实值`);
+  }
+  if (findings.length) throw Object.assign(new Error("Word 文件的未处理区域仍包含已选真实值，已停止生成。"), { code: "SENSITIVE_RESIDUALS", details: findings.slice(0, 50) });
+}
+
+export async function scrubOfficeMetadata(zip) {
+  const core = zip.file("docProps/core.xml");
+  if (core) {
+    let xml = await core.async("string");
+    xml = xml.replace(/<(?:dc:title|dc:subject|dc:creator|cp:keywords|dc:description|cp:lastModifiedBy|cp:revision|cp:category|cp:contentStatus|dc:identifier|dc:language|cp:version)\b[^>]*>[\s\S]*?<\/(?:dc:title|dc:subject|dc:creator|cp:keywords|dc:description|cp:lastModifiedBy|cp:revision|cp:category|cp:contentStatus|dc:identifier|dc:language|cp:version)>/gi, "");
+    zip.file("docProps/core.xml", xml);
+  }
+  const app = zip.file("docProps/app.xml");
+  if (app) {
+    let xml = await app.async("string");
+    xml = xml.replace(/<(Company|Manager|HyperlinkBase|Template)>[\s\S]*?<\/\1>/gi, "<$1></$1>");
+    zip.file("docProps/app.xml", xml);
+  }
+  const custom = zip.file("docProps/custom.xml");
+  if (custom) {
+    let sequence = 0;
+    let xml = await custom.async("string");
+    xml = xml.replace(/name="[^"]*"/gi, () => `name="Property${++sequence}"`);
+    xml = xml.replace(/<vt:[A-Za-z0-9]+\b[^>]*>[\s\S]*?<\/vt:[A-Za-z0-9]+>/gi, (match) => match.replace(/>[^<]*</, "></"));
+    zip.file("docProps/custom.xml", xml);
+  }
 }
 
 export async function analyzeDocxProtectionPackage(zip) {

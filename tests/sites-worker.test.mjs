@@ -16,6 +16,9 @@ test("serves existing static assets without a fallback", async () => {
 
   assert.equal(response.status, 200);
   assert.deepEqual(calls, ["/assets/app.js"]);
+  assert.match(response.headers.get("content-security-policy"), /default-src 'self'/);
+  assert.equal(response.headers.get("x-content-type-options"), "nosniff");
+  assert.equal(response.headers.get("referrer-policy"), "no-referrer");
 });
 
 test("falls back to index.html for an unknown app route", async () => {

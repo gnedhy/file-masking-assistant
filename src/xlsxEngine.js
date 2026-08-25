@@ -8,7 +8,8 @@ import {
   tokenizeWorkbook,
 } from "./xlsxCore.js";
 import { deleteVault, listVaultSummaries, loadVault, saveVault } from "./vaultStore.js";
-import { preflightXlsxPackage } from "./xlsxPackageCore.js";
+import { assertNoSensitiveValuesInXlsxPackage, preflightXlsxPackage } from "./xlsxPackageCore.js";
+import { highRiskTextFindings, occurrenceBaseline, occurrenceComparison, protectedOutputName } from "./fileSafety.js";
 
 export class SafeFileError extends Error {
   constructor(code, message, details = []) {
@@ -60,6 +61,16 @@ function scrubWorkbookMetadata(workbook) {
   workbook.description = "";
   workbook.keywords = "";
   workbook.category = "";
+  workbook.title = "";
+  workbook.manager = "";
+  workbook.language = "";
+  workbook.revision = "";
+  workbook.contentStatus = "";
+  workbook.identifier = "";
+  workbook.version = "";
+  workbook.created = new Date(0);
+  workbook.modified = new Date(0);
+  workbook.lastPrinted = undefined;
 }
 
 function taskId() {
@@ -77,7 +88,11 @@ export async function inspectProtectionFile(file) {
   if (!analysis.columns.length) {
     throw new SafeFileError("NO_TABLE", "没有识别到可处理的表头，请确认文件中包含普通表格。");
   }
-  return analysis;
+  const text = [];
+  workbook.eachSheet((worksheet) => worksheet.eachRow({ includeEmpty: false }, (row) => row.eachCell({ includeEmpty: false }, (cell) => {
+    if (typeof cell.text === "string") text.push(cell.text);
+  })));
+  return { ...analysis, riskFindings: highRiskTextFindings(text.join("\n")) };
 }
 
 export async function createSafeWorkbook(file, selectedColumns) {
@@ -103,19 +118,21 @@ export async function createSafeWorkbook(file, selectedColumns) {
   workbook.calcProperties.fullCalcOnLoad = true;
   workbook.calcProperties.forceFullCalc = true;
   const buffer = await workbook.xlsx.writeBuffer();
+  await assertNoSensitiveValuesInXlsxPackage(buffer, result.mapping);
   const vault = {
-    version: 1,
+    version: 2,
     taskId: id,
     taskName,
     createdAt,
-    sourceFileName: file.name,
+    sourceFormat: "xlsx",
+    occurrenceBaseline: occurrenceBaseline(inspectWorkbookTokens(workbook).occurrences),
     mapping: result.mapping,
   };
   await saveVault(vault);
 
   return {
     buffer,
-    outputName: `${taskName}_脱敏版_${id}.xlsx`,
+    outputName: protectedOutputName("xlsx", id),
     mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     format: "xlsx",
     taskId: id,
@@ -170,6 +187,7 @@ export async function inspectRestoreFile(file) {
     taskName: vault.taskName,
     occurrences: inspection.occurrences.length,
     uniqueTokens: inspection.uniqueTokens.length,
+    occurrenceComparison: occurrenceComparison(vault.occurrenceBaseline, inspection.occurrences),
   };
 }
 

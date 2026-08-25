@@ -1,6 +1,8 @@
 import { SafeFileError } from "./xlsxEngine.js";
 import { listVaultSummaries, loadVault, saveVault } from "./vaultStore.js";
-import { OFFICE_FORMATS, analyzeDocxProtectionPackage, findAlteredTokens, inspectOfficePackage, loadOfficePackage, restoreOfficePackage, tokenizeDocxPackage } from "./officeOpenXmlCore.js";
+import { OFFICE_FORMATS, analyzeDocxProtectionPackage, assertNoSensitiveValuesInOfficePackage, findAlteredTokens, inspectOfficePackage, loadOfficePackage, restoreOfficePackage, tokenizeDocxPackage } from "./officeOpenXmlCore.js";
+import { scrubOfficeMetadata } from "./officeOpenXmlCore.js";
+import { highRiskTextFindings, occurrenceBaseline, occurrenceComparison, protectedOutputName } from "./fileSafety.js";
 
 function extensionOf(filename) {
   return filename.toLowerCase().match(/\.([a-z0-9]+)$/)?.[1] ?? "";
@@ -61,7 +63,8 @@ export async function inspectDocxProtectionFile(file) {
   try {
     const { zip, format } = await checkedPackage(file);
     if (format !== "docx") throw new SafeFileError("FORMAT_MISMATCH", "DOCX 脱敏入口只处理标准 Word 文件。");
-    return await analyzeDocxProtectionPackage(zip);
+    const analysis = await analyzeDocxProtectionPackage(zip);
+    return { ...analysis, riskFindings: highRiskTextFindings(analysis.sourceText) };
   } catch (error) {
     throw asSafeFileError(error);
   }
@@ -80,10 +83,12 @@ export async function createSafeDocx(file, selectedCandidates) {
     const postCheck = await inspectOfficePackage(zip, "docx");
     const unknown = postCheck.uniqueTokens.filter((token) => !result.mapping[token]);
     if (postCheck.unsupportedOccurrences.length || unknown.length) throw new SafeFileError("UNSUPPORTED_CONTENT", "代号出现在 DOCX 首版不处理的区域。", [...postCheck.unsupportedOccurrences.map((item) => `${item.location}：${item.token}`), ...unknown]);
-    await saveVault({ version: 1, taskId, taskName, createdAt: new Date().toISOString(), sourceFileName: file.name, mapping: result.mapping });
+    await assertNoSensitiveValuesInOfficePackage(zip, result.mapping);
+    await scrubOfficeMetadata(zip);
+    await saveVault({ version: 2, taskId, taskName, createdAt: new Date().toISOString(), sourceFormat: "docx", occurrenceBaseline: occurrenceBaseline(postCheck.occurrences), mapping: result.mapping });
     return {
       buffer: await zip.generateAsync({ type: "arraybuffer", compression: "DEFLATE", compressionOptions: { level: 6 } }),
-      outputName: `${taskName}_脱敏版_${taskId}.docx`, mimeType: OFFICE_FORMATS.docx.mimeType,
+      outputName: protectedOutputName("docx", taskId), mimeType: OFFICE_FORMATS.docx.mimeType,
       format: "docx", formatLabel: "Word", taskId, taskName,
       replacedCells: result.replacedOccurrences, uniqueValues: result.uniqueValues,
       checkedAreas: result.checkedAreas, uncheckedAreas: OFFICE_FORMATS.docx.unchecked,
@@ -123,6 +128,7 @@ export async function inspectOfficeRestoreFile(file) {
       checkedAreas: inspection.checkedAreas,
       uncheckedAreas: inspection.uncheckedAreas,
       warnings: ["图片未扫描，未出现的映射不代表异常。", "真实内容变长后可能产生换行或溢出，请在 Office 中复核版式。"],
+      occurrenceComparison: occurrenceComparison(vault.occurrenceBaseline, inspection.occurrences),
     };
   } catch (error) {
     throw asSafeFileError(error);

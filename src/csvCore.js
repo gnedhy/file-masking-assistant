@@ -368,3 +368,14 @@ export function restoreCsvValues(document, mapping) {
   });
   return { restoredOccurrences, unresolved: [], inspection };
 }
+
+export function findCsvFormulaCells(document) {
+  const findings = [];
+  document.rows.forEach((row, rowIndex) => row.forEach((value, columnIndex) => {
+    const text = String(value ?? "");
+    const trimmed = text.replace(/^[\t\r\n ]+/, "");
+    if (!/^[=+\-@]/.test(trimmed) || /^[+\-]\d+(?:[.,]\d+)?%?$/.test(trimmed)) return;
+    findings.push({ location: `第 ${rowIndex + 1} 行，第 ${columnIndex + 1} 列`, value: trimmed.slice(0, 80) });
+  }));
+  return findings;
+}

@@ -1,7 +1,10 @@
-const DB_NAME = "ai-safe-file-vault";
+import { deleteEnterpriseVault, listEnterpriseVaultSummaries, loadEnterpriseVault, saveEnterpriseVault } from "./enterpriseVaultStore.js";
+
+const DB_NAME = "file-masking-assistant-v2-vault";
 const DB_VERSION = 1;
 const KEY_ID = "device-aes-key";
 let keyCreationPromise = null;
+export const ENTERPRISE_VAULT_ENABLED = import.meta.env.VITE_VAULT_MODE === "enterprise";
 
 export class VaultStoreError extends Error {
   constructor(code, message, cause) {
@@ -55,9 +58,21 @@ async function getOrCreateKey(database) {
     keyCreationPromise = (async () => {
       const key = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
       const writeTransaction = database.transaction("settings", "readwrite");
-      writeTransaction.objectStore("settings").put(key, KEY_ID);
+      const addRequest = writeTransaction.objectStore("settings").add(key, KEY_ID);
+      const inserted = await new Promise((resolve, reject) => {
+        addRequest.onsuccess = () => resolve(true);
+        addRequest.onerror = (event) => {
+          if (addRequest.error?.name !== "ConstraintError") { reject(addRequest.error); return; }
+          event.preventDefault();
+          event.stopPropagation();
+          resolve(false);
+        };
+      });
       await transactionDone(writeTransaction);
-      return key;
+      if (inserted) return key;
+      const winner = await getExistingKey(database);
+      if (!winner) throw new VaultStoreError("VAULT_KEY_MISSING", "无法取得本机映射密钥。");
+      return winner;
     })().finally(() => { keyCreationPromise = null; });
   }
   return keyCreationPromise;
@@ -71,6 +86,7 @@ async function getExistingKey(database) {
 }
 
 export async function saveVault(vault) {
+  if (ENTERPRISE_VAULT_ENABLED) return saveEnterpriseVault(vault);
   let database;
   try {
     database = await openDatabase();
@@ -100,6 +116,7 @@ export async function saveVault(vault) {
 }
 
 export async function loadVault(taskId) {
+  if (ENTERPRISE_VAULT_ENABLED) return loadEnterpriseVault(taskId);
   let database;
   try {
     database = await openDatabase();
@@ -121,6 +138,7 @@ export async function loadVault(taskId) {
 }
 
 export async function deleteVault(taskId) {
+  if (ENTERPRISE_VAULT_ENABLED) return deleteEnterpriseVault(taskId);
   let database;
   try {
     database = await openDatabase();
@@ -136,6 +154,7 @@ export async function deleteVault(taskId) {
 }
 
 export async function listVaultSummaries() {
+  if (ENTERPRISE_VAULT_ENABLED) return listEnterpriseVaultSummaries();
   let database;
   try {
     database = await openDatabase();

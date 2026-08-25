@@ -1,5 +1,11 @@
 # Prototype Instructions
 
+## V2 isolation
+
+- This worktree is the only development location for V2. Do not edit, publish, migrate, or delete data from the frozen V1.1 directory or its Sites project.
+- V2 uses port `5174`, IndexedDB `file-masking-assistant-v2-vault`, branch `feat/v2-enterprise-vault`, and a separate Sites project.
+- V1.1 local mappings are intentionally not migrated. Enterprise mode keeps file bytes in the browser and sends only task mappings and metadata to the enterprise Vault.
+
 Run the local server yourself and open the preview in the browser available to this environment. Do not give the user server-start instructions when you can run it.
 
 Before making substantial visual changes, use the Product Design plugin's `get-context` skill when the visual source is unclear or no longer matches the current goal. When the user gives durable prototype-specific design feedback, preferences, or decisions, record them in `AGENTS.md`.

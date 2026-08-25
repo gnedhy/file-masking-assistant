@@ -33,5 +33,38 @@ export async function preflightXlsxPackage(input, limits = XLSX_LIMITS) {
   const contentTypes = await contentTypesFile.async("string");
   if (/macroEnabled|vnd\.ms-office\.vbaProject/i.test(contentTypes)) throw packageError("EMBEDDED_OBJECTS", "宏格式 XLSX 不在首版支持范围内。");
   if (!/spreadsheetml\.sheet\.main\+xml/i.test(contentTypes)) throw packageError("FORMAT_MISMATCH", "文件扩展名是 XLSX，但内部内容不是标准工作簿。");
+  for (const entry of entries.filter((item) => /\.rels$/i.test(item.name))) {
+    const relationships = await entry.async("string");
+    if (/TargetMode=["']External["']/i.test(relationships)) {
+      throw packageError("EXTERNAL_RELATIONSHIPS", "XLSX 包含外部链接或远程连接，已停止处理。", [entry.name]);
+    }
+  }
   return { zip, entries: entries.length, totalSize, worksheetCount };
+}
+
+function mappingText(entry) {
+  const value = entry?.value;
+  if (!value) return "";
+  if (value.type === "richText") return String(value.text ?? "");
+  return String(value.value ?? "");
+}
+
+function escapeXml(value) {
+  return String(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
+}
+
+export async function assertNoSensitiveValuesInXlsxPackage(input, mapping) {
+  const zip = await JSZip.loadAsync(input);
+  const values = [...new Set(Object.values(mapping).map(mappingText).filter(Boolean))];
+  const residual = [];
+  for (const entry of Object.values(zip.files)) {
+    if (entry.dir || !/\.(?:xml|rels)$/i.test(entry.name)) continue;
+    const content = await entry.async("string");
+    for (const value of values) {
+      if (content.includes(value) || content.includes(escapeXml(value))) residual.push(`${entry.name}：${value}`);
+      if (residual.length >= 50) break;
+    }
+    if (residual.length >= 50) break;
+  }
+  if (residual.length) throw packageError("SENSITIVE_RESIDUALS", "脱敏后的 XLSX 仍在未处理区域包含所选真实值。", residual);
 }
