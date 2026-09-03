@@ -9,12 +9,12 @@
     "preview": "vite preview",
     "start:enterprise": "node server/index.mjs",
     "test": "npm run test:unit && npm run test:validation && npm run build && npm run test:sites",
-    "test:unit": "node --test tests/xlsx-core.test.mjs tests/xlsx-package.test.mjs tests/csv-core.test.mjs tests/text-core.test.mjs tests/multi-fixture-roundtrip.test.mjs tests/office-openxml.test.mjs tests/html-core.test.mjs tests/file-preflight.test.mjs tests/file-safety.test.mjs tests/enterprise-vault.test.mjs",
+    "test:unit": "node --test tests/token-format.test.mjs tests/xlsx-core.test.mjs tests/xlsx-package.test.mjs tests/csv-core.test.mjs tests/text-core.test.mjs tests/multi-fixture-roundtrip.test.mjs tests/office-openxml.test.mjs tests/html-core.test.mjs tests/file-preflight.test.mjs tests/file-safety.test.mjs tests/enterprise-vault.test.mjs",
     "test:e2e": "playwright test",
     "generate:validation": "node scripts/generate-validation-assets.mjs tests/output/validation-assets",
     "generate:performance": "node scripts/generate-performance-assets.mjs tests/output/performance-assets",
     "test:validation": "npm run generate:validation && node --test tests/validation-assets.test.mjs",
-    "audit:prod": "npm audit --omit=dev --audit-level=moderate",
+    "audit:prod": "npm audit --audit-level=moderate",
     "test:xlsx": "node --test tests/xlsx-core.test.mjs",
     "test:xlsx-package": "node --test tests/xlsx-package.test.mjs",
     "test:csv": "node --test tests/csv-core.test.mjs",
@@ -38,8 +38,7 @@
   "devDependencies": {
     "@playwright/test": "1.62.1",
     "docx": "^9.7.1",
-    "jsdom": "^30.0.1",
-    "pptxgenjs": "^4.0.1"
+    "jsdom": "^30.0.1"
   },
   "overrides": {
     "exceljs": {
