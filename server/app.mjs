@@ -1,4 +1,4 @@
-const TOKEN_PATTERN = /^\[\[[CPSX]\d{3}@[A-F0-9]{8}\]\]$/;
+import { parseEntityToken } from "../src/tokenFormat.js";
 
 function json(data, status = 200, headers = {}) {
   return new Response(JSON.stringify(data), { status, headers: { "content-type": "application/json; charset=utf-8", ...headers } });
@@ -18,7 +18,7 @@ function validVault(vault) {
     && typeof vault.sourceFormat === "string" && vault.sourceFormat.length <= 12
     && vault.mapping && typeof vault.mapping === "object"
     && Object.keys(vault.mapping).length > 0
-    && Object.keys(vault.mapping).every((token) => TOKEN_PATTERN.test(token) && token.includes(`@${vault.taskId}`))
+    && Object.keys(vault.mapping).every((token) => parseEntityToken(token)?.taskId === vault.taskId)
     && (!vault.occurrenceBaseline || Object.entries(vault.occurrenceBaseline).every(([token, count]) => vault.mapping[token] && Number.isInteger(count) && count >= 0));
 }
 

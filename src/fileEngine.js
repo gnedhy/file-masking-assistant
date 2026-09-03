@@ -5,7 +5,9 @@ import {
   restoreSafeWorkbook,
 } from "./xlsxEngine.js";
 import { createSafeCsv, inspectCsvProtectionFile, inspectCsvRestoreFile, restoreSafeCsv } from "./csvEngine.js";
-import { preflightFile } from "./filePreflight.js";
+import { FILE_SIZE_LIMITS, preflightFile } from "./filePreflight.js";
+
+export { FILE_SIZE_LIMITS };
 
 export const SUPPORTED_PROTECT_FORMATS = ["xlsx", "csv", "txt", "md", "docx"];
 export const SUPPORTED_RESTORE_FORMATS = ["xlsx", "csv", "txt", "md", "docx", "pptx", "html"];

@@ -150,10 +150,7 @@ test("HTML token placement and tampering variants fail closed", async () => {
   }
 });
 
-test("HTML with one altered token restores exact tokens and reports a partial result", async () => {
+test("HTML with one altered token fails closed", async () => {
   const html = await fs.readFile(path.join(root, "05_HTML样本", `异常_残缺代号_${taskId}.html`), "utf8");
-  const result = restoreHtmlText(html, window, mapping);
-  assert.equal(result.partialRestore, true);
-  assert.ok(result.restoredOccurrences > 0);
-  assert.ok(result.unresolved.length > 0);
+  assert.throws(() => restoreHtmlText(html, window, mapping), (error) => error.code === "ALTERED_TOKENS");
 });

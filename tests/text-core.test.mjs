@@ -30,6 +30,8 @@ test("TXT/MD 精确脱敏与还原保持原有换行和非目标内容", () => {
   const manual = addManualCandidate(analysis, "Atlas-9");
   const tokenized = tokenizeText(source, [...analysis.candidates, manual], "A14F2026");
   assert.equal(tokenized.replacedOccurrences, 7);
+  assert.equal(tokenized.text.includes("[[产品内部编码:P001@A14F2026]]"), true);
+  assert.equal(tokenized.text.includes("[[敏感信息:X001@A14F2026]]"), true);
   assert.equal(tokenized.text.includes("\r\n"), true);
   assert.equal(tokenized.text.includes("https://"), false, "fixture has no URL and should remain deterministic");
   const inspection = inspectTextTokens(tokenized.text);

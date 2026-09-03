@@ -1,4 +1,6 @@
-const TOKEN_PATTERN_SOURCE = String.raw`\[\[([CPSX]\d{3,6})@([A-F0-9]{8})\]\]`;
+import { createEntityToken, parseEntityToken, tokenPattern } from "./tokenFormat.js";
+
+export { tokenPattern };
 
 const NARRATIVE_HEADER_PATTERN = /(反馈|备注|说明|描述|原因|计划|进展|推进|意见|要求|情况|feedback|notes?|remarks?|comments?|description|followup|progress|plan)/i;
 
@@ -15,10 +17,6 @@ function normalizeHeader(header) {
     .toLowerCase()
     .split(/[\n（(【[\/／|]/, 1)[0]
     .replace(/[\s_：:\-—]+/g, "");
-}
-
-export function tokenPattern(flags = "g") {
-  return new RegExp(TOKEN_PATTERN_SOURCE, flags);
 }
 
 export function findKnownShortTokens(text, knownShortTokens) {
@@ -177,10 +175,6 @@ export function analyzeWorkbook(workbook) {
   };
 }
 
-function createToken(prefix, sequence, taskId) {
-  return `[[${prefix}${String(sequence).padStart(3, "0")}@${taskId}]]`;
-}
-
 function inlineDictionaryEligible(text) {
   const normalized = String(text ?? "").trim();
   if (!normalized) return false;
@@ -302,7 +296,7 @@ export function tokenizeWorkbook(workbook, selectedColumns, taskId) {
       let token = tokenByValue.get(key);
       if (!token) {
         counters[prefix] += 1;
-        token = createToken(prefix, counters[prefix], taskId);
+        token = createEntityToken({ label: column.header, category: column.category, prefix, sequence: counters[prefix], taskId });
         tokenByValue.set(key, token);
         mapping[token] = {
           value: serializeValue(value),
@@ -414,7 +408,7 @@ export function inspectWorkbookTokens(workbook) {
 }
 
 export function inspectWorkbookAlteredTokens(workbook, mapping) {
-  const knownShortTokens = new Set(Object.keys(mapping).map((token) => token.match(/^\[\[([^@]+)@/)?.[1]).filter(Boolean));
+  const knownShortTokens = new Set(Object.keys(mapping).map((token) => parseEntityToken(token)?.shortToken).filter(Boolean));
   const findings = [];
   workbook.eachSheet((worksheet) => {
     if (worksheet.name === "__AI安全任务") return;

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { preflightFile } from "../src/filePreflight.js";
+import { FILE_SIZE_LIMITS, preflightFile } from "../src/filePreflight.js";
 import { highRiskTextFindings, protectedOutputName, suspiciousTextFindings } from "../src/fileSafety.js";
 
 function file(name, bytes, type = "") {
@@ -36,6 +36,33 @@ test("MIME 不一致只作为证据警告，内容签名仍是决定依据", asy
   const result = await preflightFile(file("报告.docx", [0x50, 0x4b, 0x03, 0x04], "application/octet-stream"), ["docx"]);
   assert.equal(result.preflightWarnings.length, 1);
   assert.equal(result.reportedMimeType, "application/octet-stream");
+});
+
+test("文件尺寸在读取前按格式限制，并返回预检证据", async () => {
+  for (const [format, sizeLimit] of Object.entries(FILE_SIZE_LIMITS)) {
+    let oversizedRead = false;
+    const oversized = {
+      name: `超大.${format}`,
+      type: "application/octet-stream",
+      size: sizeLimit + 1,
+      arrayBuffer: async () => { oversizedRead = true; return new ArrayBuffer(0); },
+    };
+    const expectedCode = format === "csv" ? "CSV_TOO_LARGE" : ["txt", "md"].includes(format) ? "TEXT_TOO_LARGE" : "FILE_TOO_LARGE";
+    await assert.rejects(() => preflightFile(oversized, [format]), (error) => error.code === expectedCode);
+    assert.equal(oversizedRead, false, `${format} 超限后不应读取内容`);
+
+    const signature = ["xlsx", "docx", "pptx"].includes(format) ? [0x50, 0x4b, 0x03, 0x04] : [0x41];
+    const boundary = {
+      name: `边界.${format}`,
+      type: "",
+      size: sizeLimit,
+      arrayBuffer: async () => Uint8Array.from(signature).buffer,
+    };
+    const result = await preflightFile(boundary, [format]);
+    assert.equal(result.fileSize, sizeLimit);
+    assert.equal(result.sizeLimit, sizeLimit);
+    assert.equal(result.sizeCheck, "passed");
+  }
 });
 
 test("V2 脱敏文件名不携带原文件名，文本检查识别不可见字符", () => {

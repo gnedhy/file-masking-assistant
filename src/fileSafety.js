@@ -1,3 +1,5 @@
+import { parseEntityToken } from "./tokenFormat.js";
+
 export function protectedOutputName(format, taskId) {
   return `脱敏文件_${taskId}.${format}`;
 }
@@ -11,12 +13,21 @@ export function occurrenceComparison(baseline, occurrences) {
   const returned = occurrenceBaseline(occurrences);
   const tokens = new Set([...Object.keys(baseline), ...Object.keys(returned)]);
   let original = 0, current = 0, missing = 0, added = 0;
+  const byToken = [];
   for (const token of tokens) {
     const before = baseline[token] || 0, after = returned[token] || 0;
     original += before; current += after;
     missing += Math.max(0, before - after); added += Math.max(0, after - before);
+    byToken.push({
+      token,
+      semanticLabel: parseEntityToken(token)?.semanticLabel ?? null,
+      original: before,
+      returned: after,
+      missing: Math.max(0, before - after),
+      added: Math.max(0, after - before),
+    });
   }
-  return { original, returned: current, missing, added };
+  return { original, returned: current, missing, added, byToken };
 }
 
 export function suspiciousTextFindings(text) {

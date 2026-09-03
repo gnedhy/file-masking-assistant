@@ -85,7 +85,7 @@ test("DOCX protection identifies labeled content and preserves first-run style",
   assert.equal(tokenized.uniqueValues, 3);
   assert.equal(tokenized.replacedOccurrences, 7);
   const xml = await zip.file("word/document.xml").async("string");
-  assert.match(xml, /<w:rPr><w:b w:val="0"\/><\/w:rPr><w:t>\[\[C001@7F2A9C4D\]\]<\/w:t>/);
+  assert.match(xml, /<w:rPr><w:b w:val="0"\/><\/w:rPr><w:t>\[\[客户名称:C001@7F2A9C4D\]\]<\/w:t>/);
   assert.doesNotMatch(xml, /浙江ABC染整有限公司|HT-825GK|张三/);
   const restored = await restoreOfficePackage(zip, "docx", tokenized.mapping);
   assert.equal(restored.restoredOccurrences, 7);
@@ -148,11 +148,12 @@ test("PPTX restores slide text, tables, notes, repeated and split tokens", async
 });
 
 test("DOCX 可以还原来自 XLSX 富文本映射的可见文字", async () => {
+  const semanticCustomer = `[[客户名称:C001@${TASK}]]`;
   const bytes = await packageBytes("docx", {
-    "word/document.xml": `<w:document><w:body>${wParagraph(C)}</w:body></w:document>`,
+    "word/document.xml": `<w:document><w:body>${wParagraph(semanticCustomer)}</w:body></w:document>`,
   });
   const richTextMapping = {
-    [C]: {
+    [semanticCustomer]: {
       value: {
         type: "richText",
         text: "浙江 ABC染整（重点）",

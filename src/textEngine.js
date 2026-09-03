@@ -1,9 +1,10 @@
 import { addManualCandidate, analyzeText, inspectAlteredTextTokens, inspectTextTokens, restoreText, tokenizeText } from "./textCore.js";
 import { SafeFileError } from "./xlsxEngine.js";
+import { FILE_SIZE_LIMITS } from "./filePreflight.js";
 import { listVaultSummaries, loadVault, saveVault } from "./vaultStore.js";
 import { highRiskTextFindings, occurrenceBaseline, occurrenceComparison, protectedOutputName, suspiciousTextFindings } from "./fileSafety.js";
 
-const MAX_TEXT_BYTES = 10 * 1024 * 1024;
+const MAX_TEXT_BYTES = FILE_SIZE_LIMITS.txt;
 
 function baseName(filename) {
   return filename.replace(/\.(?:txt|md)$/i, "");
@@ -95,6 +96,7 @@ export async function restoreSafeText(file, expectedTaskId, format) {
   if (inspection.taskIds.length !== 1 || inspection.taskIds[0] !== expectedTaskId) throw new SafeFileError("TASK_CHANGED", "文件与刚才检查通过的任务不一致。");
   const vault = await loadVault(expectedTaskId);
   if (!vault) throw new SafeFileError("VAULT_NOT_FOUND", "本机映射已不存在，无法还原。");
+  const comparison = occurrenceComparison(vault.occurrenceBaseline, inspection.occurrences);
   const altered = inspectAlteredTextTokens(document.text, vault.mapping);
   if (altered.length) throw new SafeFileError("ALTERED_TOKENS", "文件中存在残缺或被改写的已知代号。", altered.map((item) => item.value));
   const result = restoreText(document.text, vault.mapping);
@@ -105,6 +107,7 @@ export async function restoreSafeText(file, expectedTaskId, format) {
     outputName: `${baseName(file.name).replace(/_(?:脱敏版|还原版)(?:_[A-F0-9]{8})?$/i, "")}_还原版_${expectedTaskId}.${format}`,
     mimeType: "text/plain;charset=utf-8", format, taskId: expectedTaskId, taskName: vault.taskName,
     restoredOccurrences: result.restoredOccurrences, usedMappings: result.inspection.uniqueTokens.length,
+    occurrenceComparison: comparison,
     checkedAreas: ["全部纯文本内容"], uncheckedAreas: ["图片、脚本和嵌入对象（纯文本本身不包含）"],
     warnings: ["保留原 UTF-8 BOM 与换行格式；Markdown 未渲染或执行。"],
   };

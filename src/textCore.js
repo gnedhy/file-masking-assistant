@@ -1,4 +1,5 @@
-import { classifyHeader, findKnownShortTokens, tokenPattern } from "./xlsxCore.js";
+import { classifyHeader, findKnownShortTokens } from "./xlsxCore.js";
+import { createEntityToken, parseEntityToken, tokenPattern } from "./tokenFormat.js";
 
 function splitMarkdownRow(line) {
   return line.trim().replace(/^\||\|$/g, "").split("|").map((cell) => cell.trim());
@@ -96,10 +97,6 @@ export function addManualCandidate(analysis, value) {
   return item;
 }
 
-function createToken(prefix, sequence, taskId) {
-  return `[[${prefix}${String(sequence).padStart(3, "0")}@${taskId}]]`;
-}
-
 export function tokenizeText(text, selectedCandidates, taskId) {
   const counters = { C: 0, P: 0, S: 0, X: 0 };
   const mapping = {};
@@ -108,7 +105,7 @@ export function tokenizeText(text, selectedCandidates, taskId) {
     .map((item) => {
       const prefix = item.prefix || "X";
       counters[prefix] += 1;
-      return { ...item, token: createToken(prefix, counters[prefix], taskId), used: false };
+      return { ...item, token: createEntityToken({ label: item.label, category: item.category, prefix, sequence: counters[prefix], taskId }), used: false };
     });
   let output = "";
   let replacedOccurrences = 0;
@@ -140,7 +137,7 @@ export function inspectTextTokens(text) {
 }
 
 export function inspectAlteredTextTokens(text, mapping) {
-  const knownShortTokens = new Set(Object.keys(mapping).map((token) => token.match(/^\[\[([^@]+)@/)?.[1]).filter(Boolean));
+  const knownShortTokens = new Set(Object.keys(mapping).map((token) => parseEntityToken(token)?.shortToken).filter(Boolean));
   const withoutFull = text.replace(tokenPattern(), " ");
   const malformed = [...withoutFull.matchAll(/\[\[[^\]]{1,80}(?:\]\]|$)/g)].map((match) => ({ value: match[0], index: match.index }));
   if (malformed.length) return malformed;

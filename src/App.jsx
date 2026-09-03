@@ -4,6 +4,7 @@ import {
   CaretRight,
   Check,
   CheckCircle,
+  Copy,
   Database,
   DesktopTower,
   DownloadSimple,
@@ -37,6 +38,7 @@ import {
 import {
   createSafeFile,
   FILE_FORMAT_META,
+  FILE_SIZE_LIMITS,
   SUPPORTED_PROTECT_FORMATS,
   SUPPORTED_RESTORE_FORMATS,
   fileFormatFromName,
@@ -65,6 +67,8 @@ const WORKSPACE_COPY = {
   },
 };
 const VAULT_LABEL = ENTERPRISE_VAULT_ENABLED ? "企业 Vault" : "本机映射";
+const TEXT_SIZE_LIMIT_MB = FILE_SIZE_LIMITS.csv / 1024 / 1024;
+const OFFICE_SIZE_LIMIT_MB = FILE_SIZE_LIMITS.xlsx / 1024 / 1024;
 
 function ThemeSwitcher({ value, onChange }) {
   const activeOption = THEME_OPTIONS.find((option) => option.value === value) ?? THEME_OPTIONS[2];
@@ -351,7 +355,7 @@ function EmptyState({ mode, inputRef, localTasks, isDraggingFile }) {
         : <><span className="desktop-copy">{copy.emptyTitle}</span><span className="mobile-copy">{mode === "protect" ? "选择待脱敏文件" : "选择 AI 处理后的文件"}</span></>}</strong>
       <span className="empty-state__note">{isDraggingFile
         ? <>文件只在当前浏览器中处理，不会自动上传到网络</>
-        : <><span className="desktop-copy">{copy.emptyNote}<br />也可以点击按钮选择{supportedCopy}</span><span className="mobile-copy">文件只在当前浏览器中处理<br />支持{supportedCopy}</span></>}</span>
+        : <><span className="desktop-copy">{copy.emptyNote}<br />也可以点击按钮选择{supportedCopy}</span><span className="mobile-copy">文件只在当前浏览器中处理<br />支持{supportedCopy}</span><small className="empty-state__limit">文本类上限 {TEXT_SIZE_LIMIT_MB} MB · Office 上限 {OFFICE_SIZE_LIMIT_MB} MB</small></>}</span>
       {!isDraggingFile && <button className="small-button" type="button" onClick={() => inputRef.current?.click()}>选择文件</button>}
       {mode === "restore" && <span className="same-device-note"><DesktopTower weight="duotone" />请在生成脱敏文件时使用的同一设备和浏览器中还原</span>}
     </div>
@@ -381,6 +385,9 @@ function ReadyState({ mode, file, analysis, selectedIds, fieldModes = {}, restor
   const hasOnlyInlineFields = mode === "protect" && analysis?.kind !== "text" && selectedColumns.length > 0 && wholeColumnCount === 0;
   const valueCount = selectedColumns.reduce((sum, column) => sum + column.valueCount, 0);
   const valueUnit = fileFormatFromName(file.name) === "csv" ? "个字段值" : "个单元格";
+  const comparison = restoreInspection?.occurrenceComparison;
+  const hasContentLoss = Boolean(comparison?.missing);
+  const changedTokens = comparison?.byToken?.filter((item) => item.missing || item.added) ?? [];
   const summary = mode === "protect"
     ? analysis?.kind === "text"
       ? `已选择 ${selectedCandidates.length} 项敏感内容，共出现 ${selectedCandidates.reduce((sum, item) => sum + item.count, 0)} 处`
@@ -401,17 +408,20 @@ function ReadyState({ mode, file, analysis, selectedIds, fieldModes = {}, restor
       )}
       <p className="recognition-line"><CheckCircle weight="duotone" /><span>{summary}</span></p>
       {mode === "restore" && (
-        <section className="compatibility-check" data-partial={restoreInspection.partialRestore} aria-labelledby="compatibility-check-title">
+        <section className="compatibility-check" data-partial={restoreInspection.partialRestore} data-content-loss={hasContentLoss} aria-labelledby="compatibility-check-title">
           <div className="compatibility-check__head">
-            {restoreInspection.partialRestore ? <WarningCircle weight="fill" aria-hidden="true" /> : <CheckCircle weight="fill" aria-hidden="true" />}
-            <span><strong id="compatibility-check-title">{restoreInspection.partialRestore ? "可以继续部分还原" : "兼容性预检已通过"}</strong><small>{restoreInspection.partialRestore
+            {restoreInspection.partialRestore || hasContentLoss ? <WarningCircle weight="fill" aria-hidden="true" /> : <CheckCircle weight="fill" aria-hidden="true" />}
+            <span><strong id="compatibility-check-title">{restoreInspection.partialRestore ? "可以继续部分还原" : hasContentLoss ? "可以还原，但 AI 返回内容有缺失" : "兼容性预检已通过"}</strong><small>{restoreInspection.partialRestore
               ? `可确认的代号会正常还原；${restoreInspection.unresolvedOccurrences.length} 处被改写的代号将原样保留。`
+              : hasContentLoss
+                ? `AI 返回内容中有 ${comparison.missing} 处代号未出现；现有完整代号仍可正常还原。`
               : `${restoreInspection.formatLabel} 文件与本机任务已匹配，可以安全进入还原。`}</small></span>
           </div>
           <dl>
             <div><dt>会检查并还原</dt><dd>{restoreInspection.checkedAreas.join("、") || "文件文字区域"}</dd></div>
             <div><dt>首版暂不检查</dt><dd>{restoreInspection.uncheckedAreas.join("、") || "无"}</dd></div>
           </dl>
+          {changedTokens.length > 0 && <div className="token-change-list" aria-label="代号出现次数变化">{changedTokens.map((item) => <div key={item.token}><strong>{item.semanticLabel || item.token}</strong><span>原始 {item.original} · 返回 {item.returned}</span></div>)}</div>}
           {restoreInspection.warnings?.length > 0 && <p><Info weight="duotone" />{restoreInspection.warnings[0]}</p>}
         </section>
       )}
@@ -494,15 +504,30 @@ function WorkbookDownloadLink({ mode, result, requested, secondary = false, onRe
   );
 }
 
-function AiHandoff() {
+function AiHandoff({ taskId }) {
+  const [copyState, setCopyState] = useState("idle");
+  const instruction = `文件中的 [[字段名称:P001@${taskId}]] 是已脱敏的业务实体代号。请将它作为对应字段的真实对象参与分析。凡输出中引用该对象，必须完整原样保留代号，不要因为它像编码而删除、缩写、拆分、重命名或改写。可以调整内容结构和出现次数，但不要猜测真实身份。`;
+  const copyInstruction = async () => {
+    try {
+      await navigator.clipboard.writeText(instruction);
+      setCopyState("copied");
+    } catch {
+      setCopyState("manual");
+    }
+  };
   return (
     <div className="ai-handoff" aria-label="脱敏文件交给 AI 后的操作步骤">
-      <div className="ai-handoff__head"><strong>接下来，用任意 AI 处理脱敏文件</strong><span>不要改写 [[C001@任务号]] 这类代号</span></div>
+      <div className="ai-handoff__head"><strong>接下来，用任意 AI 处理脱敏文件</strong><span>语义代号必须原样保留</span></div>
       <ol>
         <li data-state="done"><b><Check weight="bold" /></b><span><strong>确认下载</strong><small>在浏览器下载列表中确认文件</small></span></li>
         <li data-state="active"><b>2</b><span><strong>交给 AI 处理</strong><small>可生成 Excel、CSV、Word 或 PPT，保留代号原样</small></span></li>
         <li><b>3</b><span><strong>带回本机还原</strong><small>完成后导入 AI 处理后的文件</small></span></li>
       </ol>
+      <div className="ai-handoff__instruction">
+        <button type="button" onClick={copyInstruction}><Copy weight="bold" />{copyState === "copied" ? "处理说明已复制" : "复制 AI 处理说明"}</button>
+        <span>粘贴给 AI，帮助它把代号当作客户、产品或人员继续处理。</span>
+      </div>
+      {copyState === "manual" && <label className="ai-handoff__manual"><span>自动复制失败，请手动复制：</span><textarea readOnly value={instruction} onFocus={(event) => event.currentTarget.select()} /></label>}
       <p><DesktopTower weight="duotone" />可以稍后回来，但请使用当前设备和浏览器。</p>
     </div>
   );
@@ -513,21 +538,24 @@ function SuccessState({ mode, result, downloadRequested, detailsOpen, onDetails,
   const count = protect ? result.replacedCells : result.restoredOccurrences;
   const outputFileName = splitFileName(result.outputName);
   const handoff = protect && downloadRequested;
+  const hasContentLoss = !protect && Boolean(result.occurrenceComparison?.missing);
   const valueUnit = result.format === "csv" ? "个字段值" : ["txt", "md", "docx"].includes(result.format) ? "处文字" : "个单元格";
   const restoreBoundary = ["csv", "txt", "md"].includes(result.format)
     ? "全部文本内容已检查；未出现的映射不代表异常。"
     : "图片未扫描，未出现的映射不代表异常。";
   return (
-    <div className="success-state" data-handoff={handoff} data-partial={Boolean(result.partialRestore)} role="status" aria-live="polite">
-      <span className="success-state__seal" aria-hidden="true">{result.partialRestore ? <WarningCircle weight="fill" /> : <Check weight="bold" />}</span>
+    <div className="success-state" data-handoff={handoff} data-partial={Boolean(result.partialRestore)} data-content-loss={hasContentLoss} role="status" aria-live="polite">
+      <span className="success-state__seal" aria-hidden="true">{result.partialRestore || hasContentLoss ? <WarningCircle weight="fill" /> : <Check weight="bold" />}</span>
       <p className="state-kicker">{handoff ? "脱敏文件已准备好" : "文件已生成"}</p>
-      <h2>{protect ? handoff ? "现在可以交给 AI 处理" : "脱敏文件可以下载" : result.partialRestore ? "部分还原文件可以下载" : "还原文件可以下载"}</h2>
+      <h2>{protect ? handoff ? "现在可以交给 AI 处理" : "脱敏文件可以下载" : result.partialRestore ? "部分还原文件可以下载" : hasContentLoss ? "还原完成，但 AI 返回内容有缺失" : "还原文件可以下载"}</h2>
       <p className="state-description">{protect
         ? handoff
           ? "已发起下载。请先确认文件已保存，再交给任意 AI 处理；完成后回到这里导入处理后的文件。"
           : `已替换 ${count} ${valueUnit}，${result.uniqueValues} 个唯一真实值仅保存在本机。请点击下方按钮保存文件。`
         : result.partialRestore
           ? `已还原 ${count} 处代号，另有 ${result.unresolvedOccurrences.length} 处被改写的代号未还原并原样保留。此文件已含真实信息，请勿再次交给外部 AI。`
+          : hasContentLoss
+            ? `已还原 ${count} 处代号；AI 返回内容中有 ${result.occurrenceComparison.missing} 处代号未出现，已删除内容无法自动恢复。请下载后复核内容完整性。`
           : `发现并还原 ${count} 处代号，使用 ${result.usedMappings} 条本机映射。${restoreBoundary}`}</p>
       <div className="output-file">
         <FileMark size="medium" format={result.format ?? "xlsx"} />
@@ -535,17 +563,19 @@ function SuccessState({ mode, result, downloadRequested, detailsOpen, onDetails,
           <strong className="output-file__name" title={result.outputName}><span>{outputFileName.base}</span><b>{outputFileName.extension}</b></strong>
           <small>{downloadRequested ? "已发起下载 · 请在浏览器下载列表确认" : `已生成 · 等待下载 · 任务 ${result.taskId}`}</small>
         </span>
-        {result.partialRestore ? <WarningCircle weight="fill" aria-label="部分还原" /> : <CheckCircle weight="fill" aria-label="已通过检查" />}
+        {result.partialRestore || hasContentLoss ? <WarningCircle weight="fill" aria-label={result.partialRestore ? "部分还原" : "内容有缺失"} /> : <CheckCircle weight="fill" aria-label="已通过检查" />}
       </div>
       <button className="evidence-trigger evidence-trigger--success" type="button" onClick={onDetails} aria-expanded={detailsOpen}>
-        <span><ShieldCheck weight="duotone" /><span className="evidence-trigger__summary"><strong>{result.partialRestore ? "部分还原已完成" : "安全检查已通过"}</strong><small>{protect
+        <span><ShieldCheck weight="duotone" /><span className="evidence-trigger__summary"><strong>{result.partialRestore ? "部分还原已完成" : hasContentLoss ? "还原完成，内容有缺失" : "安全检查已通过"}</strong><small>{protect
           ? `本机完成 · 已替换 ${count} ${valueUnit} · ${result.uniqueValues} 条映射已保存`
           : result.partialRestore
             ? `本机完成 · 已还原 ${count} 处 · ${result.unresolvedOccurrences.length} 处未还原并已标记`
+            : hasContentLoss
+              ? `本机完成 · 已还原 ${count} 处 · ${result.occurrenceComparison.missing} 处代号未返回`
             : `本机完成 · 已还原 ${count} 处 · 使用 ${result.usedMappings} 条本机映射 · 未发现未还原代号`}</small></span></span>
         <span className="evidence-trigger__action">查看验证证据<CaretRight weight="bold" /></span>
       </button>
-      {handoff && <AiHandoff />}
+      {handoff && <AiHandoff taskId={result.taskId} />}
       {protect ? (
         <>
           <div className="action-row">
@@ -646,18 +676,18 @@ const ERROR_PRESENTATION = {
   INVALID_TEXT: { title: "无法安全读取这个文本文件", description: "文件包含二进制内容或空字符，不是标准纯文本。", guidance: "请另存为 UTF-8 的 TXT 或 MD 文件后再试。" },
   INVALID_TEXT_ENCODING: { title: "无法识别文本编码", description: "TXT/MD 仅支持标准 UTF-8 或 UTF-8 BOM。", guidance: "请用文本编辑器另存为 UTF-8 后再试。" },
   TEXT_TOO_LARGE: { title: "文本文件超过首版安全限制", description: "TXT/MD 文件不能超过 10 MB。", guidance: "请拆分文件后重试。" },
-  CSV_TOO_LARGE: { title: "CSV 超过首版安全限制", description: "CSV 文件不能超过 50 MB。", guidance: "请拆分文件后重试。" },
+  CSV_TOO_LARGE: { title: "CSV 超过当前安全限制", description: "CSV 文件不能超过 10 MB。", guidance: "请按月份、业务单元或数据范围拆分后重试。" },
   CSV_LIMIT_EXCEEDED: { title: "CSV 表格规模超过安全限制", description: "文件的行数、列数或字段总量过大，系统已停止处理。", guidance: "请按月份、业务单元或工作表拆分后重试。" },
   CSV_FORMULA_INJECTION: { title: "CSV 中包含可能执行的公式", description: "AI 处理结果中出现了 Excel 可能自动执行的公式型字段，因此没有生成还原文件。", guidance: "请在 AI 输出中将这些字段改为普通文字后再试。" },
   SUSPICIOUS_TEXT: { title: "文件中包含不可见控制字符", description: "这些字符可能隐藏内容或改变代号识别，系统已停止处理。", guidance: "请用纯文本编辑器显示并移除不可见字符后重试。" },
   EXTERNAL_RELATIONSHIPS: { title: "文件包含外部链接或远程连接", description: "为避免文件打开时连接外部资源，系统已停止处理。", guidance: "请在 Office 中断开外部链接并另存为标准文件。" },
-  SENSITIVE_RESIDUALS: { title: "脱敏后仍发现真实内容", description: "所选真实值仍存在于 Office 的未处理区域，因此没有生成脱敏文件。", guidance: "请根据技术详情清理对应位置，或将内容转为普通单元格后重试。" },
+  SENSITIVE_RESIDUALS: { title: "脱敏后仍发现真实内容", description: "已选真实值仍出现在文件的其他位置，因此没有生成脱敏文件。", guidance: "请返回调整选择字段，将相关叙述列设为“仅替换文中实体”后重试。" },
   INVALID_OFFICE_PACKAGE: { title: "无法安全读取这个 Office 文件", description: "文件可能已损坏、加密，或不是标准 DOCX/PPTX。", guidance: "请从 Word 或 PowerPoint 重新另存为标准文件后再试。" },
   UNSUPPORTED_DOCX_STRUCTURE: { title: "这个 Word 文件包含首版无法完整脱敏的结构", description: "检测到脚注、尾注、修订、内容控件、域或批注。为避免静默遗漏，系统已停止生成。", guidance: "请接受或拒绝修订，并移除批注、域、脚注/尾注或内容控件后，另存为标准 DOCX 再试。" },
   INVALID_HTML: { title: "无法安全读取这个 HTML 文件", description: "文件不是有效的 UTF-8 静态 HTML，或包含无法识别的二进制内容。", guidance: "请让 AI 导出为 UTF-8 的单文件 HTML 后再试。" },
   FORMAT_MISMATCH: { title: "文件扩展名与内部格式不一致", description: "为避免把伪装文件当作 Office 文件处理，系统已停止输出。", guidance: "请用原应用重新另存文件，不要只修改扩展名。" },
   EMBEDDED_OBJECTS: { title: "文件包含首版不处理的嵌入内容", description: "检测到宏、OLE、ActiveX 或嵌入包，系统已停止输出。", guidance: "请移除嵌入对象并另存为标准 DOCX/PPTX 后再试。" },
-  FILE_TOO_LARGE: { title: "文件超过首版安全限制", description: "压缩文件不能超过 50 MB。", guidance: "请拆分文件或压缩图片后重试。" },
+  FILE_TOO_LARGE: { title: "文件超过当前安全限制", description: "Office 文件不能超过 20 MB，HTML 不能超过 10 MB。", guidance: "请拆分文件或压缩图片后重试；较大 Office 文件建议使用电脑处理。" },
   PACKAGE_TOO_LARGE: { title: "文件内部结构超过安全限制", description: "解包总量或内部文件项过多，系统已停止处理。", guidance: "请精简文件后重试。" },
   ALTERED_TOKENS: { title: "有些代号已被改写或截断", description: "系统只还原完整且能由本机映射确认的正式代号。", guidance: "请让 AI 保留完整代号，或重新生成处理文件。" },
   UNSUPPORTED_CONTENT: { title: "代号出现在不安全或暂不处理的位置", description: "Office 的图表、SmartArt、批注、嵌入内容，或 HTML 的脚本、样式、链接、事件属性中发现正式代号，因此已停止输出。", guidance: "请把代号放回普通可见文字、表格或允许的说明属性后再试。" },
@@ -797,6 +827,8 @@ function SecurityDrawer({ mode, status, analysis, selectedIds, fieldModes = {}, 
   const inlineColumnCount = selectedColumns.length - wholeColumnCount;
   const errorDiagnosis = error ? buildErrorDiagnosis(error) : null;
   const textCandidates = analysis?.kind === "text" ? analysis.candidates.filter((item) => selectedIds.includes(item.id)) : [];
+  const comparison = result?.occurrenceComparison ?? restoreInspection?.occurrenceComparison;
+  const changedTokens = comparison?.byToken?.filter((item) => item.missing || item.added) ?? [];
   const detailRows = mode === "restore" && restoreInspection
       ? [["文件格式", restoreInspection.formatLabel], ["匹配任务", restoreInspection.taskName], ["任务指纹", restoreInspection.taskId], ["发现代号", `${restoreInspection.occurrences} 处`], ["使用映射", `${restoreInspection.usedMappings} 条`], ...(restoreInspection.occurrenceComparison ? [["原始 / 返回", `${restoreInspection.occurrenceComparison.original} / ${restoreInspection.occurrenceComparison.returned} 处`], ["缺失 / 新增", `${restoreInspection.occurrenceComparison.missing} / ${restoreInspection.occurrenceComparison.added} 处`]] : [])]
       : result
@@ -865,9 +897,19 @@ function SecurityDrawer({ mode, status, analysis, selectedIds, fieldModes = {}, 
               <p>{`${(result?.removedContent ?? restoreInspection.removedContent).elements} 个不安全元素、${(result?.removedContent ?? restoreInspection.removedContent).attributes} 个危险属性、${(result?.removedContent ?? restoreInspection.removedContent).remoteResources} 个远程资源引用`}</p>
             </div>
           )}
+          {changedTokens.length > 0 && (
+            <div className="restore-scope__item token-change-evidence">
+              <h3>代号出现次数变化</h3>
+              <div>{changedTokens.map((item) => <p key={item.token}><strong>{item.semanticLabel || item.token}</strong><span>原始 {item.original} · 返回 {item.returned}{item.missing ? ` · 缺失 ${item.missing}` : ` · 新增 ${item.added}`}</span></p>)}</div>
+            </div>
+          )}
           <p className="drawer-note restore-scope__note"><Info weight="duotone" />{["csv", "txt", "md"].includes(result?.format ?? restoreInspection.format)
-            ? "纯文本不包含图片、样式和嵌入对象；未出现的映射不代表异常。"
-            : "图片未扫描；未出现的映射不代表异常。真实内容变长后，请在 Office 中复核换行和溢出。"}</p>
+            ? comparison?.missing
+              ? "纯文本不包含图片、样式和嵌入对象；未返回的代号可能是 AI 汇总或删除造成，请复核内容完整性。"
+              : "纯文本不包含图片、样式和嵌入对象；未出现的映射不代表异常。"
+            : comparison?.missing
+              ? "图片未扫描；未返回的代号可能是 AI 汇总或删除造成。真实内容变长后，请在 Office 中复核内容和版式。"
+              : "图片未扫描；未出现的映射不代表异常。真实内容变长后，请在 Office 中复核换行和溢出。"}</p>
         </section>
       )}
 
@@ -977,7 +1019,7 @@ function PrinciplePopover({ onClose, triggerRef }) {
         <div className="principle-compare__head" role="row">
           <span role="columnheader">常见字段脱敏</span><span role="columnheader">文件脱敏助手</span>
         </div>
-        <div role="row"><span role="cell">把真实值替换成通用代号</span><span role="cell"><strong>每个代号绑定一次具体任务</strong><small>例如 [[C001@7F2A9C4D]]，避免跨文件混用</small></span></div>
+        <div role="row"><span role="cell">把真实值替换成通用代号</span><span role="cell"><strong>语义代号绑定一次具体任务</strong><small>例如 [[客户名称:C001@7F2A9C4D]]，让 AI 理解对象类型并避免跨文件混用</small></span></div>
         <div role="row"><span role="cell">保存一份字段映射用于查找替换</span><span role="cell"><strong>真实映射加密留在本机</strong><small>外部 AI 只接触代号，不获得真实身份</small></span></div>
         <div role="row"><span role="cell">找到代号就替换，重点是隐藏原文</span><span role="cell"><strong>还原前先核对任务和完整性</strong><small>任务不匹配或存在未知代号，就停止导出</small></span></div>
       </div>
@@ -1254,7 +1296,7 @@ export function App() {
 
   const canAdjustFailedProtectionSelection = mode === "protect"
     && Boolean(file && analysis)
-    && ["NO_COLUMNS", "NO_TEXT_CANDIDATES", "NO_VALUES", "UNSUPPORTED_CELLS"].includes(error?.code);
+    && ["NO_COLUMNS", "NO_TEXT_CANDIDATES", "NO_VALUES", "UNSUPPORTED_CELLS", "SENSITIVE_RESIDUALS"].includes(error?.code);
 
   const toggleProtectionColumn = (id) => {
     setSelectedIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
@@ -1311,7 +1353,7 @@ export function App() {
           </aside>
           <section className="workbench" data-dragging={isDraggingFile} onDragEnter={handleDragEnter} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop} aria-label={MODE_COPY[mode].title}>
             {mainState}
-            <p className="demo-caption"><Info weight="duotone" />{mode === "protect" ? "脱敏制作支持标准 XLSX、CSV、TXT、MD、DOCX。" : "还原支持 XLSX、CSV、TXT、MD、DOCX、PPTX、安全静态 HTML；不扫描图片，危险位置中的代号会拦截输出。"}</p>
+            <p className="demo-caption"><Info weight="duotone" />{mode === "protect" ? "脱敏制作支持 XLSX、CSV、TXT、MD、DOCX；文本类上限 10 MB，Office 上限 20 MB。" : "还原支持 XLSX、CSV、TXT、MD、DOCX、PPTX、安全静态 HTML；文本类上限 10 MB，Office 上限 20 MB。"}</p>
           </section>
           <section className="mobile-boundary" aria-label="本机安全处理边界">
             <div><LockKey weight="duotone" /><strong>真实内容留在本机</strong></div>

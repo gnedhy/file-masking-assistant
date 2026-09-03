@@ -49,14 +49,24 @@ test("HTML rejects unknown, mixed, altered and token-free documents", () => {
   assert.throws(() => restoreHtmlText("<p>无代号</p>", window, mapping), (error) => error.code === "NO_TOKENS");
 });
 
-test("HTML partially restores exact tokens without guessing altered tokens", () => {
-  const altered = `[[C00X@${TASK}]]`;
-  const result = restoreHtmlText(`<p>${C}</p><code>${altered}</code>`, window, mapping);
+test("HTML restores semantic tokens without changing legacy compatibility", () => {
+  const token = `[[客户名称:C001@${TASK}]]`;
+  const result = restoreHtmlText(`<p>${token}</p>`, window, {
+    [token]: { value: { type: "string", value: "浙江ABC染整有限公司" } },
+  });
   assert.equal(result.restoredOccurrences, 1);
-  assert.equal(result.partialRestore, true);
-  assert.deepEqual(result.unresolved, [{ location: "<code> 可见文字", value: altered }]);
   assert.match(result.html, /浙江ABC染整有限公司/);
-  assert.match(result.html, /\[\[C00X@7F2A9C4D\]\]/);
+});
+
+test("HTML recognizes a short code left behind from a semantic token as altered", () => {
+  const token = `[[产品名称:P001@${TASK}]]`;
+  const semanticMapping = { [token]: { value: { type: "string", value: "HT-825GK" } } };
+  assert.throws(() => restoreHtmlText("<p>P001</p>", window, semanticMapping), (error) => error.code === "ALTERED_TOKENS");
+});
+
+test("HTML blocks altered tokens even when exact tokens are also present", () => {
+  const altered = `[[C00X@${TASK}]]`;
+  assert.throws(() => restoreHtmlText(`<p>${C}</p><code>${altered}</code>`, window, mapping), (error) => error.code === "ALTERED_TOKENS");
 });
 
 test("HTML inspection reports removals without executing the page", () => {

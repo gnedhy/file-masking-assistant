@@ -199,6 +199,7 @@ export async function restoreSafeWorkbook(file, expectedTaskId) {
   }
   const vault = await loadVault(expectedTaskId);
   if (!vault) throw new SafeFileError("VAULT_NOT_FOUND", "本机映射已不存在，无法还原。");
+  const comparison = occurrenceComparison(vault.occurrenceBaseline, inspection.occurrences);
   const altered = inspectWorkbookAlteredTokens(workbook, vault.mapping);
   if (altered.length) {
     throw new SafeFileError("ALTERED_TOKENS", "文件中存在残缺或被改写的已知代号，已停止输出。", altered.map((item) => `${item.sheetName}!${item.address}：${item.value}`));
@@ -230,5 +231,6 @@ export async function restoreSafeWorkbook(file, expectedTaskId) {
     taskName: vault.taskName,
     restoredOccurrences: result.restoredOccurrences,
     usedMappings: result.inspection.uniqueTokens.length,
+    occurrenceComparison: comparison,
   };
 }

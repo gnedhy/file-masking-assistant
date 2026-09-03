@@ -27,6 +27,9 @@ test("Vault API 强制会话、CSRF 和任务所有者边界", async () => {
   assert.equal(unauthorized.status, 403);
   const created = await handle(new Request("https://vault.test/api/v1/vault-tasks", { method: "POST", headers: { authorization: "owner-a", "x-csrf-token": "csrf-a", "content-type": "application/json" }, body: JSON.stringify(vault) }));
   assert.equal(created.status, 201);
+  const semanticVault = { ...vault, taskId: "E5F6A7B8", mapping: { "[[客户名称:C001@E5F6A7B8]]": "客户乙" }, occurrenceBaseline: { "[[客户名称:C001@E5F6A7B8]]": 1 } };
+  const semanticCreated = await handle(new Request("https://vault.test/api/v1/vault-tasks", { method: "POST", headers: { authorization: "owner-a", "x-csrf-token": "csrf-a", "content-type": "application/json" }, body: JSON.stringify(semanticVault) }));
+  assert.equal(semanticCreated.status, 201);
   assert.equal((await handle(new Request("https://vault.test/api/v1/vault-tasks/A1B2C3D4/mapping", { headers: { authorization: "owner-b" } }))).status, 404);
   assert.equal((await handle(new Request("https://vault.test/api/v1/vault-tasks/A1B2C3D4/mapping", { headers: { authorization: "owner-a" } }))).status, 200);
 });

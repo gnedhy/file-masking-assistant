@@ -146,6 +146,7 @@ export async function restoreOfficeSafeFile(file, expectedTaskId) {
     const vault = await loadVault(expectedTaskId);
     if (!vault) throw new SafeFileError("VAULT_NOT_FOUND", "本机映射已不存在，无法还原。");
     const before = await inspectOfficePackage(zip, format, vault.mapping);
+    const comparison = occurrenceComparison(vault.occurrenceBaseline, before.occurrences);
     const unknown = before.uniqueTokens.filter((token) => !vault.mapping[token]);
     if (unknown.length || before.altered.length || before.unsupportedOccurrences.length) {
       throw new SafeFileError("UNRESOLVED_TOKENS", "文件未通过还原前的完整代号检查，已停止输出。", [
@@ -173,6 +174,7 @@ export async function restoreOfficeSafeFile(file, expectedTaskId) {
       taskName: vault.taskName,
       restoredOccurrences: restored.restoredOccurrences,
       usedMappings: before.uniqueTokens.length,
+      occurrenceComparison: comparison,
       checkedAreas: restored.checkedAreas,
       uncheckedAreas: OFFICE_FORMATS[format].unchecked,
       warnings: ["图片未扫描，未出现的映射不代表异常。", "真实内容变长后可能产生换行或溢出，请在 Office 中复核版式。"],

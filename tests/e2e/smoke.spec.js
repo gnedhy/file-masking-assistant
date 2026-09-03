@@ -153,6 +153,11 @@ test("CSV 文件选择、任务抽屉和失败关闭可用", async ({ page }) =>
 
   await input.setInputFiles(path.resolve("tests/fixtures/01_标准销售数据_UTF8.csv"));
   await expect(page.getByText("确认需要替换的列")).toBeVisible();
+  await page.getByRole("button", { name: /确认需要替换的列/ }).click();
+  const safetyDialog = page.getByRole("dialog", { name: "安全详情" });
+  await expect(safetyDialog.getByRole("checkbox", { name: /F 列 · 业务员反馈/ })).toBeChecked();
+  await expect(safetyDialog.getByRole("combobox", { name: "业务员反馈的替换方式" })).toHaveValue("inline");
+  await safetyDialog.getByRole("button", { name: "关闭详情" }).click();
   await page.getByRole("button", { name: /生成脱敏文件/ }).click();
   await expect(page.getByRole("heading", { name: "脱敏文件可以下载" })).toBeVisible();
 
@@ -168,6 +173,38 @@ test("CSV 文件选择、任务抽屉和失败关闭可用", async ({ page }) =>
   await expect(page.getByRole("heading", { name: "无法安全读取这个 CSV" })).toBeVisible();
   await page.getByRole("button", { name: "查看技术详情" }).click();
   await expect(page.getByRole("dialog", { name: "技术详情" })).toBeVisible();
+});
+
+test("CSV 取消叙述列时阻止真实值残留，可原地调整后重试", async ({ page }) => {
+  await page.goto("/");
+  const input = page.locator('input[type="file"]');
+  await input.setInputFiles(path.resolve("tests/fixtures/01_标准销售数据_UTF8.csv"));
+  await page.getByRole("button", { name: /确认需要替换的列/ }).click();
+  let safetyDialog = page.getByRole("dialog", { name: "安全详情" });
+  await safetyDialog.getByRole("checkbox", { name: /F 列 · 业务员反馈/ }).uncheck();
+  await safetyDialog.getByRole("button", { name: "关闭详情" }).click();
+
+  await page.getByRole("button", { name: /生成脱敏文件/ }).click();
+  await expect(page.getByRole("heading", { name: "脱敏后仍发现真实内容" })).toBeVisible();
+  await expect(page.getByText("没有生成输出文件")).toBeVisible();
+  await page.getByRole("button", { name: "调整选择字段" }).click();
+
+  safetyDialog = page.getByRole("dialog", { name: "安全详情" });
+  await safetyDialog.getByRole("checkbox", { name: /F 列 · 业务员反馈/ }).check();
+  await safetyDialog.getByRole("button", { name: "关闭详情" }).click();
+  await page.getByRole("button", { name: /生成脱敏文件/ }).click();
+  await expect(page.getByRole("heading", { name: "脱敏文件可以下载" })).toBeVisible();
+});
+
+test("超限文件在读取前停止并显示拆分建议", async ({ page }) => {
+  await page.goto("/");
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "超大销售数据.csv",
+    mimeType: "text/csv",
+    buffer: Buffer.alloc(10 * 1024 * 1024 + 1),
+  });
+  await expect(page.getByRole("heading", { name: "CSV 超过当前安全限制" })).toBeVisible();
+  await expect(page.getByText("请按月份、业务单元或数据范围拆分后重试。")).toBeVisible();
 });
 
 test("并发任务共用同一密钥，密钥丢失后失败关闭", async ({ page }) => {
@@ -256,7 +293,7 @@ test("本机存储不可用时不生成脱敏文件", async ({ page }) => {
   await expect(page.getByText("没有生成输出文件")).toBeVisible();
 });
 
-test("部分还原使用警示语义且允许继续下载", async ({ page }) => {
+test("HTML 同时含完整与改写代号时停止输出", async ({ page }) => {
   const assets = path.resolve("tests/output/validation-assets");
   const vault = JSON.parse(await fs.readFile(path.join(assets, "00_测试说明", "本机映射_仅测试_A14F2026.json"), "utf8"));
   await page.goto("/");
@@ -267,18 +304,18 @@ test("部分还原使用警示语义且允许继续下载", async ({ page }) => 
 
   await page.getByRole("button", { name: "还原处理文件" }).click();
   await page.locator('input[type="file"]').setInputFiles(path.join(assets, "05_HTML样本", "异常_残缺代号_A14F2026.html"));
-  const check = page.locator(".compatibility-check");
-  await expect(check).toHaveAttribute("data-partial", "true");
-  await expect(check.getByText("可以继续部分还原")).toBeVisible();
-
-  await page.getByRole("button", { name: /生成还原文件/ }).click();
-  const result = page.locator(".success-state");
-  await expect(result).toHaveAttribute("data-partial", "true");
-  await expect(page.getByRole("heading", { name: "部分还原文件可以下载" })).toBeVisible();
-  await expect(page.getByText(/处被改写的代号未还原并原样保留/)).toBeVisible();
+  await expect(page.getByRole("heading", { name: "有些代号已被改写或截断" })).toBeVisible();
+  await expect(page.getByText("没有生成输出文件")).toBeVisible();
+  await expect(page.getByRole("link", { name: "下载还原文件" })).toHaveCount(0);
 });
 
-test("Markdown 可确认候选、手动补充并完成脱敏还原", async ({ page }) => {
+test("Markdown 可确认候选、复制通用 AI 说明并完成脱敏还原", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: async (text) => localStorage.setItem("testClipboard", text) },
+    });
+  });
   await page.goto("/");
   const input = page.locator('input[type="file"]');
   await input.setInputFiles(path.resolve("tests/fixtures/06_Markdown敏感内容.md"));
@@ -296,7 +333,19 @@ test("Markdown 可确认候选、手动补充并完成脱敏还原", async ({ pa
   await page.getByRole("link", { name: "下载脱敏文件" }).click();
   const safeDownload = await safeDownloadPromise;
   const safeBytes = await fs.readFile(await safeDownload.path());
-  expect(safeBytes.toString("utf8")).toContain("[[");
+  expect(safeBytes.toString("utf8")).toContain("[[客户名称:C001@");
+  await page.getByRole("button", { name: "复制 AI 处理说明" }).click();
+  await expect(page.getByText("处理说明已复制")).toBeVisible();
+  const instruction = await page.evaluate(() => localStorage.getItem("testClipboard"));
+  expect(instruction).toContain("是已脱敏的业务实体代号");
+  expect(instruction).toContain("必须完整原样保留代号");
+  await page.evaluate(() => Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: { writeText: async () => { throw new Error("clipboard blocked"); } },
+  }));
+  await page.getByRole("button", { name: "处理说明已复制" }).click();
+  await expect(page.getByText("自动复制失败，请手动复制：")).toBeVisible();
+  await expect(page.getByRole("textbox")).toHaveValue(instruction);
 
   await page.getByRole("button", { name: "导入 AI 处理后的文件" }).click();
   await input.setInputFiles({ name: safeDownload.suggestedFilename(), mimeType: "text/markdown", buffer: safeBytes });
@@ -308,7 +357,7 @@ test("Markdown 可确认候选、手动补充并完成脱敏还原", async ({ pa
   const restoredText = (await fs.readFile(await restoredDownload.path())).toString("utf8");
   expect(restoredText).toContain("浙江ABC染整有限公司");
   expect(restoredText).toContain("Atlas-9");
-  expect(restoredText).not.toContain("[[C001@");
+  expect(restoredText).not.toContain("[[");
 });
 
 test("DOCX 可确认候选并完成原格式脱敏还原", async ({ page }) => {
@@ -344,6 +393,35 @@ test("DOCX 可确认候选并完成原格式脱敏还原", async ({ page }) => {
   expect(xml).not.toContain("[[");
 });
 
+test("AI 删除已知代号时提醒缺失但允许还原其余内容", async ({ page }) => {
+  await page.goto("/");
+  const input = page.locator('input[type="file"]');
+  await input.setInputFiles(path.resolve("tests/fixtures/06_Markdown敏感内容.md"));
+  await page.getByRole("button", { name: /生成脱敏文件/ }).click();
+  const safeDownloadPromise = page.waitForEvent("download");
+  await page.getByRole("link", { name: "下载脱敏文件" }).click();
+  const safeDownload = await safeDownloadPromise;
+  const safeText = (await fs.readFile(await safeDownload.path())).toString("utf8");
+  const firstToken = safeText.match(/\[\[[^\]]+\]\]/)?.[0];
+  expect(firstToken).toBeTruthy();
+  const aiText = safeText.replace(firstToken, "");
+
+  await page.getByRole("button", { name: "导入 AI 处理后的文件" }).click();
+  await input.setInputFiles({ name: safeDownload.suggestedFilename(), mimeType: "text/markdown", buffer: Buffer.from(aiText) });
+  const check = page.locator(".compatibility-check");
+  await expect(check).toHaveAttribute("data-content-loss", "true");
+  await expect(check.getByText(/AI 返回内容中有 1 处代号未出现/)).toBeVisible();
+  await page.getByRole("button", { name: "查看匹配证据" }).click();
+  await expect(page.getByRole("dialog", { name: "安全详情" }).getByText(/原始 \d+ · 返回 \d+/)).toBeVisible();
+  await page.getByRole("dialog", { name: "安全详情" }).getByRole("button", { name: "关闭详情" }).click();
+
+  await page.getByRole("button", { name: /生成还原文件/ }).click();
+  const result = page.locator(".success-state");
+  await expect(result).toHaveAttribute("data-content-loss", "true");
+  await expect(result.getByText(/已删除内容无法自动恢复/)).toBeVisible();
+  await expect(page.getByRole("link", { name: "下载还原文件" })).toBeVisible();
+});
+
 test("真实值本身是 C001 时仍可完整还原", async ({ page }) => {
   await page.goto("/");
   const input = page.locator('input[type="file"]');
@@ -366,5 +444,5 @@ test("真实值本身是 C001 时仍可完整还原", async ({ page }) => {
   await page.getByRole("link", { name: "下载还原文件" }).click();
   const restored = (await fs.readFile(await (await restoredDownloadPromise).path())).toString("utf8");
   expect(restored).toContain("C001");
-  expect(restored).not.toContain("[[C001@");
+  expect(restored).not.toContain("[[");
 });

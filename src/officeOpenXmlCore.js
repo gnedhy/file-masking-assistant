@@ -1,9 +1,11 @@
 import JSZip from "jszip";
-import { classifyHeader, findKnownShortTokens, tokenPattern } from "./xlsxCore.js";
+import { FILE_SIZE_LIMITS } from "./filePreflight.js";
+import { classifyHeader, findKnownShortTokens } from "./xlsxCore.js";
 import { analyzeText } from "./textCore.js";
+import { createEntityToken, parseEntityToken, tokenPattern } from "./tokenFormat.js";
 
 export const OFFICE_LIMITS = {
-  compressedBytes: 50 * 1024 * 1024,
+  compressedBytes: FILE_SIZE_LIMITS.docx,
   uncompressedBytes: 250 * 1024 * 1024,
   entries: 5000,
 };
@@ -317,7 +319,7 @@ export async function tokenizeDocxPackage(zip, selectedCandidates, taskId) {
   selectedCandidates.forEach((item) => {
     const prefix = item.prefix || "X";
     counters[prefix] += 1;
-    const token = `[[${prefix}${String(counters[prefix]).padStart(3, "0")}@${taskId}]]`;
+    const token = createEntityToken({ label: item.label, category: item.category, prefix, sequence: counters[prefix], taskId });
     replacements.set(item.value, token);
     mapping[token] = { value: { type: "string", value: item.value }, category: item.category, header: item.label };
   });
@@ -356,7 +358,7 @@ export function scanOfficeXml(xml, format, location) {
 
 export function findAlteredTokens(xml, format, mapping) {
   const texts = [allXmlText(xml)];
-  const knownShortTokens = new Set(Object.keys(mapping).map((token) => token.match(/^\[\[([^@]+)@/)?.[1]).filter(Boolean));
+  const knownShortTokens = new Set(Object.keys(mapping).map((token) => parseEntityToken(token)?.shortToken).filter(Boolean));
   const findings = [];
   for (const text of texts) {
     const withoutFull = text.replace(tokenPattern(), " ");
@@ -368,7 +370,7 @@ export function findAlteredTokens(xml, format, mapping) {
 
 export async function loadOfficePackage(input, declaredFormat, limits = OFFICE_LIMITS) {
   const byteLength = input?.byteLength ?? input?.size ?? 0;
-  if (byteLength > limits.compressedBytes) throw Object.assign(new Error("文件超过 50 MB。"), { code: "FILE_TOO_LARGE" });
+  if (byteLength > limits.compressedBytes) throw Object.assign(new Error("文件超过 20 MB。"), { code: "FILE_TOO_LARGE" });
   let zip;
   try {
     zip = await JSZip.loadAsync(input);

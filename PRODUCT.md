@@ -33,11 +33,12 @@ The first validation scenario uses sales-detail files containing customer, produ
 - Safe-file creation formats: XLSX, CSV, TXT, MD, and DOCX. Restore formats: XLSX, CSV, TXT, MD, DOCX, PPTX, and safe static HTML.
 - Users confirm detected sensitive categories before creating a de-identified file.
 - Users may add protected columns after automatic recognition.
-- Every formal token carries a task-specific identifier even though the interface shows a short code such as `C001`.
+- New formal tokens combine a sanitized source label, short entity code, and task fingerprint, such as `[[产品名称:P001@7F2A9C4D]]`. Legacy `[[P001@7F2A9C4D]]` tokens remain restorable.
+- After creating the safe file, the user can copy provider-neutral AI handling instructions that require every referenced token to remain intact.
 - Restoration automatically matches the local task before showing the count of restorable tokens.
 - Safety evidence is available on demand through a detail drawer; it does not change processing behavior.
 - A persistent `原理说明` entry explains the distinction from ordinary field masking: task-bound Tokens, encrypted local mappings, and fail-closed restoration checks.
-- Restoration must surface unresolved tokens rather than report silent success. XLSX, CSV, TXT, MD, DOCX, and PPTX stop incomplete export; safe static HTML may produce an explicitly warned partial restoration when exact tokens can be restored and altered tokens remain unchanged in allowed visible text.
+- Restoration must surface unresolved tokens rather than report silent success. Unknown, altered, mixed-task, and unsafe-area tokens stop output. Missing occurrences of known complete tokens produce an explicit warning while remaining exact tokens can still be restored.
 - The functional proof performs real local parsing, token replacement, download, task matching, and restoration for the declared formats in the browser.
 - Local mappings are encrypted with AES-GCM using a non-exportable browser key and stored in IndexedDB. This is not yet an enterprise Token Vault, OS-keystore integration, managed key lifecycle, or secure deletion guarantee.
 - Unsupported cells in a selected protected column, unknown Tokens, mixed task fingerprints, missing local mappings, and formula-contained Tokens stop export.
@@ -53,9 +54,9 @@ The first validation scenario uses sales-detail files containing customer, produ
 - PPTX creation-side tokenization, PDF, OCR, image text, chart text, SmartArt, macros, and embedded objects remain out of scope.
 - TXT and Markdown are processed as non-executable UTF-8 text. Candidates come from explicit labels and Markdown tables, can be searched or supplemented manually, and preserve UTF-8 BOM plus CRLF/LF. JSON, XML, and logs are not treated as supported aliases.
 - DOCX protection covers body text, ordinary tables, headers, footers, text boxes, and values split across adjacent runs. Actual comments, footnotes/endnotes, revisions, content controls, and fields stop protection instead of being silently skipped.
-- CSV supports comma, tab, and semicolon delimiters; quoted fields and embedded line breaks; UTF-8, UTF-8 BOM, and GB18030 input. Output is normalized to UTF-8 BOM for reliable Chinese display in Excel. Files over 50 MB, 200,000 rows, 500 columns, or 5,000,000 fields stop safely.
+- CSV supports comma, tab, and semicolon delimiters; quoted fields and embedded line breaks; UTF-8, UTF-8 BOM, and GB18030 input. Output is normalized to UTF-8 BOM for reliable Chinese display in Excel. Files over 10 MB, 200,000 rows, 500 columns, or 5,000,000 fields stop safely. After tokenization, all CSV cells are checked for selected real values before a mapping or output is saved.
 - DOCX restore covers body text, tables, headers, footers, and text boxes; PPTX restore covers slide text, tables, and speaker notes. Exact tokens split across adjacent Office text runs are reassembled and inherit the first token run's style.
-- Office files are processed locally with strict package limits: 50 MB compressed, 250 MB uncompressed, and 5,000 entries. Macros, encrypted/corrupt files, OLE/embedded packages, unknown or mixed tokens, altered token syntax, unsupported-area tokens, and post-restore residuals stop output.
+- Office files are processed locally with strict package limits: 20 MB compressed, 250 MB uncompressed, and 5,000 entries. Macros, encrypted/corrupt files, OLE/embedded packages, unknown or mixed tokens, altered token syntax, unsupported-area tokens, and post-restore residuals stop output. TXT, MD, CSV, and HTML stop at 10 MB before reading; XLSX, DOCX, and PPTX stop at 20 MB before reading.
 - Images are not scanned. Missing mappings that do not appear in the file are not errors, and longer restored text may require layout review in Office.
 - No AI analysis, report generation, model connection, organization administration, production-system integration, or automatic write-back.
 
@@ -81,7 +82,7 @@ The approved visual reference uses a warm off-white surface, dark charcoal text,
 - Show verifiable checks instead of abstract security promises.
 - Explain that the product is designed for a reversible AI file round trip, not only for hiding source values.
 - Keep real identities and mapping inside the enterprise boundary.
-- Fail closed when restoration is incomplete or a format is unsupported, except for the documented safe-static-HTML partial-restoration path.
+- Fail closed when tokens are unknown, altered, mixed across tasks, or present in an unsafe area, and when a format is unsupported.
 - Preserve the original file and require a deliberate export action.
 
 ## Accessibility & Inclusion

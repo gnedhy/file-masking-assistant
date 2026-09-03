@@ -1,5 +1,6 @@
 import {
   analyzeCsv,
+  findCsvSensitiveResiduals,
   findCsvFormulaCells,
   inspectCsvAlteredTokens,
   inspectCsvTokens,
@@ -10,9 +11,10 @@ import {
 } from "./csvCore.js";
 import { highRiskTextFindings, occurrenceBaseline, occurrenceComparison, protectedOutputName, suspiciousTextFindings } from "./fileSafety.js";
 import { SafeFileError } from "./xlsxEngine.js";
+import { FILE_SIZE_LIMITS } from "./filePreflight.js";
 import { listVaultSummaries, loadVault, saveVault } from "./vaultStore.js";
 
-const MAX_CSV_BYTES = 50 * 1024 * 1024;
+const MAX_CSV_BYTES = FILE_SIZE_LIMITS.csv;
 const MAX_CSV_ROWS = 200_000;
 const MAX_CSV_COLUMNS = 500;
 const MAX_CSV_CELLS = 5_000_000;
@@ -41,7 +43,7 @@ function decodeCsv(bytes) {
 
 async function loadCsv(file) {
   if (file.size > MAX_CSV_BYTES) {
-    throw new SafeFileError("CSV_TOO_LARGE", "CSV 文件超过 50 MB，已停止处理。", [`文件大小 ${(file.size / 1024 / 1024).toFixed(1)} MB`]);
+    throw new SafeFileError("CSV_TOO_LARGE", "CSV 文件超过 10 MB，已停止处理。", [`文件大小 ${(file.size / 1024 / 1024).toFixed(1)} MB`]);
   }
   const bytes = new Uint8Array(await file.arrayBuffer());
   if (bytes.includes(0)) throw new SafeFileError("INVALID_CSV", "文件中包含二进制内容，无法作为 CSV 安全处理。");
@@ -101,6 +103,10 @@ export async function createSafeCsv(file, selectedColumns) {
       result.warnings.map((warning) => `${warning.location}：${warning.reason}`),
     );
   }
+  const residuals = findCsvSensitiveResiduals(document, result.mapping);
+  if (residuals.length) {
+    throw new SafeFileError("SENSITIVE_RESIDUALS", "脱敏后仍发现已选真实值，已停止生成。", residuals);
+  }
 
   await saveVault({ version: 2, taskId: id, taskName, createdAt, sourceFormat: "csv", occurrenceBaseline: occurrenceBaseline(inspectCsvTokens(document).occurrences), mapping: result.mapping });
   return {
@@ -156,6 +162,7 @@ export async function restoreSafeCsv(file, expectedTaskId) {
   }
   const vault = await loadVault(expectedTaskId);
   if (!vault) throw new SafeFileError("VAULT_NOT_FOUND", "本机映射已不存在，无法还原。");
+  const comparison = occurrenceComparison(vault.occurrenceBaseline, inspection.occurrences);
   const altered = inspectCsvAlteredTokens(document, vault.mapping);
   if (altered.length) {
     throw new SafeFileError("ALTERED_TOKENS", "CSV 中存在残缺或被改写的已知代号，已停止输出。", altered.map((item) => `${item.location}：${item.value}`));
@@ -177,5 +184,6 @@ export async function restoreSafeCsv(file, expectedTaskId) {
     taskName: vault.taskName,
     restoredOccurrences: result.restoredOccurrences,
     usedMappings: result.inspection.uniqueTokens.length,
+    occurrenceComparison: comparison,
   };
 }

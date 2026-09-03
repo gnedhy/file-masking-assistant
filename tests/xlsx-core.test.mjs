@@ -65,7 +65,7 @@ test("XLSX 富文本可整格脱敏并按原结构还原", () => {
 
   const result = tokenizeWorkbook(workbook, [{ ...analysis.columns[0], processingMode: "whole" }], "A1B2C3D4");
   assert.equal(result.warnings.length, 0);
-  assert.equal(sheet.getCell("A2").value, "[[C001@A1B2C3D4]]");
+  assert.equal(sheet.getCell("A2").value, "[[客户名称:C001@A1B2C3D4]]");
   restoreWorkbookValues(workbook, result.mapping);
   assert.deepEqual(sheet.getCell("A2").value, {
     richText: [
@@ -92,7 +92,7 @@ test("XLSX 叙述字段只替换已确认实体并保留上下文", () => {
   assert.equal(result.replacedCells, 6);
   assert.equal(
     sheet.getCell("D2").value,
-    "[[S001@7F2A9C4D]]反馈：[[C001@7F2A9C4D]]的 [[P001@7F2A9C4D]] 已完成第二轮测试。",
+    "[[业务员:S001@7F2A9C4D]]反馈：[[客户名称:C001@7F2A9C4D]]的 [[产品内部编码:P001@7F2A9C4D]] 已完成第二轮测试。",
   );
   restoreWorkbookValues(workbook, result.mapping);
   assert.equal(sheet.getCell("D2").value, "张三反馈：浙江ABC染整的 HT-825GK 已完成第二轮测试。");
@@ -107,8 +107,8 @@ test("XLSX 脱敏与还原保留公式和样式", async () => {
   addTaskMarker(workbook, { taskId, taskName: "7月销售明细", createdAt: "2026-08-12T00:00:00.000Z" });
 
   assert.equal(protectedResult.replacedCells, 9);
-  assert.equal(workbook.getWorksheet("销售明细").getCell("A2").value, "[[C001@7F2A9C4D]]");
-  assert.equal(workbook.getWorksheet("销售明细").getCell("A3").value, "[[C001@7F2A9C4D]]");
+  assert.equal(workbook.getWorksheet("销售明细").getCell("A2").value, "[[客户名称:C001@7F2A9C4D]]");
+  assert.equal(workbook.getWorksheet("销售明细").getCell("A3").value, "[[客户名称:C001@7F2A9C4D]]");
   assert.equal(workbook.getWorksheet("销售明细").getCell("D4").value.formula, "SUM(D2:D3)");
 
   const roundTripped = new ExcelJS.Workbook();
@@ -149,7 +149,7 @@ test("选择金额列时清除公式缓存而不是拦截处理", async () => {
   assert.equal(protectedResult.replacedCells, 2);
   assert.equal(protectedResult.warnings.length, 0);
   assert.equal(protectedResult.notices.length, 1);
-  assert.match(workbook.getWorksheet("销售明细").getCell("D2").value, /^\[\[X001@A1B2C3D4\]\]$/);
+  assert.match(workbook.getWorksheet("销售明细").getCell("D2").value, /^\[\[销售金额:X001@A1B2C3D4\]\]$/);
   assert.equal(workbook.getWorksheet("销售明细").getCell("D4").value.formula, "SUM(D2:D3)");
   assert.equal(workbook.getWorksheet("销售明细").getCell("D4").value.result, undefined);
 
@@ -236,7 +236,7 @@ test("短英文数字编码仅在独立出现时进行文中替换", () => {
   const result = tokenizeWorkbook(workbook, selected, "7F2A9C4D");
 
   assert.equal(result.replacedCells, 2);
-  assert.equal(sheet.getCell("B2").value, "[[P001@7F2A9C4D]] 已通过，XA12 不应被部分替换");
+  assert.equal(sheet.getCell("B2").value, "[[产品编码:P001@7F2A9C4D]] 已通过，XA12 不应被部分替换");
   restoreWorkbookValues(workbook, result.mapping);
   assert.equal(sheet.getCell("B2").value, "A1 已通过，XA12 不应被部分替换");
 });

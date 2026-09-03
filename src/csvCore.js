@@ -1,4 +1,5 @@
-import { classifyHeader, findKnownShortTokens, recommendedProcessingMode, tokenPattern } from "./xlsxCore.js";
+import { classifyHeader, findKnownShortTokens, recommendedProcessingMode } from "./xlsxCore.js";
+import { createEntityToken, parseEntityToken, tokenPattern } from "./tokenFormat.js";
 
 const DELIMITER_CANDIDATES = [",", "\t", ";"];
 
@@ -143,16 +144,26 @@ export function analyzeCsv(document) {
     }];
   });
 
+  const knownEntities = columns
+    .filter((column) => column.suggested && column.recommendedMode !== "inline")
+    .flatMap((column) => document.rows.slice(column.headerRow).map((row) => String(row[column.columnNumber - 1] ?? "").trim()))
+    .filter(inlineDictionaryEligible);
+  const uniqueEntities = [...new Set(knownEntities)];
+  const suggestedColumns = columns.map((column) => {
+    if (column.suggested || column.recommendedMode !== "inline") return column;
+    const hasKnownEntity = document.rows.slice(column.headerRow).some((row) => {
+      const text = String(row[column.columnNumber - 1] ?? "");
+      return uniqueEntities.some((source) => containsIndependentEntity(text, source));
+    });
+    return hasKnownEntity ? { ...column, suggested: true } : column;
+  });
+
   return {
     format: "csv",
-    sheets: [{ name: "CSV", headerRow, rowCount: document.rows.length, columns: columns.length }],
-    columns,
-    suggestedColumnIds: columns.filter((column) => column.suggested).map((column) => column.id),
+    sheets: [{ name: "CSV", headerRow, rowCount: document.rows.length, columns: suggestedColumns.length }],
+    columns: suggestedColumns,
+    suggestedColumnIds: suggestedColumns.filter((column) => column.suggested).map((column) => column.id),
   };
-}
-
-function createToken(prefix, sequence, taskId) {
-  return `[[${prefix}${String(sequence).padStart(3, "0")}@${taskId}]]`;
 }
 
 function valueKey(value) {
@@ -182,6 +193,17 @@ function independentEntityMatch(text, start, source) {
   if (isAsciiWordCharacter(source[0]) && isAsciiWordCharacter(before)) return false;
   if (isAsciiWordCharacter(source[source.length - 1]) && isAsciiWordCharacter(after)) return false;
   return true;
+}
+
+function containsIndependentEntity(text, source) {
+  let cursor = 0;
+  while (cursor <= text.length - source.length) {
+    const index = text.indexOf(source, cursor);
+    if (index < 0) return false;
+    if (independentEntityMatch(text, index, source)) return true;
+    cursor = index + 1;
+  }
+  return false;
 }
 
 function replaceEntityInSegment(text, source, token) {
@@ -258,7 +280,7 @@ export function tokenizeCsv(document, selectedColumns, taskId) {
       let token = tokenByValue.get(key);
       if (!token) {
         counters[prefix] += 1;
-        token = createToken(prefix, counters[prefix], taskId);
+        token = createEntityToken({ label: column.header, category: column.category, prefix, sequence: counters[prefix], taskId });
         tokenByValue.set(key, token);
         mapping[token] = {
           value: { type: "string", value: String(value) },
@@ -325,7 +347,7 @@ export function inspectCsvTokens(document) {
 }
 
 export function inspectCsvAlteredTokens(document, mapping) {
-  const knownShortTokens = new Set(Object.keys(mapping).map((token) => token.match(/^\[\[([^@]+)@/)?.[1]).filter(Boolean));
+  const knownShortTokens = new Set(Object.keys(mapping).map((token) => parseEntityToken(token)?.shortToken).filter(Boolean));
   const findings = [];
   document.rows.forEach((row, rowIndex) => {
     row.forEach((value, columnIndex) => {
@@ -367,6 +389,41 @@ export function restoreCsvValues(document, mapping) {
     });
   });
   return { restoredOccurrences, unresolved: [], inspection };
+}
+
+export function findCsvSensitiveResiduals(document, mapping) {
+  const sources = [...new Set(Object.values(mapping).map((entry) => String(entry?.value?.value ?? "")).filter(Boolean))];
+  const exactOnly = new Set(sources.filter((source) => !inlineDictionaryEligible(source)));
+  const root = { children: new Map(), sources: [] };
+  for (const source of sources) {
+    if (exactOnly.has(source)) continue;
+    let node = root;
+    for (const character of source) {
+      if (!node.children.has(character)) node.children.set(character, { children: new Map(), sources: [] });
+      node = node.children.get(character);
+    }
+    node.sources.push(source);
+  }
+
+  const findings = [];
+  document.rows.forEach((row, rowIndex) => row.forEach((value, columnIndex) => {
+    const text = String(value ?? "").replace(tokenPattern(), " ");
+    const location = `第 ${rowIndex + 1} 行，第 ${columnIndex + 1} 列`;
+    if (exactOnly.has(text)) findings.push({ location, reason: "已选真实值仍出现在脱敏结果中" });
+    for (let start = 0; start < text.length; start += 1) {
+      let node = root.children.get(text[start]);
+      if (!node) continue;
+      let end = start;
+      while (node) {
+        for (const source of node.sources) {
+          if (independentEntityMatch(text, start, source)) findings.push({ location, reason: "已选真实值仍出现在脱敏结果中" });
+        }
+        end += 1;
+        node = end < text.length ? node.children.get(text[end]) : undefined;
+      }
+    }
+  }));
+  return findings;
 }
 
 export function findCsvFormulaCells(document) {

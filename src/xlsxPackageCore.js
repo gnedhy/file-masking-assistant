@@ -1,7 +1,8 @@
 import JSZip from "jszip";
+import { FILE_SIZE_LIMITS } from "./filePreflight.js";
 
 export const XLSX_LIMITS = {
-  compressedBytes: 50 * 1024 * 1024,
+  compressedBytes: FILE_SIZE_LIMITS.xlsx,
   uncompressedBytes: 250 * 1024 * 1024,
   entries: 5000,
   worksheets: 200,
@@ -13,7 +14,7 @@ function packageError(code, message, details = []) {
 
 export async function preflightXlsxPackage(input, limits = XLSX_LIMITS) {
   const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
-  if (bytes.byteLength > limits.compressedBytes) throw packageError("FILE_TOO_LARGE", "XLSX 文件超过 50 MB，已停止处理。");
+  if (bytes.byteLength > limits.compressedBytes) throw packageError("FILE_TOO_LARGE", "XLSX 文件超过 20 MB，已停止处理。");
   let zip;
   try {
     zip = await JSZip.loadAsync(bytes);
