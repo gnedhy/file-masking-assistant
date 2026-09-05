@@ -1,12 +1,25 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { FILE_SIZE_LIMITS, preflightFile } from "../src/filePreflight.js";
+import { FILE_SIZE_LIMITS, preflightFile, prepareFile } from "../src/filePreflight.js";
 import { highRiskTextFindings, protectedOutputName, suspiciousTextFindings } from "../src/fileSafety.js";
 
 function file(name, bytes, type = "") {
   const value = Uint8Array.from(bytes);
   return { name, type, size: value.byteLength, arrayBuffer: async () => value.buffer };
 }
+
+test("一次处理只读取一次原文件，跨操作不保留源文件缓存", async () => {
+  let reads = 0;
+  const source = { name: "客户.csv", size: 1, type: "text/csv", arrayBuffer: async () => { reads += 1; return Uint8Array.of(65).buffer; } };
+  const first = await prepareFile(source, ["csv"]);
+  await Promise.all([first.file.arrayBuffer(), first.file.arrayBuffer()]);
+  assert.equal(reads, 1);
+  assert.equal(JSON.stringify(first.evidence).includes("buffer"), false);
+  await prepareFile(source, ["csv"]);
+  assert.equal(reads, 2);
+  await assert.rejects(() => prepareFile({ ...source, size: FILE_SIZE_LIMITS.csv + 1 }, ["csv"]), error => error.code === "CSV_TOO_LARGE");
+  assert.equal(reads, 2);
+});
 
 test("预检同时核对入口格式、Office 签名和文本内容", async () => {
   const xlsx = await preflightFile(file("销售.xlsx", [0x50, 0x4b, 0x03, 0x04]), ["xlsx"]);

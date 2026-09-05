@@ -2,14 +2,29 @@ import { classifyHeader, findKnownShortTokens, recommendedProcessingMode } from 
 import { createEntityToken, parseEntityToken, tokenPattern } from "./tokenFormat.js";
 
 const DELIMITER_CANDIDATES = [",", "\t", ";"];
+export const CSV_LIMITS = { rows: 200_000, columns: 500, cells: 5_000_000 };
 
-function parseRows(text, delimiter) {
+function parseRows(text, delimiter, limits, sample = false) {
   const rows = [];
   let row = [];
   let value = "";
   let quoted = false;
+  let cells = 0;
+  const pushValue = () => {
+    if (!sample && (rows.length >= limits.rows || row.length >= limits.columns || cells >= limits.cells)) {
+      throw Object.assign(new Error("CSV 超出当前安全处理范围，已停止解析。"), {
+        code: "CSV_LIMIT_EXCEEDED",
+        details: [`第 ${rows.length + 1} 行，第 ${row.length + 1} 列`, `限制：${limits.rows} 行、${limits.columns} 列、${limits.cells} 个字段`],
+      });
+    }
+    row.push(value);
+    cells += 1;
+    value = "";
+  };
 
   for (let index = 0; index < text.length; index += 1) {
+    // ponytail: bounded dialect sample; ambiguous CSV still requires a consistent delimiter.
+    if (sample && (rows.length >= 20 || index >= 64 * 1024)) return rows.length ? rows : [[...row, value]];
     const character = text[index];
     if (quoted) {
       if (character === '"') {
@@ -28,22 +43,20 @@ function parseRows(text, delimiter) {
     if (character === '"' && value === "") {
       quoted = true;
     } else if (character === delimiter) {
-      row.push(value);
-      value = "";
+      pushValue();
     } else if (character === "\r" || character === "\n") {
-      row.push(value);
+      pushValue();
       rows.push(row);
       row = [];
-      value = "";
       if (character === "\r" && text[index + 1] === "\n") index += 1;
     } else {
       value += character;
     }
   }
 
-  if (quoted) throw new Error("CSV 中存在未闭合的引号");
+  if (quoted && !sample) throw new Error("CSV 中存在未闭合的引号");
   if (row.length || value !== "" || !/(?:\r\n|\r|\n)$/.test(text)) {
-    row.push(value);
+    pushValue();
     rows.push(row);
   }
   return rows;
@@ -59,7 +72,7 @@ function delimiterScore(rows) {
   return frequency * 100 + width - (sample.length - frequency) * 10;
 }
 
-export function parseCsvText(input) {
+export function parseCsvText(input, limits = CSV_LIMITS) {
   const hadBom = String(input).startsWith("\uFEFF");
   const text = String(input).replace(/^\uFEFF/, "");
   const newline = text.includes("\r\n") ? "\r\n" : text.includes("\r") ? "\r" : "\n";
@@ -67,13 +80,13 @@ export function parseCsvText(input) {
   let best = null;
 
   for (const delimiter of DELIMITER_CANDIDATES) {
-    const rows = parseRows(text, delimiter);
+    const rows = parseRows(text, delimiter, limits, true);
     const score = delimiterScore(rows);
     if (!best || score > best.score) best = { delimiter, rows, score };
   }
 
   return {
-    rows: best?.rows ?? [],
+    rows: parseRows(text, best?.delimiter ?? ",", limits),
     delimiter: best?.delimiter ?? ",",
     newline,
     trailingNewline,
@@ -148,12 +161,12 @@ export function analyzeCsv(document) {
     .filter((column) => column.suggested && column.recommendedMode !== "inline")
     .flatMap((column) => document.rows.slice(column.headerRow).map((row) => String(row[column.columnNumber - 1] ?? "").trim()))
     .filter(inlineDictionaryEligible);
-  const uniqueEntities = [...new Set(knownEntities)];
+  const entityIndex = buildEntityIndex([...new Set(knownEntities)].map(source => ({ source })));
   const suggestedColumns = columns.map((column) => {
     if (column.suggested || column.recommendedMode !== "inline") return column;
     const hasKnownEntity = document.rows.slice(column.headerRow).some((row) => {
       const text = String(row[column.columnNumber - 1] ?? "");
-      return uniqueEntities.some((source) => containsIndependentEntity(text, source));
+      return !entityMatches(text, entityIndex).next().done;
     });
     return hasKnownEntity ? { ...column, suggested: true } : column;
   });
@@ -195,15 +208,32 @@ function independentEntityMatch(text, start, source) {
   return true;
 }
 
-function containsIndependentEntity(text, source) {
-  let cursor = 0;
-  while (cursor <= text.length - source.length) {
-    const index = text.indexOf(source, cursor);
-    if (index < 0) return false;
-    if (independentEntityMatch(text, index, source)) return true;
-    cursor = index + 1;
+function buildEntityIndex(entries) {
+  const root = { children: new Map(), entries: [] };
+  for (const entry of entries) {
+    if (!entry.source) continue;
+    let node = root;
+    // Both construction and lookup use UTF-16 units, including surrogate pairs.
+    for (const character of entry.source.split("")) {
+      if (!node.children.has(character)) node.children.set(character, { children: new Map(), entries: [] });
+      node = node.children.get(character);
+    }
+    node.entries.push(entry);
   }
-  return false;
+  return root;
+}
+
+function* entityMatches(text, root) {
+  for (let start = 0; start < text.length; start += 1) {
+    let node = root;
+    for (let end = start; end < text.length; end += 1) {
+      node = node.children.get(text[end]);
+      if (!node) break;
+      for (const entry of node.entries) {
+        if (independentEntityMatch(text, start, entry.source)) yield entry;
+      }
+    }
+  }
 }
 
 function replaceEntityInSegment(text, source, token) {
@@ -231,7 +261,9 @@ function replaceEntityInSegment(text, source, token) {
   return { parts, replacements };
 }
 
-function replaceKnownEntities(text, dictionary) {
+function replaceKnownEntities(text, entityIndex) {
+  const dictionary = [...new Set(entityMatches(String(text), entityIndex))]
+    .sort((left, right) => right.source.length - left.source.length || left.order - right.order);
   let segments = [{ text: String(text), protected: false }];
   let replacements = 0;
   for (const { source, token } of dictionary) {
@@ -296,8 +328,7 @@ export function tokenizeCsv(document, selectedColumns, taskId) {
     }
   }
 
-  const dictionary = Array.from(dictionaryBySource, ([source, token]) => ({ source, token }))
-    .sort((left, right) => right.source.length - left.source.length);
+  const entityIndex = buildEntityIndex(Array.from(dictionaryBySource, ([source, token], order) => ({ source, token, order })));
 
   for (const column of columnsByMode.inline) {
     const columnIndex = column.columnNumber - 1;
@@ -309,7 +340,7 @@ export function tokenizeCsv(document, selectedColumns, taskId) {
         warnings.push({ location: `第 ${rowIndex + 1} 行，第 ${column.columnNumber} 列`, reason: "原文件已含本工具代号" });
         continue;
       }
-      const replaced = replaceKnownEntities(value, dictionary);
+      const replaced = replaceKnownEntities(value, entityIndex);
       if (!replaced.replacements) continue;
       while (row.length <= columnIndex) row.push("");
       row[columnIndex] = replaced.text;
@@ -393,34 +424,16 @@ export function restoreCsvValues(document, mapping) {
 
 export function findCsvSensitiveResiduals(document, mapping) {
   const sources = [...new Set(Object.values(mapping).map((entry) => String(entry?.value?.value ?? "")).filter(Boolean))];
-  const exactOnly = new Set(sources.filter((source) => !inlineDictionaryEligible(source)));
-  const root = { children: new Map(), sources: [] };
-  for (const source of sources) {
-    if (exactOnly.has(source)) continue;
-    let node = root;
-    for (const character of source) {
-      if (!node.children.has(character)) node.children.set(character, { children: new Map(), sources: [] });
-      node = node.children.get(character);
-    }
-    node.sources.push(source);
-  }
+  const root = buildEntityIndex(sources.map(source => ({ source })));
 
   const findings = [];
   document.rows.forEach((row, rowIndex) => row.forEach((value, columnIndex) => {
     const text = String(value ?? "").replace(tokenPattern(), " ");
     const location = `第 ${rowIndex + 1} 行，第 ${columnIndex + 1} 列`;
-    if (exactOnly.has(text)) findings.push({ location, reason: "已选真实值仍出现在脱敏结果中" });
-    for (let start = 0; start < text.length; start += 1) {
-      let node = root.children.get(text[start]);
-      if (!node) continue;
-      let end = start;
-      while (node) {
-        for (const source of node.sources) {
-          if (independentEntityMatch(text, start, source)) findings.push({ location, reason: "已选真实值仍出现在脱敏结果中" });
-        }
-        end += 1;
-        node = end < text.length ? node.children.get(text[end]) : undefined;
-      }
+    for (const { source } of entityMatches(text, root)) {
+      findings.push({ location, reason: inlineDictionaryEligible(source)
+        ? "已选真实值仍出现在脱敏结果中"
+        : "已选短名称或短编码仍出现在此处；不自动猜测替换，请将该列设为整格替换或先整理原文件" });
     }
   }));
   return findings;

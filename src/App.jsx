@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { version as appVersion } from "../package.json";
 import {
   ArrowRight,
   CaretRight,
@@ -678,10 +679,10 @@ const ERROR_PRESENTATION = {
   TEXT_TOO_LARGE: { title: "文本文件超过首版安全限制", description: "TXT/MD 文件不能超过 10 MB。", guidance: "请拆分文件后重试。" },
   CSV_TOO_LARGE: { title: "CSV 超过当前安全限制", description: "CSV 文件不能超过 10 MB。", guidance: "请按月份、业务单元或数据范围拆分后重试。" },
   CSV_LIMIT_EXCEEDED: { title: "CSV 表格规模超过安全限制", description: "文件的行数、列数或字段总量过大，系统已停止处理。", guidance: "请按月份、业务单元或工作表拆分后重试。" },
-  CSV_FORMULA_INJECTION: { title: "CSV 中包含可能执行的公式", description: "AI 处理结果中出现了 Excel 可能自动执行的公式型字段，因此没有生成还原文件。", guidance: "请在 AI 输出中将这些字段改为普通文字后再试。" },
+  CSV_FORMULA_INJECTION: { title: "CSV 中包含可能执行的公式", description: "原文件或还原后的内容包含表格软件可能执行的公式型字段，因此没有生成输出文件。", guidance: "请检查问题所在行列，将公式转换为实际结果或明确的普通文本后重新选择文件。工具不会自动改写原值；若风险来自已有映射，请修正源文件并重新创建脱敏任务。" },
   SUSPICIOUS_TEXT: { title: "文件中包含不可见控制字符", description: "这些字符可能隐藏内容或改变代号识别，系统已停止处理。", guidance: "请用纯文本编辑器显示并移除不可见字符后重试。" },
   EXTERNAL_RELATIONSHIPS: { title: "文件包含外部链接或远程连接", description: "为避免文件打开时连接外部资源，系统已停止处理。", guidance: "请在 Office 中断开外部链接并另存为标准文件。" },
-  SENSITIVE_RESIDUALS: { title: "脱敏后仍发现真实内容", description: "已选真实值仍出现在文件的其他位置，因此没有生成脱敏文件。", guidance: "请返回调整选择字段，将相关叙述列设为“仅替换文中实体”后重试。" },
+  SENSITIVE_RESIDUALS: { title: "脱敏后仍发现真实内容", description: "已选真实值仍出现在文件的其他位置，因此没有生成脱敏文件。", guidance: "请返回调整选择字段：一般叙述列可选“仅替换文中实体”；单字名称、短数字等不自动猜测替换，请将相关列设为整格替换。若残留位于表头或其他不可选区域，请先整理原文件。" },
   INVALID_OFFICE_PACKAGE: { title: "无法安全读取这个 Office 文件", description: "文件可能已损坏、加密，或不是标准 DOCX/PPTX。", guidance: "请从 Word 或 PowerPoint 重新另存为标准文件后再试。" },
   UNSUPPORTED_DOCX_STRUCTURE: { title: "这个 Word 文件包含首版无法完整脱敏的结构", description: "检测到脚注、尾注、修订、内容控件、域或批注。为避免静默遗漏，系统已停止生成。", guidance: "请接受或拒绝修订，并移除批注、域、脚注/尾注或内容控件后，另存为标准 DOCX 再试。" },
   INVALID_HTML: { title: "无法安全读取这个 HTML 文件", description: "文件不是有效的 UTF-8 静态 HTML，或包含无法识别的二进制内容。", guidance: "请让 AI 导出为 UTF-8 的单文件 HTML 后再试。" },
@@ -724,13 +725,17 @@ function formatIssueDetail(detail) {
 
 function summarizeIssueLocations(details) {
   const locations = new Map();
+  const csvLocations = new Set();
   details.forEach((detail) => {
+    const csvLocation = detail.match(/^第 \d+ 行，第 \d+ 列/);
+    if (csvLocation) csvLocations.add(csvLocation[0]);
     const match = detail.match(/^([^!：]+)!([A-Z]+)\d+/i);
     if (!match) return;
     const [, sheet, column] = match;
     if (!locations.has(sheet)) locations.set(sheet, new Set());
     locations.get(sheet).add(column.toUpperCase());
   });
+  if (csvLocations.size) return [...csvLocations].slice(0, 5).join("；") + (csvLocations.size > 5 ? "等位置" : "");
   if (!locations.size) return "文件结构或任务信息";
   return Array.from(locations, ([sheet, columns]) => `${sheet} 的 ${Array.from(columns).join("、")} 列`).join("；");
 }
@@ -756,7 +761,7 @@ function buildErrorDiagnosis(error) {
     analysis: preset?.analysis || defaultCopy?.description || error?.message || "当前文件未通过安全检查，系统已停止输出。",
     suggestions: preset?.suggestions || [
       defaultCopy?.guidance || "根据问题概要检查文件内容或任务状态。",
-      "修正后重新导入文件；不要绕过安全拦截。",
+      code === "SENSITIVE_RESIDUALS" ? "仅调整字段时无需重新上传，关闭详情后点击“调整选择字段”并重新生成；修改了源文件才需要重新导入。" : "修正后重新导入文件；不要绕过安全拦截。",
     ],
     summary: details.length
       ? `共发现 ${details.length} 项问题，主要位于 ${summarizeIssueLocations(details)}。`
@@ -1331,7 +1336,7 @@ export function App() {
         <div className="brand"><span className="brand__mark" aria-hidden="true"><ShieldCheck weight="duotone" /></span><div><strong>文件脱敏助手</strong><span>{ENTERPRISE_VAULT_ENABLED ? "文件本机处理，映射同步到企业 Vault。" : "本机脱敏后交给 AI，处理完成再还原。"}</span></div></div>
         <BoundaryRoute />
         <div className="local-status">
-          <span className="prototype-chip prototype-chip--quiet">V2 验证版</span><span><DesktopTower weight="duotone" />{ENTERPRISE_VAULT_ENABLED ? "企业模式" : "本机预览"}</span><i aria-hidden="true" />
+          <span className="prototype-chip prototype-chip--quiet">{appVersion} 验证版</span><span><DesktopTower weight="duotone" />{ENTERPRISE_VAULT_ENABLED ? "企业模式" : "本机预览"}</span><i aria-hidden="true" />
           <ThemeSwitcher value={themePreference} onChange={setThemePreference} />
           <i aria-hidden="true" />
           <button ref={principleButtonRef} className="principle-trigger" type="button" aria-label="原理说明" aria-haspopup="dialog" aria-expanded={principleOpen} onClick={() => setPrincipleOpen((open) => !open)}><Question weight="bold" /><span>原理说明</span></button>

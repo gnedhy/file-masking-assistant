@@ -15,9 +15,6 @@ import { FILE_SIZE_LIMITS } from "./filePreflight.js";
 import { listVaultSummaries, loadVault, saveVault } from "./vaultStore.js";
 
 const MAX_CSV_BYTES = FILE_SIZE_LIMITS.csv;
-const MAX_CSV_ROWS = 200_000;
-const MAX_CSV_COLUMNS = 500;
-const MAX_CSV_CELLS = 5_000_000;
 
 function taskId() {
   const bytes = crypto.getRandomValues(new Uint8Array(4));
@@ -54,24 +51,23 @@ async function loadCsv(file) {
   try {
     document = parseCsvText(decoded.text);
   } catch (error) {
+    if (error.code === "CSV_LIMIT_EXCEEDED") throw new SafeFileError(error.code, error.message, error.details);
     throw new SafeFileError("INVALID_CSV", "无法读取这个 CSV。请检查引号、分隔符和换行是否完整。", [String(error.message || error)]);
-  }
-  const maximumColumns = document.rows.reduce((maximum, row) => Math.max(maximum, row.length), 0);
-  const cells = document.rows.reduce((total, row) => total + row.length, 0);
-  if (document.rows.length > MAX_CSV_ROWS || maximumColumns > MAX_CSV_COLUMNS || cells > MAX_CSV_CELLS) {
-    throw new SafeFileError("CSV_LIMIT_EXCEEDED", "CSV 超出当前安全处理范围，已停止处理。", [
-      `${document.rows.length} 行`,
-      `${maximumColumns} 列`,
-      `${cells} 个字段`,
-    ]);
   }
   if (!document.rows.some((row) => row.some((value) => String(value).trim()))) {
     throw new SafeFileError("EMPTY_CSV", "CSV 中没有可处理的表格内容。");
   }
+  assertCsvFormulaSafety(document);
   return { ...document, sourceEncoding: decoded.encoding };
 }
 
+function assertCsvFormulaSafety(document) {
+  const formulas = findCsvFormulaCells(document);
+  if (formulas.length) throw new SafeFileError("CSV_FORMULA_INJECTION", "CSV 中包含可能被表格软件执行的公式型字段，已停止处理。", formulas.map(item => `${item.location}：公式型字段，请在原文件中明确转换为普通文本`));
+}
+
 function encodeCsv(document) {
+  assertCsvFormulaSafety(document);
   return new TextEncoder().encode(`\uFEFF${stringifyCsv(document)}`);
 }
 
@@ -108,9 +104,10 @@ export async function createSafeCsv(file, selectedColumns) {
     throw new SafeFileError("SENSITIVE_RESIDUALS", "脱敏后仍发现已选真实值，已停止生成。", residuals);
   }
 
+  const buffer = encodeCsv(document);
   await saveVault({ version: 2, taskId: id, taskName, createdAt, sourceFormat: "csv", occurrenceBaseline: occurrenceBaseline(inspectCsvTokens(document).occurrences), mapping: result.mapping });
   return {
-    buffer: encodeCsv(document),
+    buffer,
     outputName: protectedOutputName("csv", id),
     mimeType: "text/csv;charset=utf-8",
     format: "csv",
@@ -125,8 +122,6 @@ export async function createSafeCsv(file, selectedColumns) {
 
 export async function inspectCsvRestoreFile(file) {
   const document = await loadCsv(file);
-  const formulas = findCsvFormulaCells(document);
-  if (formulas.length) throw new SafeFileError("CSV_FORMULA_INJECTION", "CSV 中包含可能被 Excel 执行的公式型字段，已停止输出。", formulas.map((item) => `${item.location}：${item.value}`));
   const inspection = inspectCsvTokens(document);
   if (!inspection.occurrences.length) {
     const altered = inspectCsvAlteredTokens(document, await combinedLocalMapping());
@@ -149,13 +144,13 @@ export async function inspectCsvRestoreFile(file) {
       ...altered.map((item) => `${item.location}：代号已改写为 ${item.value}`),
     ]);
   }
+  restoreCsvValues(document, vault.mapping);
+  assertCsvFormulaSafety(document);
   return { taskId: id, taskName: vault.taskName, occurrences: inspection.occurrences.length, uniqueTokens: inspection.uniqueTokens.length, occurrenceComparison: occurrenceComparison(vault.occurrenceBaseline, inspection.occurrences) };
 }
 
 export async function restoreSafeCsv(file, expectedTaskId) {
   const document = await loadCsv(file);
-  const formulas = findCsvFormulaCells(document);
-  if (formulas.length) throw new SafeFileError("CSV_FORMULA_INJECTION", "CSV 中包含可能被 Excel 执行的公式型字段，已停止输出。", formulas.map((item) => `${item.location}：${item.value}`));
   const inspection = inspectCsvTokens(document);
   if (inspection.taskIds.length !== 1 || inspection.taskIds[0] !== expectedTaskId) {
     throw new SafeFileError("TASK_CHANGED", "CSV 与刚才检查通过的任务不一致，已停止还原。", inspection.taskIds);

@@ -5,7 +5,7 @@ import {
   restoreSafeWorkbook,
 } from "./xlsxEngine.js";
 import { createSafeCsv, inspectCsvProtectionFile, inspectCsvRestoreFile, restoreSafeCsv } from "./csvEngine.js";
-import { FILE_SIZE_LIMITS, preflightFile } from "./filePreflight.js";
+import { FILE_SIZE_LIMITS, prepareFile } from "./filePreflight.js";
 
 export { FILE_SIZE_LIMITS };
 
@@ -37,7 +37,9 @@ export function fileFormatFromName(filename) {
 }
 
 export async function inspectProtectionFile(file) {
-  const evidence = await preflightFile(file, SUPPORTED_PROTECT_FORMATS);
+  const prepared = await prepareFile(file, SUPPORTED_PROTECT_FORMATS);
+  file = prepared.file;
+  const { evidence } = prepared;
   const format = evidence.format;
   if (format === "docx") {
     const { inspectDocxProtectionFile } = await import("./officeOpenXmlEngine.js");
@@ -56,7 +58,9 @@ export async function inspectProtectionFile(file) {
 }
 
 export async function createSafeFile(file, selection) {
-  const { format } = await preflightFile(file, SUPPORTED_PROTECT_FORMATS);
+  const prepared = await prepareFile(file, SUPPORTED_PROTECT_FORMATS);
+  file = prepared.file;
+  const { format } = prepared.evidence;
   if (format === "docx") {
     const { createSafeDocx } = await import("./officeOpenXmlEngine.js");
     return createSafeDocx(file, selection);
@@ -71,7 +75,9 @@ export async function createSafeFile(file, selection) {
 }
 
 export async function inspectRestoreFile(file) {
-  const evidence = await preflightFile(file, SUPPORTED_RESTORE_FORMATS);
+  const prepared = await prepareFile(file, SUPPORTED_RESTORE_FORMATS);
+  file = prepared.file;
+  const { evidence } = prepared;
   const format = evidence.format;
   if (format === "txt" || format === "md") {
     const { inspectTextRestoreFile } = await import("./textEngine.js");
@@ -90,7 +96,7 @@ export async function inspectRestoreFile(file) {
       formatLabel: FILE_FORMAT_META[format].label,
       usedMappings: inspection.uniqueTokens,
       checkedAreas: ["全部 CSV 文本字段"],
-      uncheckedAreas: ["图片、格式、公式和嵌入对象（CSV 本身不包含）"],
+      uncheckedAreas: ["图片、样式和嵌入对象（CSV 本身不包含）；不计算公式"],
       warnings: ["输出统一为 UTF-8 BOM；未出现的映射不代表异常。"],
     };
   }
@@ -112,7 +118,9 @@ export async function inspectRestoreFile(file) {
 }
 
 export async function restoreSafeFile(file, expectedTaskId) {
-  const { format } = await preflightFile(file, SUPPORTED_RESTORE_FORMATS);
+  const prepared = await prepareFile(file, SUPPORTED_RESTORE_FORMATS);
+  file = prepared.file;
+  const { format } = prepared.evidence;
   if (format === "txt" || format === "md") {
     const { restoreSafeText } = await import("./textEngine.js");
     return restoreSafeText(file, expectedTaskId, format);
@@ -129,7 +137,7 @@ export async function restoreSafeFile(file, expectedTaskId) {
       formatLabel: FILE_FORMAT_META[format].label,
       mimeType: FILE_FORMAT_META[format].mimeType,
       checkedAreas: ["全部 CSV 文本字段"],
-      uncheckedAreas: ["图片、格式、公式和嵌入对象（CSV 本身不包含）"],
+      uncheckedAreas: ["图片、样式和嵌入对象（CSV 本身不包含）；不计算公式"],
       warnings: ["输出统一为 UTF-8 BOM；未出现的映射不代表异常。"],
     };
   }

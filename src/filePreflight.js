@@ -74,3 +74,16 @@ export async function preflightFile(file, allowedFormats) {
     preflightWarnings: warnings,
   };
 }
+
+// Reuse bytes only for this operation; never retain source files in a module cache.
+export async function prepareFile(file, allowedFormats) {
+  let bytes;
+  const input = {
+    name: file.name,
+    type: file.type,
+    size: file.size,
+    arrayBuffer: () => (bytes ??= file.arrayBuffer()),
+  };
+  const evidence = await preflightFile(input, allowedFormats);
+  return { file: input, evidence };
+}

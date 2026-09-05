@@ -12,6 +12,50 @@ import {
   findCsvSensitiveResiduals,
 } from "../src/csvCore.js";
 
+test("CSV 残留扫描覆盖生僻字、emoji、单字和短数字，保留独立编码边界", () => {
+  for (const value of ["𠮷田产品", "产品🔒A", "李", "825", "825 "]) {
+    const document = { rows: [["产品名称", "备注"], [value, `本次采购${value}，请跟进。`]] };
+    const result = tokenizeCsv(document, analyzeCsv(document).columns.slice(0, 1), "ABCDEF12");
+    assert.equal(findCsvSensitiveResiduals(document, result.mapping).length, 1, value);
+  }
+  const mapping = { token: { value: { type: "string", value: "825" } } };
+  assert.deepEqual(findCsvSensitiveResiduals({ rows: [["9825", "X825A"]] }, mapping), []);
+});
+
+test("CSV Unicode 文中替换完整往返，短实体需整格替换才能消除残留", () => {
+  for (const value of ["𠮷田产品", "产品🔒A", "李", "825"]) {
+    const original = [["产品名称", "备注"], [value, `采购${value}。`]];
+    const document = { rows: structuredClone(original) };
+    const columns = analyzeCsv(document).columns.map((column, index) => ({ ...column, processingMode: index ? "inline" : "whole" }));
+    const result = tokenizeCsv(document, columns, "ABCDEF12");
+    assert.equal(findCsvSensitiveResiduals(document, result.mapping).length, ["李", "825"].includes(value) ? 1 : 0);
+    restoreCsvValues(document, result.mapping);
+    assert.deepEqual(document.rows, original);
+    const whole = tokenizeCsv(document, columns.map(column => ({ ...column, processingMode: "whole" })), "ABCDEF12");
+    assert.deepEqual(findCsvSensitiveResiduals(document, whole.mapping), []);
+    restoreCsvValues(document, whole.mapping);
+    assert.deepEqual(document.rows, original);
+  }
+});
+
+test("CSV 行列和字段数在解析时限流，恰好上限允许", () => {
+  const limits = { rows: 3, columns: 2, cells: 6 };
+  assert.equal(parseCsvText("a,b\n1,2\n3,4", limits).rows.length, 3);
+  for (const input of ["a,b\n1,2\n3,4\n5,6", "a,b,c\n1,2,3", "a,b\n1,2\n3,4"]) {
+    const bounds = input === "a,b\n1,2\n3,4" ? { ...limits, cells: 5 } : limits;
+    assert.throws(() => parseCsvText(input, bounds), error => error.code === "CSV_LIMIT_EXCEEDED");
+  }
+  // A malformed tail must not be reached after the limit was already exceeded.
+  assert.throws(() => parseCsvText('a,b\n1,2\n3,4\n5,6\n"broken', limits), error => error.code === "CSV_LIMIT_EXCEEDED");
+});
+
+test("CSV 分隔符采样保留引号、内嵌分隔符和多行字段", () => {
+  for (const delimiter of [",", ";", "\t"]) {
+    const document = { delimiter, newline: "\r\n", trailingNewline: true, rows: [["客户名称", "备注"], ...Array.from({ length: 30 }, () => ["甲公司", '含,;\t以及"引号"\n多行'])] };
+    assert.deepEqual(parseCsvText(stringifyCsv(document)).rows, document.rows);
+  }
+});
+
 function sampleCsv() {
   return parseCsvText('\uFEFF客户名称,产品内部编码,销售人员,销售金额,备注\r\n浙江ABC染整,HT-825GK,张三,128000,"重点,客户"\r\n浙江ABC染整,HT-992,李四,86000,"跨行\n备注"\r\n');
 }
