@@ -43,7 +43,20 @@ npm run dev
 
 ## 企业部署
 
-复制 `.env.enterprise.example` 为 `.env.enterprise`，在 `secrets/` 中提供企业微信密钥、会话密钥和 32 字节主密钥的 Base64 文本，再运行 `docker compose up --build`。企业模式只开放本人任务，映射默认保留 30 天；审计日志不记录真实值或文件内容。
+复制 `.env.enterprise.example` 为 `.env.enterprise`，替换数据库密码、HTTPS 访问地址和企业微信配置；数据库密码使用 URL 安全字符。在 `secrets/` 中提供 `wecom_secret.txt`、`session_secret.txt` 和 `vault_master_key.txt`，最后一项为 32 字节主密钥的 Base64 文本。
+
+```bash
+docker compose --env-file .env.enterprise up --build
+```
+
+`--env-file` 用于 Compose 展开数据库密码；服务级 `env_file` 不能替代它。企业模式只开放本人任务，映射默认保留 30 天；审计日志不记录真实值或文件内容。当前 Sites 站点仍使用浏览器本机映射，真实企业部署、企业微信登录和跨设备验收尚未完成，见 [企业版验证门槛](docs/2026-08-25_企业版验证门槛.md)。
+
+## 主要目录
+
+- `src/`：React/Vite 界面、本机文件处理和 Vault 适配。
+- `server/`、`compose.yaml`：Node.js 企业服务与 PostgreSQL 部署；不部署到 Sites。
+- `worker/`、`scripts/prepare-sites-build.mjs`：Sites 静态站点服务与打包。
+- `tests/`、`docs/`：自动化、合成验证样本及当前证据；`tests/output/` 为可再生输出。
 
 ## 验证命令
 

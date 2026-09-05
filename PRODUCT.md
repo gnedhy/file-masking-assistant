@@ -12,7 +12,7 @@ React 19 and Vite. ExcelJS is loaded on demand only after a user selects a workb
 
 ## Users
 
-Primary users are AI operations staff and business analysts who need to give a sensitive sales Excel workbook to an external AI, then restore an AI-modified Excel workbook inside the enterprise environment.
+Primary users are AI operations staff and business analysts who need to give sensitive tables, text, or Word documents to an external AI, then restore supported AI outputs inside the enterprise boundary.
 
 Reviewers such as business owners or IT may inspect safety evidence, but they are not the default daily interaction model.
 
@@ -66,7 +66,7 @@ Product name: `文件脱敏助手`.
 
 Voice: calm, direct, operational, and understandable without terms such as Token Vault, Late Binding, or Rehydration.
 
-User-facing task language: `制作脱敏文件` and `还原处理文件`. Generated filenames use `脱敏版` and `还原版`; technical terms such as Token remain inside explanations or diagnostics.
+User-facing task language: `制作脱敏文件` and `还原处理文件`. Protected output is named `脱敏文件_任务号.格式`, without the source filename. Restored output uses `原文件名_还原版_任务号.格式`. Technical terms such as Token remain inside explanations or diagnostics.
 
 The approved visual reference uses a warm off-white surface, dark charcoal text, cobalt primary actions, quiet green verification states, precise dividers, and generous spacing.
 
