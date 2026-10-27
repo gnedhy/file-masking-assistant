@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { access } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import test from "node:test";
 import worker from "../worker/index.js";
 
@@ -68,4 +68,17 @@ test("emits the files required by Sites packaging", async () => {
   await access(new URL("../dist/client/index.html", import.meta.url));
   await access(new URL("../dist/server/index.js", import.meta.url));
   await access(new URL("../dist/.openai/hosting.json", import.meta.url));
+});
+
+test("static asset responses receive the same security policy as Worker responses", async () => {
+  const config = await readFile(new URL("../dist/client/_headers", import.meta.url), "utf8");
+  assert.equal(config.split("\n")[0], "/*");
+  const response = await worker.fetch(new Request("https://example.test/"), {
+    ASSETS: { fetch: async () => new Response("app") },
+  });
+  for (const name of ["content-security-policy", "x-content-type-options", "referrer-policy", "permissions-policy"]) {
+    const line = config.split("\n").find(line => line.trim().toLowerCase().startsWith(`${name}:`));
+    assert.ok(line, `Missing static header: ${name}`);
+    assert.equal(line.trim().slice(name.length + 1).trim(), response.headers.get(name));
+  }
 });

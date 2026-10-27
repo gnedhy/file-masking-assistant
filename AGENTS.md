@@ -1,5 +1,9 @@
 # Prototype Instructions
 
+## Current direction
+
+- Continue as a standalone browser-local application (confirmed 2026-10-27). Workbench integration is out of the current plan. Existing enterprise Vault code remains optional and unaccepted; account, WeCom, and cross-device work require a new product decision.
+
 ## V2 isolation
 
 - This worktree is the only development location for V2. Do not edit, publish, migrate, or delete data from the frozen V1.1 directory or its Sites project.
