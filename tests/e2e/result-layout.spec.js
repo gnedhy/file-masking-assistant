@@ -42,9 +42,9 @@ test("完成页文件卡、下载提醒和检查抽屉在各主题保持布局",
     await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
     await page.screenshot({ path: path.join(os.tmpdir(), `masking-result-${testInfo.project.name}-${theme}.png`), fullPage: true });
   }
-  await page.getByRole("button", { name: /当前支持范围内的检查通过/ }).click();
+  await page.getByRole("button", { name: /^检查通过/ }).click();
   await expect(page.getByRole("dialog", { name: "检查详情", exact: true }).getByRole("region", { name: "还原检查范围" })).toBeVisible();
   await page.keyboard.press("Escape");
-  await expect(page.getByRole("button", { name: /当前支持范围内的检查通过/ })).toBeFocused();
+  await expect(page.getByRole("button", { name: /^检查通过/ })).toBeFocused();
   expect(errors).toEqual([]);
 });

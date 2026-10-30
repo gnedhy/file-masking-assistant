@@ -129,6 +129,7 @@ test("简短模式界面下载、重新打开、导入凭据和确认还原", as
   page.on("pageerror", error => errors.push(error.message));
   await page.goto("/");
   await page.locator('input[type="file"]:not([accept=".json"])').setInputFiles({ name: "试验.txt", mimeType: "text/plain", buffer: Buffer.from(source) });
+  await page.locator(".advanced-options > summary").click();
   await expect(page.getByRole("radio", { name: "标准代号（默认）", exact: true })).toBeChecked();
   await page.getByRole("radio", { name: "简短代号（试验）" }).check();
   await page.getByRole("button", { name: "生成脱敏文件" }).click();

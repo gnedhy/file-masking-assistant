@@ -205,7 +205,7 @@ a {
   background: rgba(255, 255, 255, 0.78);
 }
 
-.boundary-route > span[data-stage="ai"] {
+.boundary-route > span[aria-current="step"] {
   color: var(--blue-deep);
   border-color: #c8d8ef;
   background: var(--blue-soft);
@@ -217,7 +217,7 @@ a {
   color: var(--green);
 }
 
-.boundary-route > span[data-stage="ai"] > svg {
+.boundary-route > span[aria-current="step"] > svg {
   color: var(--blue);
 }
 
@@ -3578,7 +3578,7 @@ input {
   background: transparent;
 }
 
-.boundary-route > span[data-stage="ai"] {
+.boundary-route > span[aria-current="step"] {
   color: var(--blue);
   border: 1px solid color-mix(in srgb, var(--blue) 22%, transparent);
   background: var(--blue-soft);
@@ -3679,9 +3679,9 @@ input {
 .workspace-intro {
   grid-column: 1 / -1;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.55fr);
+  grid-template-columns: minmax(0, 1fr);
   align-items: end;
-  gap: 12px 32px;
+  gap: var(--sp-2);
   margin-bottom: 10px;
   padding: 0 4px;
 }
@@ -3710,8 +3710,8 @@ input {
 }
 
 .workspace-intro span {
-  max-width: 42ch;
-  justify-self: end;
+  max-width: 60ch;
+  justify-self: start;
   color: var(--muted);
   font-size: var(--fs-md);
   line-height: 1.6;
@@ -5117,4 +5117,85 @@ input {
   .confirm-dialog__actions > * {
     flex: 1;
   }
+}
+
+/* Ready state: the content that will be replaced, shown before the primary action. */
+.replacement-preview {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: var(--sp-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.replacement-preview li {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+}
+
+.replacement-preview strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: var(--fs-md);
+  font-weight: var(--fw-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.replacement-preview small,
+.replacement-preview__more {
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+
+.replacement-preview__more {
+  grid-column: 1 / -1;
+  padding: 0 var(--sp-1);
+  border: 0;
+  background: transparent;
+}
+
+.advanced-options {
+  width: 100%;
+  margin-bottom: var(--sp-4);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+}
+
+.advanced-options > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  min-height: 44px;
+  padding: var(--sp-2) var(--sp-4);
+  color: var(--ink);
+  cursor: pointer;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+}
+
+.advanced-options > summary small {
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-regular);
+}
+
+.advanced-options > .short-token-panel {
+  margin: 0;
+  border: 0;
+  border-top: 1px solid var(--line-soft);
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
+}
+
+.mobile-boundary > p span[aria-current="step"] {
+  color: var(--blue);
+  font-weight: var(--fw-bold);
 }

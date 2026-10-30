@@ -10,6 +10,8 @@ test("中文多工作表的字段标签独立关联，替换方式与代号格�
   workbook.addWorksheet("公司维度").addRows([["公司名称"], ["虚构公司"]]);
   await page.goto("/");
   await page.locator('input[type="file"]:not([accept=".json"])').setInputFiles({ name: "虚构多表.xlsx", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", buffer: Buffer.from(await workbook.xlsx.writeBuffer()) });
+  await expect(page.locator(".advanced-options > summary")).toContainText("标准代号");
+  await page.locator(".advanced-options > summary").click();
   await expect(page.getByRole("group", { name: "代号格式", exact: true })).toBeVisible();
   await expect(page.getByRole("radio", { name: "标准代号（默认）", exact: true })).toBeChecked();
   await page.getByRole("button", { name: /确认替换列/ }).click();

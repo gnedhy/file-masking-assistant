@@ -12,6 +12,7 @@ test("当前模式不重置，切换取消保留选择并返回实际焦点", as
   page.on("pageerror", error => errors.push(error.message));
   await page.goto("/");
   await upload(page);
+  await page.locator(".advanced-options > summary").click();
   await page.getByRole("radio", { name: "简短代号（试验）" }).check();
   const trigger = page.getByRole("button", { name: "确认替换内容 查看并调整", exact: true });
   await trigger.click();
@@ -56,6 +57,7 @@ test("未交付任务清理，下载过凭据的任务切换后保留", async ({
   await expect.poll(() => summaries(page)).toHaveLength(0);
   await page.getByRole("button", { name: "制作脱敏文件" }).click();
   await upload(page);
+  await page.locator(".advanced-options > summary").click();
   await page.getByRole("radio", { name: "简短代号（试验）" }).check();
   await page.getByRole("button", { name: "生成脱敏文件" }).click();
   const receipt = page.waitForEvent("download");
@@ -124,6 +126,7 @@ test("生成撞号时无下载且旧任务可还原，调整后可重新生成",
   expect(restored).toBe("虚构旧产品");
   await page.getByRole("button", { name: "调整选择字段" }).click();
   await page.getByRole("dialog", { name: "替换内容" }).getByRole("button", { name: "关闭详情" }).click();
+  await page.locator(".advanced-options > summary").click();
   await page.getByRole("radio", { name: "简短代号（试验）" }).check();
   await page.getByRole("button", { name: "生成脱敏文件" }).click();
   await expect(page.getByRole("link", { name: "下载脱敏文件" })).toBeVisible();
@@ -201,7 +204,7 @@ test("凭据错误可原地恢复，完整编号可复制，实名结果有回�
   await page.getByRole("button", { name: "生成还原文件" }).click();
   await expect(page.getByText("包含真实信息，请勿再次交给外部 AI。", { exact: true })).toBeVisible();
   await expect(page.locator(".output-file")).toContainText(`任务 ${fixture.marker}`);
-  await expect(page.getByText("当前支持范围内的检查通过", { exact: true })).toBeVisible();
+  await expect(page.getByText("检查通过", { exact: true })).toBeVisible();
   await expect(page.getByText(/外部请求/)).toHaveCount(0);
   await page.getByRole("button", { name: "查看全部任务" }).click();
   const drawer = page.getByRole("dialog", { name: "本机任务", exact: true });
