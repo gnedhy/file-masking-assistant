@@ -93,7 +93,7 @@ test("390px 操作记录可访问且两种模式保持一致布局", async ({ pa
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
 
-  const themeControl = page.getByRole("button", { name: "系统模式", exact: true });
+  const themeControl = page.getByRole("combobox", { name: "界面颜色模式" });
   const principleButton = page.getByRole("button", { name: "操作记录", exact: true });
   const brandBox = await page.locator(".brand").boundingBox();
   const themeBox = await themeControl.boundingBox();

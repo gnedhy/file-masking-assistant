@@ -36,7 +36,7 @@ test("记录筛选导出兼容旧数据，统计示例独立且返回保留文�
   await expect(preview.getByRole('button',{name:'上一页',exact:true})).toBeDisabled();
   await expect(preview.locator('.usage-metrics dd')).toHaveText(['1','1','1','0']);
   await preview.getByLabel('用户',{exact:true}).selectOption('');
-  for(const theme of ['浅色','深色','系统']){await page.getByRole('button',{name:theme+'模式',exact:true}).click();expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await page.screenshot({animations:"disabled",path:path.join(os.tmpdir(),`usage-preview-${info.project.name}-${theme}.png`)});}
+  for(const theme of ['浅色','深色','系统']){await page.getByRole('combobox',{name:'界面颜色模式'}).selectOption({label:theme});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await page.screenshot({animations:"disabled",path:path.join(os.tmpdir(),`usage-preview-${info.project.name}-${theme}.png`)});}
   const exportExample=page.waitForEvent('download');await preview.getByRole('link',{name:'导出示例记录'}).click();const example=await exportExample;expect(example.suggestedFilename()).toContain('示例');expect(await fs.readFile(await example.path(),'utf8')).toContain('虚构示例');
   expect(await page.evaluate(async()=> (await (await import('/src/operationLog.js')).listOperations()).some(r=>r.userId?.startsWith('example')))).toBe(false);
   await preview.getByRole('button',{name:'返回文件处理'}).click();

@@ -84,23 +84,14 @@ const LOCAL_PROCESSING_COPY = ENTERPRISE_VAULT_ENABLED ? "文件本机处理，�
 const formatList = (mode) => (mode === "protect" ? SUPPORTED_PROTECT_FORMATS : SUPPORTED_RESTORE_FORMATS).map(format => format.toUpperCase()).join("、");
 
 function ThemeSwitcher({ value, onChange }) {
+  const { icon: Icon } = THEME_OPTIONS.find((option) => option.value === value) ?? THEME_OPTIONS[0];
   return (
-      <div className="theme-switcher" role="group" aria-label="界面颜色模式">
-        {THEME_OPTIONS.map(({ value: option, label, icon: Icon }) => (
-          <button
-            key={option}
-            className="theme-switcher__option"
-            data-active={value === option}
-            type="button"
-            title={`${label}模式`}
-            aria-label={`${label}模式`}
-            aria-pressed={value === option}
-            onClick={() => onChange(option)}
-          >
-            <Icon aria-hidden="true" weight={value === option ? "fill" : "regular"} />
-          </button>
-        ))}
-      </div>
+    <label className="theme-switcher" title="界面颜色模式">
+      <Icon aria-hidden="true" />
+      <select aria-label="界面颜色模式" value={value} onChange={(event) => onChange(event.target.value)}>
+        {THEME_OPTIONS.map(({ value: option, label }) => <option key={option} value={option}>{label}</option>)}
+      </select>
+    </label>
   );
 }
 
@@ -1445,7 +1436,6 @@ export function App() {
         <div className="local-status">
           {ENTERPRISE_VAULT_ENABLED && <><span><DesktopTower weight="duotone" />企业模式</span><i aria-hidden="true" /></>}
           <ThemeSwitcher value={themePreference} onChange={setThemePreference} />
-          <i aria-hidden="true" />
           <button className="audit-trigger" type="button" title={auditIncomplete ? "操作记录：有记录未能保存" : "操作记录"} aria-label="操作记录" aria-haspopup="dialog" aria-expanded={auditOpen} onClick={event => { drawerTriggerRef.current = event.currentTarget; setAuditOpen(true); }}><ClockCounterClockwise aria-hidden="true" weight="bold" /><span>操作记录</span>{auditIncomplete && <b aria-label="有操作记录未保存">!</b>}</button>
         </div>
       </header>

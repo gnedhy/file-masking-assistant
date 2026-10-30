@@ -56,7 +56,7 @@ test("集中记录：真实数据库、本人权限、管理员统计、导出�
   await central.getByRole('button',{name:'重新读取',exact:true}).click();
   await expect(central.locator('.operation-list li').first()).toBeVisible();
   for (const theme of ['浅色','深色','系统']) {
-    await page.getByRole('button',{name:theme+'模式',exact:true}).click();
+    await page.getByRole('combobox',{name:'界面颜色模式'}).selectOption({label:theme});
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
     await page.screenshot({animations:'disabled',path:path.join(os.tmpdir(),`central-records-${info.project.name}-${theme}.png`)});
   }

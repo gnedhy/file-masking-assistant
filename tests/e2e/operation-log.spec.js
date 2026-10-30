@@ -78,11 +78,9 @@ test("记录并发写入、容量上限及写入失败不影响映射", async ({
 test("审计抽屉与三个主题图标适配浅深色和移动端", async ({ page }, testInfo) => {
   await page.goto("/");
   for (const theme of ["浅色", "深色", "系统"]) {
-    const button = page.getByRole("button", { name: `${theme}模式`, exact: true });
-    await button.click();
-    await expect(button).toHaveAttribute("aria-pressed", "true");
-    await expect(page.locator(".theme-switcher button")).toHaveCount(3);
-    expect(await button.innerText()).toBe("");
+    const select = page.getByRole("combobox", { name: "界面颜色模式" });
+    await select.selectOption({ label: theme });
+    await expect(select.locator("option")).toHaveCount(3);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.screenshot({ path: path.join(os.tmpdir(), `masking-header-${testInfo.project.name}-${theme}.png`) });
     await page.getByRole("button", { name: "操作记录", exact: true }).click();

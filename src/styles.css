@@ -2877,12 +2877,6 @@ a {
 
 }
 
-@media (max-width: 1320px) {
-  .boundary-route {
-    display: none;
-  }
-}
-
 @media (min-width: 1181px) {
   .ready-state {
     transform: translateY(-15px);
@@ -3330,17 +3324,6 @@ input {
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--blue) 14%, transparent);
 }
 
-.brand__mark::after {
-  position: absolute;
-  width: 8px;
-  height: 8px;
-  margin: 30px 0 0 30px;
-  border: 2px solid var(--surface-raised);
-  border-radius: 50%;
-  background: var(--green);
-  content: "";
-}
-
 .brand strong {
   font-size: 24px;
   font-weight: var(--fw-semibold);
@@ -3412,39 +3395,6 @@ input {
 
 .mobile-boundary {
   display: none;
-}
-
-.theme-switcher__option {
-  min-height: 38px;
-  width: 38px;
-  justify-content: center;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 5px 8px;
-  color: var(--muted);
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  cursor: pointer;
-  font-size: var(--fs-xs);
-  font-weight: var(--fw-semibold);
-  transition: color 180ms ease, background-color 180ms ease, box-shadow 180ms ease, transform 180ms var(--ease-out);
-}
-
-.theme-switcher__option:active {
-  transform: scale(0.97);
-}
-
-.theme-switcher__option[data-active="true"] {
-  color: var(--ink);
-  background: var(--surface-raised);
-  box-shadow: 0 3px 10px color-mix(in srgb, var(--ink) 9%, transparent);
-}
-
-.theme-switcher__option svg {
-  width: 18px;
-  height: 18px;
 }
 
 .audit-trigger {
@@ -4008,9 +3958,9 @@ input {
 }
 
 .task-choice {
-  min-height: 142px;
+  min-height: 84px;
   gap: 18px;
-  padding: 21px;
+  padding: var(--sp-4) 21px;
   overflow: hidden;
   color: var(--ink);
   border-color: var(--line);
@@ -4058,7 +4008,6 @@ input {
     box-shadow: 0 18px 45px color-mix(in srgb, var(--ink) 9%, transparent);
   }
 
-  .theme-switcher__option:hover,
   .local-task-panel__view:hover {
     color: var(--ink);
   }
@@ -4384,15 +4333,7 @@ input {
   .app-header { gap: 6px; padding-inline: 10px; }
   .brand { gap: 6px; }
   .brand__mark { width: 28px; height: 28px; }
-  .brand__mark::after { margin: 20px 0 0 20px; }
   .local-status { gap: 6px; }
-
-  .theme-switcher__option {
-    width: 44px;
-    min-height: 44px;
-    justify-content: center;
-    padding-inline: 0;
-  }
 
 
   .theme-switcher {
@@ -4882,6 +4823,7 @@ input {
 
 /* Ready state: the content that will be replaced, shown before the primary action. */
 .replacement-preview {
+  margin-bottom: var(--sp-3) !important;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
   gap: var(--sp-2);
@@ -5087,4 +5029,114 @@ input {
   margin-top: var(--sp-3);
   padding-top: var(--sp-3);
   border-top: 1px solid var(--line-soft);
+}
+
+/* Header: route stays centered, one compact theme control. */
+.app-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+}
+
+.app-header .local-status {
+  justify-self: end;
+}
+
+.theme-switcher {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  justify-content: center;
+  padding: 0;
+  color: var(--ink);
+  background: var(--surface-raised);
+}
+
+.theme-switcher svg {
+  width: 18px;
+  height: 18px;
+}
+
+.theme-switcher select {
+  position: absolute;
+  inset: -1px;
+  width: calc(100% + 2px);
+  height: calc(100% + 2px);
+  opacity: 0;
+  cursor: pointer;
+}
+
+.theme-switcher:focus-within {
+  outline: var(--focus-ring);
+  outline-offset: 3px;
+}
+
+@media (max-width: 960px) {
+  .boundary-route > span:not([aria-current="step"]) {
+    gap: 0;
+    font-size: 0;
+  }
+}
+
+@media (max-width: 640px), (max-width: 1000px) and (max-height: 500px) {
+  .app-header {
+    display: flex;
+  }
+
+  .boundary-route {
+    display: none;
+  }
+
+  .theme-switcher {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+/* Touch: comfortable targets, no iOS focus zoom, no orphaned separators. */
+@media (max-width: 640px), (max-width: 1000px) and (max-height: 500px) {
+  .text-button,
+  .post-generate-links .text-button,
+  .error-details-button,
+  .ai-handoff__instruction button,
+  .task-identity-details button,
+  .credential-download .secondary-button,
+  .credential-download button {
+    min-height: 44px;
+  }
+
+  .record-filters-more > summary,
+  .operation-steps > summary,
+  .operation-boundary summary,
+  .task-identity-details summary,
+  .short-token-panel summary {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    min-height: 44px;
+    list-style-position: inside;
+  }
+
+  .record-filename summary {
+    padding-block: var(--sp-1);
+  }
+
+  input[type="search"],
+  input[type="text"],
+  textarea,
+  select {
+    font-size: var(--fs-lg);
+  }
+
+  .theme-switcher {
+    border-radius: var(--radius-pill);
+  }
+
+  .trust-line {
+    flex-direction: column;
+    gap: var(--sp-1);
+  }
+
+  .trust-line > i {
+    display: none;
+  }
 }
