@@ -57,7 +57,7 @@ export function CredentialInput({ credential, disabled, required, error, onChang
   return <section className="short-token-panel" aria-label="简短代号还原钥匙文件">
     {!open ? <button className="text-button" type="button" disabled={disabled} onClick={() => setExpanded(true)}>使用简短代号？导入还原钥匙文件</button> : <>
       <p>选择与简短代号配套的还原钥匙文件</p>
-      <button className="secondary-button" type="button" disabled={disabled} onClick={() => inputRef.current?.click()}>选择还原钥匙文件</button>
+      <button className={required && !credential ? "primary-button primary-button--compact" : "secondary-button"} type="button" disabled={disabled} onClick={() => inputRef.current?.click()}>选择还原钥匙文件</button>
       <input ref={inputRef} className="visually-hidden" tabIndex={-1} aria-hidden="true" aria-label="选择还原钥匙文件" type="file" accept=".json" disabled={disabled} onChange={event => { const file = event.target.files?.[0]; if (file) onChange(file); event.target.value = ""; }} />
       <small>{credential ? `已导入任务 ${credential.marker} 的还原钥匙文件，还需核对返回文件。` : "标准代号不需要钥匙文件。钥匙文件不是备份，本机还原记录丢失后无法还原。"}</small>
       {error && <p role="alert">{error}</p>}

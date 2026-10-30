@@ -473,16 +473,19 @@ function ReadyState({ mode, file, analysis, selectedIds, fieldModes = {}, restor
   );
 }
 
-function ProcessingState({ mode, file }) {
+function ProcessingState({ mode, file, phase = "generate" }) {
   const format = fileFormatFromName(file.name) || "xlsx";
-  const steps = mode === "protect"
+  const inspecting = phase === "inspect";
+  const steps = inspecting
+    ? ["读取文件结构", mode === "protect" ? "识别敏感内容" : "识别文件中的代号", mode === "protect" ? "准备替换范围" : "核对本机任务"]
+    : mode === "protect"
     ? [format === "csv" ? "读取 CSV 表格结构" : ["txt", "md"].includes(format) ? "读取纯文本内容" : format === "docx" ? "复制 Word 文档结构" : "复制工作簿结构", ["txt", "md", "docx"].includes(format) ? "替换已确认内容" : "替换已确认列", "加密保存还原记录并检查残留"]
     : ["读取本机加密还原记录", "恢复匹配的真实值", "检查残留代号并准备导出"];
   return (
     <div className="processing-state" aria-live="polite">
       <FileMark size="medium" format={format} />
-      <p className="state-kicker">本机处理中</p>
-      <h2>{mode === "protect" ? "正在生成脱敏文件" : "正在生成还原文件"}</h2>
+      <p className="state-kicker">{inspecting ? "本机检查中" : "本机处理中"}</p>
+      <h2>{inspecting ? "正在检查文件" : mode === "protect" ? "正在生成脱敏文件" : "正在生成还原文件"}</h2>
       <p className="state-description">正在处理 {file.name}。文件内容不会发送到网络。</p>
       <div className="progress-track progress-track--indeterminate" aria-hidden="true"><span /></div>
       <ol className="process-steps">
@@ -1229,6 +1232,11 @@ export function App() {
     return true;
   };
 
+  // After download the task is kept, so switching needs no prompt; open the picker in the same step.
+  const openRestorePicker = async () => {
+    if (await reset("restore")) window.requestAnimationFrame(() => inputRef.current?.click());
+  };
+
   const continueLatestTask = async () => {
     const switched = mode === "restore" && status === "empty" ? true : await changeMode("restore", true);
     if (switched) window.requestAnimationFrame(() => inputRef.current?.click());
@@ -1429,10 +1437,10 @@ export function App() {
   let mainState;
   if (status === "empty") mainState = <EmptyState mode={mode} inputRef={inputRef} isDraggingFile={isDraggingFile} />;
   else if (status === "awaiting-credential") mainState = <div className="ready-state"><SelectedFile file={file} onRemove={() => reset(mode)} /><div className="task-change-banner" role="status"><Info /><span><strong>待导入还原钥匙文件</strong><small>已保留当前文件。请选择配套还原钥匙文件，核对任务后再还原；尚未生成输出文件。</small></span></div></div>;
-  else if (status === "inspecting") mainState = <ProcessingState mode={mode} file={file} />;
+  else if (status === "inspecting") mainState = <ProcessingState mode={mode} file={file} phase="inspect" />;
   else if (status === "ready") mainState = <ReadyState mode={mode} file={file} analysis={analysis} selectedIds={selectedIds} fieldModes={fieldModes} restoreInspection={restoreInspection} regenerationNotice={regenerationNotice} detailsOpen={detailsOpen} onRemove={() => reset(mode)} onPrimary={processFile} onDetails={openDetails} tokenFormat={tokenFormat} onTokenFormat={setTokenFormat} pairingConfirmed={pairingConfirmed} onPairing={setPairingConfirmed} />;
   else if (status === "processing") mainState = <ProcessingState mode={mode} file={file} />;
-  else if (status === "success") mainState = <SuccessState mode={mode} result={result} downloadRequested={downloadRequested} detailsOpen={detailsOpen} onDetails={openDetails} onDownloadRequested={() => setDownloadRequested(true)} onCredentialRequested={() => setCredentialRequested(true)} onAdjust={adjustProtection} onNext={() => reset("restore")} onReset={() => reset(mode)} />;
+  else if (status === "success") mainState = <SuccessState mode={mode} result={result} downloadRequested={downloadRequested} detailsOpen={detailsOpen} onDetails={openDetails} onDownloadRequested={() => setDownloadRequested(true)} onCredentialRequested={() => setCredentialRequested(true)} onAdjust={adjustProtection} onNext={openRestorePicker} onReset={() => reset(mode)} />;
   else mainState = <ErrorState mode={mode} error={error} canAdjustFields={canAdjustFailedProtectionSelection} onAdjustFields={adjustFailedProtectionSelection} onReset={() => reset(mode)} onDetails={openDetails} onBackToProtect={() => reset("protect")} />;
 
   const routeStage = mode === "restore" ? "restore" : status === "success" && downloadRequested ? "ai" : "protect";
