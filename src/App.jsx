@@ -110,14 +110,12 @@ const MODE_COPY = {
     title: "制作脱敏文件",
     subtitle: "把敏感信息替换成代号后再交给 AI",
     emptyTitle: "拖入待脱敏的表格或文本文件",
-    emptyNote: "文件仅在当前浏览器中读取和处理",
     primary: "生成脱敏文件",
   },
   restore: {
     title: "还原处理文件",
     subtitle: "导入 AI 处理后的 Excel、CSV、Word 或 PPT，恢复真实内容",
     emptyTitle: "拖入 AI 处理后的文件",
-    emptyNote: "还原前会核对文件与本机记录",
     primary: "生成还原文件",
   },
 };
@@ -168,7 +166,7 @@ function TaskChoice({ active, icon: Icon, title, subtitle, disabled, onClick }) 
   return (
     <button className="task-choice" data-active={active} type="button" disabled={disabled} onClick={onClick} aria-pressed={active}>
       <span className="task-choice__icon" aria-hidden="true"><Icon weight="duotone" /></span>
-      <span className="task-choice__copy"><strong>{title}</strong><span>{subtitle}</span></span>
+      <span className="task-choice__copy"><strong>{title}</strong>{subtitle && <span>{subtitle}</span>}</span>
     </button>
   );
 }
@@ -213,7 +211,6 @@ function LocalTaskPanel({ localTasks, disabled, onContinue, onViewAll, viewAllBu
             <span>最近任务</span>
             <strong title={localTasks.latest.taskName}>{localTasks.latest.taskName}</strong>
             <small>{formatTaskTime(localTasks.latest.createdAt)} · 任务 {localTasks.latest.marker || localTasks.latest.taskId}</small>
-            <em><CheckCircle weight="fill" />还原记录保存在当前浏览器</em>
           </div>
           <button className="local-task-panel__action" type="button" disabled={disabled} onClick={onContinue}>
             选择待还原文件<ArrowRight weight="bold" />
@@ -312,7 +309,7 @@ function LocalTasksDrawer({ localTasks, currentTaskId, pendingDeleteId, deleting
           );
         })}
       </div> : <p className="local-tasks-drawer__empty">{localTasks.tasks.length ? "没有找到匹配的任务，请换一个文件名或任务编号。" : "当前浏览器已没有可还原的本机任务。"}</p>}
-      <p className="local-tasks-drawer__boundary"><Info weight="duotone" />本机任务不自动到期。删除还原记录后不能撤销；持久保存不提供备份恢复。</p>
+      <p className="local-tasks-drawer__boundary"><Info weight="duotone" />本机任务不自动到期。删除还原记录后不能撤销。</p>
       </div>
     </aside>
   );
@@ -369,7 +366,7 @@ function EmptyState({ mode, inputRef, isDraggingFile }) {
         : <><span className="desktop-copy">{copy.emptyTitle}</span><span className="mobile-copy">{mode === "protect" ? "选择待脱敏文件" : "选择 AI 处理后的文件"}</span></>}</strong>
       <span className="empty-state__note">{isDraggingFile
         ? <>文件只在当前浏览器中处理，不会自动上传到网络</>
-        : <><span className="desktop-copy">{copy.emptyNote}<br />也可以点击按钮选择{supportedCopy}</span><span className="mobile-copy">文件只在当前浏览器中处理<br />支持{supportedCopy}</span><small className="empty-state__limit">文本类上限 {TEXT_SIZE_LIMIT_MB} MB · Office 上限 {OFFICE_SIZE_LIMIT_MB} MB</small></>}</span>
+        : <><span>支持{supportedCopy}</span><small className="empty-state__limit">文本类上限 {TEXT_SIZE_LIMIT_MB} MB · Office 上限 {OFFICE_SIZE_LIMIT_MB} MB</small></>}</span>
       {!isDraggingFile && <button className="small-button" type="button" onClick={() => inputRef.current?.click()}>选择文件</button>}
       {mode === "restore" && <span className="same-device-note"><DesktopTower weight="duotone" />请在生成脱敏文件时使用的同一设备和浏览器中还原</span>}
     </div>
@@ -547,7 +544,7 @@ function AiHandoff({ taskId, marker }) {
   };
   return (
     <div className="ai-handoff" aria-label="脱敏文件交给 AI 后的操作步骤">
-      <div className="ai-handoff__head"><strong>接下来，用任意 AI 处理脱敏文件</strong><span>代号必须原样保留</span></div>
+      <div className="ai-handoff__head"><strong>接下来，用任意 AI 处理脱敏文件</strong></div>
       <ol>
         <li><b>1</b><span><strong>请确认下载</strong><small>在浏览器下载列表中确认文件</small></span></li>
         <li data-state="active"><b>2</b><span><strong>交给 AI 处理</strong><small>可生成 Excel、CSV、Word 或 PPT，保留代号原样</small></span></li>
@@ -574,9 +571,9 @@ function SuccessState({ mode, result, downloadRequested, detailsOpen, onDetails,
     <div className="success-state" data-handoff={handoff} data-partial={Boolean(result.partialRestore)} data-content-loss={hasContentLoss} role="status" aria-live="polite">
       <span className="success-state__seal" aria-hidden="true">{result.partialRestore || hasContentLoss ? <WarningCircle weight="fill" /> : <Check weight="bold" />}</span>
       <h2>{protect ? handoff ? "现在可以交给 AI 处理" : "脱敏文件可以下载" : result.partialRestore ? "部分还原文件可以下载" : hasContentLoss ? "还原完成，但 AI 返回内容有缺失" : "还原文件可以下载"}</h2>
-      {(protect || result.partialRestore || hasContentLoss) && <p className="state-description">{protect
+      {((protect && !handoff) || result.partialRestore || hasContentLoss) && <p className="state-description">{protect
         ? handoff
-          ? "已发起下载。请先确认文件已保存，再交给任意 AI 处理；完成后回到这里导入处理后的文件。"
+          ? ""
           : "已选内容已替换为代号。交给 AI 前请复核其余内容，并点击下方按钮下载。"
         : result.partialRestore
           ? `另有 ${result.unresolvedOccurrences.length} 处被改写的代号未还原并原样保留，请下载后复核。`
@@ -587,8 +584,7 @@ function SuccessState({ mode, result, downloadRequested, detailsOpen, onDetails,
         <FileMark size="medium" format={result.format ?? "xlsx"} />
         <span className="output-file__copy">
           <strong className="output-file__name" title={result.outputName}><span>{outputFileName.base}</span><b>{outputFileName.extension}</b></strong>
-          <small>{downloadRequested ? "已发起下载，请在下载列表确认" : "已生成 · 等待下载"}</small>
-          <small>任务 {result.marker || result.taskId}</small>
+          {!downloadRequested && <small>已生成 · 等待下载</small>}
         </span>
       </div>
       <button className="evidence-trigger evidence-trigger--success" type="button" onClick={onDetails} aria-expanded={detailsOpen}>
@@ -603,7 +599,7 @@ function SuccessState({ mode, result, downloadRequested, detailsOpen, onDetails,
       </button>
       {protect && result.credential && <section className="short-token-panel">
         <strong>简短代号（试验）· 任务编号 {result.marker}</strong>
-        <p>只把脱敏文件交给 AI，还原钥匙文件留在本机。还原钥匙文件不包含真实值，也不能替代本机还原记录。</p>
+        <p>只把脱敏文件交给 AI，还原钥匙文件留在本机。</p>
         <CredentialDownload result={result.credential} taskId={result.taskId} marker={result.marker} onRequested={onCredentialRequested} />
         <details><summary>查看本次代号（{result.aliases.length} 个）</summary><div className="short-alias-list">{result.aliases.map(alias => <code key={alias}>{alias}</code>)}</div></details>
       </section>}
@@ -621,11 +617,10 @@ function SuccessState({ mode, result, downloadRequested, detailsOpen, onDetails,
             )}
           </div>
           <div className="post-generate-links">
-            <button className="text-button" type="button" onClick={onAdjust}>{downloadRequested ? "调整字段并生成新文件" : "修改脱敏字段"}</button>
+            <button className="text-button" type="button" onClick={onAdjust}>调整替换内容</button>
             <i aria-hidden="true" />
             <button className="text-button" type="button" onClick={onReset}>换一个文件</button>
           </div>
-          {!downloadRequested && <p className="next-step-hint">下载后，请先交给任意 AI 处理，再回来还原</p>}
         </>
       ) : (
         <>
@@ -862,7 +857,7 @@ function TextCandidateSelection({ analysis, selectedIds, onToggle, onAdd, onRemo
       <p className="drawer-note"><Info weight="duotone" />{analysis.format === "docx"
         ? "Word 处理正文、普通表格、页眉页脚和文本框；图片文字不扫描，复杂结构会停止生成。"
         : analysis.format === "md" ? "Markdown 按纯文本处理，不渲染或执行 HTML、脚本；代码块、链接和 Front Matter 中的已选完整文字也会替换。"
-          : "TXT 按纯文本处理，匹配已选完整文字并保留原换行与 BOM；请复核未选内容。"}</p>
+          : "TXT 按纯文本处理，匹配已选完整文字并保留原换行与 BOM。"}</p>
     </section>
   );
 }
@@ -887,10 +882,10 @@ function SecurityDrawer({ mode, status, analysis, selectedIds, fieldModes = {}, 
     <aside className="security-drawer" id="security-details" ref={drawerRef} role={modal ? "dialog" : undefined} aria-modal={modal || undefined} aria-labelledby="security-details-title">
       <div className="drawer-head"><h2 id="security-details-title">{error ? "技术详情" : mode === "protect" && status === "ready" ? analysis?.kind === "text" ? "替换内容" : "替换列" : "检查详情"}</h2><button ref={closeButtonRef} className="icon-button" type="button" onClick={onClose} aria-label="关闭详情"><X /></button></div>
       <div className="drawer-body">
-      <div className={`drawer-summary ${error ? "drawer-summary--warning" : status === "success" ? "" : "drawer-summary--pending"}`}>
+      {!(mode === "protect" && status === "ready") && <div className={`drawer-summary ${error ? "drawer-summary--warning" : status === "success" ? "" : "drawer-summary--pending"}`}>
         {error ? <WarningCircle weight="fill" /> : status === "success" ? <CheckCircle weight="fill" /> : <Info weight="fill" />}
         <span><strong>{error ? "安全检查未通过" : status === "success" ? "本机处理已完成" : mode === "protect" ? "请确认替换范围" : "任务已匹配，还原记录可读取"}</strong><small>{error ? "没有生成输出文件" : LOCAL_PROCESSING_COPY}</small></span>
-      </div>
+      </div>}
       {error ? (
         <div className="error-diagnosis">
           <section className="diagnosis-card diagnosis-card--analysis" aria-labelledby="diagnosis-analysis-title">
@@ -1002,7 +997,7 @@ function SecurityDrawer({ mode, status, analysis, selectedIds, fieldModes = {}, 
       )}
 
       <div className="task-token-note"><ShieldCheck weight="duotone" /><p><strong>处理边界</strong>未选内容、上下文和图片仍可能含敏感信息。</p></div>
-      <p className="drawer-note"><Info weight="duotone" />当前功能验证版使用浏览器本机加密存储，不等同于正式企业密钥库。请先使用文件副本测试。</p>
+      <p className="drawer-note"><Info weight="duotone" />还原记录加密保存在本浏览器，建议先用文件副本试用。</p>
       </div>
     </aside>
   );
@@ -1067,7 +1062,6 @@ export function App() {
   const [switchPrompt, setSwitchPrompt] = useState(false);
   const switchResolveRef = useRef(null);
   const [usagePreview, setUsagePreview] = useState(false);
-  const [filenameNotice, setFilenameNotice] = useState(() => { try { return !localStorage.getItem("operation-filenames-notice"); } catch { return true; } });
   const [auditIncomplete, setAuditIncomplete] = useState(hasOperationWriteFailure);
   useEffect(() => {
     const update = () => setAuditIncomplete(hasOperationWriteFailure());
@@ -1436,7 +1430,7 @@ export function App() {
 
   let mainState;
   if (status === "empty") mainState = <EmptyState mode={mode} inputRef={inputRef} isDraggingFile={isDraggingFile} />;
-  else if (status === "awaiting-credential") mainState = <div className="ready-state"><SelectedFile file={file} onRemove={() => reset(mode)} /><div className="task-change-banner" role="status"><Info /><span><strong>待导入还原钥匙文件</strong><small>已保留当前文件。请选择配套还原钥匙文件，核对任务后再还原；尚未生成输出文件。</small></span></div></div>;
+  else if (status === "awaiting-credential") mainState = <div className="ready-state"><SelectedFile file={file} onRemove={() => reset(mode)} /><div className="task-change-banner" role="status"><Info /><span><strong>待导入还原钥匙文件</strong><small>请选择这个文件配套的还原钥匙文件。</small></span></div></div>;
   else if (status === "inspecting") mainState = <ProcessingState mode={mode} file={file} phase="inspect" />;
   else if (status === "ready") mainState = <ReadyState mode={mode} file={file} analysis={analysis} selectedIds={selectedIds} fieldModes={fieldModes} restoreInspection={restoreInspection} regenerationNotice={regenerationNotice} detailsOpen={detailsOpen} onRemove={() => reset(mode)} onPrimary={processFile} onDetails={openDetails} tokenFormat={tokenFormat} onTokenFormat={setTokenFormat} pairingConfirmed={pairingConfirmed} onPairing={setPairingConfirmed} />;
   else if (status === "processing") mainState = <ProcessingState mode={mode} file={file} />;
@@ -1448,16 +1442,15 @@ export function App() {
   return (
     <div className="app" data-mode={mode}>
       <header className="app-header" inert={detailsOpen || localTasksOpen || auditOpen || switchPrompt}>
-        <div className="brand"><span className="brand__mark" aria-hidden="true"><ShieldCheck weight="duotone" /></span><div><strong>文件脱敏助手</strong><span>{ENTERPRISE_VAULT_ENABLED ? "文件本机处理，还原记录同步到企业 Vault。" : "本机脱敏后交给 AI，处理完成再还原。"}</span></div></div>
+        <div className="brand"><span className="brand__mark" aria-hidden="true"><ShieldCheck weight="duotone" /></span><div><strong>文件脱敏助手</strong>{ENTERPRISE_VAULT_ENABLED && <span>文件本机处理，还原记录同步到企业 Vault。</span>}</div></div>
         <BoundaryRoute stage={routeStage} />
         <div className="local-status">
-          <span className="prototype-chip prototype-chip--quiet">{appVersion} 验证版</span><span><DesktopTower weight="duotone" />{ENTERPRISE_VAULT_ENABLED ? "企业模式" : "本机预览"}</span><i aria-hidden="true" />
+          <span className="prototype-chip prototype-chip--quiet">v{appVersion}</span>{ENTERPRISE_VAULT_ENABLED && <span><DesktopTower weight="duotone" />企业模式</span>}<i aria-hidden="true" />
           <ThemeSwitcher value={themePreference} onChange={setThemePreference} />
           <i aria-hidden="true" />
           <button className="audit-trigger" type="button" title={auditIncomplete ? "操作记录：有记录未能保存" : "操作记录"} aria-label="操作记录" aria-haspopup="dialog" aria-expanded={auditOpen} onClick={event => { drawerTriggerRef.current = event.currentTarget; setAuditOpen(true); }}><ClockCounterClockwise aria-hidden="true" weight="bold" /><span>操作记录</span>{auditIncomplete && <b aria-label="有操作记录未保存">!</b>}</button>
         </div>
       </header>
-      {filenameNotice && <div className="filename-notice" role="status" inert={detailsOpen || localTasksOpen || auditOpen || switchPrompt}><span>操作记录现会保存文件名，文件名可能含敏感信息；正文和还原记录不会写入记录。</span><button type="button" className="text-button" onClick={() => { setFilenameNotice(false); try { localStorage.setItem("operation-filenames-notice", "seen"); } catch { /* Notice may reappear when preferences cannot be saved. */ } }}>知道了</button></div>}
       {usagePreview && <div inert={auditOpen}>{usagePreview === "central" ? <CentralOperations onBack={() => { setUsagePreview(false); requestAnimationFrame(() => document.querySelector(".audit-trigger")?.focus()); }} /> : UsagePreview && <Suspense fallback={<p role="status">正在打开统计预览…</p>}><UsagePreview onBack={() => { setUsagePreview(false); requestAnimationFrame(() => document.querySelector(".audit-trigger")?.focus()); }}/></Suspense>}</div>}
       <main className="app-main" hidden={usagePreview}>
         <section className="workspace" aria-label="文件处理工作区" inert={detailsOpen || localTasksOpen || auditOpen || switchPrompt}>
@@ -1467,14 +1460,14 @@ export function App() {
           </header>
           <aside className="task-rail" aria-label="任务与本机记录">
             <div className="task-switcher" aria-label="选择任务">
-              <TaskChoice active={mode === "protect"} icon={FilePlus} title="制作脱敏文件" subtitle="识别并替换敏感信息" disabled={status === "processing" || status === "inspecting"} onClick={() => changeMode("protect")} />
-              <TaskChoice active={mode === "restore"} icon={FileArrowDown} title="还原处理文件" subtitle="核对文件并恢复真实内容" disabled={status === "processing" || status === "inspecting"} onClick={() => changeMode("restore")} />
+              <TaskChoice active={mode === "protect"} icon={FilePlus} title="制作脱敏文件" disabled={status === "processing" || status === "inspecting"} onClick={() => changeMode("protect")} />
+              <TaskChoice active={mode === "restore"} icon={FileArrowDown} title="还原处理文件" disabled={status === "processing" || status === "inspecting"} onClick={() => changeMode("restore")} />
             </div>
             <LocalTaskPanel localTasks={localTasks} disabled={status === "processing" || status === "inspecting"} onContinue={continueLatestTask} onViewAll={openLocalTasks} viewAllButtonRef={localTasksViewButtonRef} />
           </aside>
           <section className="workbench" data-status={status} data-dragging={isDraggingFile} onDragEnter={handleDragEnter} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop} aria-label={MODE_COPY[mode].title}>
             {mainState}
-            {mode === "restore" && !ENTERPRISE_VAULT_ENABLED && status !== "success" && <CredentialInput credential={credential} required={status === "awaiting-credential"} error={credentialError} disabled={status === "processing" || status === "inspecting"} onChange={importCredential} />}
+            {mode === "restore" && !ENTERPRISE_VAULT_ENABLED && status !== "success" && (status !== "error" || /CREDENTIAL/.test(error?.code ?? "")) && <CredentialInput credential={credential} required={status === "awaiting-credential"} error={credentialError} disabled={status === "processing" || status === "inspecting"} onChange={importCredential} />}
           </section>
           <MobileProgress stage={routeStage} />
           <input ref={inputRef} className="visually-hidden" type="file" accept={(mode === "protect" ? SUPPORTED_PROTECT_FORMATS : SUPPORTED_RESTORE_FORMATS).map(format => `.${format}`).join(",")} tabIndex={-1} aria-label={`选择待${mode === "protect" ? "脱敏" : "还原"}的 ${formatList(mode)} 文件`} onChange={handleFileInput} />

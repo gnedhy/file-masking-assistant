@@ -4,7 +4,6 @@ import path from "node:path";
 import os from "node:os";
 test("记录筛选导出兼容旧数据，统计示例独立且返回保留文件",async({page},info)=>{
   await page.goto('/');
-  await page.getByRole('button',{name:'知道了',exact:true}).click();
   await page.locator('input[type=file]:not([accept=".json"])').setInputFiles({name:'待处理测试.txt',mimeType:'text/plain',buffer:Buffer.from('客户名称：虚构测试企业')});
   await expect(page.getByRole('button',{name:'生成脱敏文件',exact:true})).toBeVisible();
   await page.evaluate(async()=>{const {recordOperation}=await import('/src/operationLog.js');await recordOperation('protect','success',{taskId:'ABCD1234'});await recordOperation('protect','success',{taskId:'ABCD1235',format:'txt',inputName:'C:\\secret\\=测试,"长文件名".txt',outputName:'脱敏结果.txt',mapping:'不可记录'});});

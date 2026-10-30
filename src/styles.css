@@ -336,8 +336,6 @@ a {
 .record-filename summary { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; cursor: pointer; line-height: 1.5; }
 .record-filename details[open] summary { -webkit-line-clamp: unset; }
 .record-filename summary:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; border-radius: 3px; }
-.filename-notice { max-width: 1240px; margin: 16px auto 0; padding: 12px 20px; display: flex; align-items: center; justify-content: space-between; gap: 16px; color: var(--muted); font-size: var(--fs-sm); }
-.filename-notice button { flex-shrink: 0; }
 .usage-preview { max-width: 1280px; margin: 0 auto; padding: 40px 24px; color: var(--ink); }
 .usage-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
 .usage-heading h1 { margin: 0; font-size: 30px; }
@@ -389,7 +387,6 @@ a {
   .usage-user-grid { grid-template-columns: 1fr; gap: 12px; }
   .usage-table { display: none; }
   .usage-mobile { display: block; }
-  .filename-notice { align-items: flex-start; line-height: 1.6; }
 }
 .operation-list { list-style: none; margin: 0; padding: 0; }
 .operation-list li { padding: 16px 0; border-bottom: 1px solid var(--line); }

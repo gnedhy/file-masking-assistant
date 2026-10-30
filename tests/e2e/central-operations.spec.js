@@ -13,7 +13,6 @@ test("集中记录：真实数据库、本人权限、管理员统计、导出�
   const prefix=`闭环_${randomUUID().slice(0,8)}`;
   await page.goto('/');
   await page.waitForFunction(async()=>Boolean((await import('/src/operationSync.js')).getOperationSyncState().session));
-  await page.getByRole('button',{name:'知道了',exact:true}).click();
   await page.locator('input[type=file]:not([accept=".json"])').setInputFiles({name:`${prefix}.txt`,mimeType:'text/plain',buffer:Buffer.from('客户名称：虚构测试企业\n产品名称：虚构产品甲')});
   await page.getByRole('button',{name:'生成脱敏文件',exact:true}).click();
   const generated=page.waitForEvent('download');

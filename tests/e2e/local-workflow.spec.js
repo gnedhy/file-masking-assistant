@@ -203,7 +203,7 @@ test("凭据错误可原地恢复，完整编号可复制，实名结果有回�
   await page.getByRole("checkbox", { name: "我确认此文件与以上任务配套" }).check();
   await page.getByRole("button", { name: "生成还原文件" }).click();
   await expect(page.getByText("包含真实信息，请勿再次交给外部 AI。", { exact: true })).toBeVisible();
-  await expect(page.locator(".output-file")).toContainText(`任务 ${fixture.marker}`);
+  await expect(page.locator(".output-file")).toContainText(fixture.marker);
   await expect(page.getByText("检查通过", { exact: true })).toBeVisible();
   await expect(page.getByText(/外部请求/)).toHaveCount(0);
   await page.getByRole("button", { name: "查看全部任务" }).click();
