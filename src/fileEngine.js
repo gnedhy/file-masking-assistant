@@ -97,7 +97,7 @@ export async function inspectRestoreFile(file, context) {
       usedMappings: inspection.uniqueTokens,
       checkedAreas: ["全部 CSV 文本字段"],
       uncheckedAreas: ["图片、样式和嵌入对象（CSV 本身不包含）；不计算公式"],
-      warnings: ["输出统一为 UTF-8 BOM；未出现的映射不代表异常。"],
+      warnings: ["输出统一为 UTF-8 BOM；部分代号未出现不代表异常。"],
     };
   }
   if (format === "xlsx") {
@@ -110,7 +110,7 @@ export async function inspectRestoreFile(file, context) {
       usedMappings: inspection.uniqueTokens,
       checkedAreas: ["工作表普通单元格和富文本"],
       uncheckedAreas: ["图片、图表和嵌入对象"],
-      warnings: ["图片未扫描，未出现的映射不代表异常。"],
+      warnings: ["图片未扫描，部分代号未出现不代表异常。"],
     };
   }
   const { inspectOfficeRestoreFile } = await import("./officeOpenXmlEngine.js");
@@ -138,7 +138,7 @@ export async function restoreSafeFile(file, expectedTaskId, context) {
       mimeType: FILE_FORMAT_META[format].mimeType,
       checkedAreas: ["全部 CSV 文本字段"],
       uncheckedAreas: ["图片、样式和嵌入对象（CSV 本身不包含）；不计算公式"],
-      warnings: ["输出统一为 UTF-8 BOM；未出现的映射不代表异常。"],
+      warnings: ["输出统一为 UTF-8 BOM；部分代号未出现不代表异常。"],
     };
   }
   if (format === "xlsx") {
@@ -151,7 +151,7 @@ export async function restoreSafeFile(file, expectedTaskId, context) {
       usedMappings: result.usedMappings ?? result.restoredOccurrences,
       checkedAreas: ["工作表普通单元格和富文本"],
       uncheckedAreas: ["图片、图表和嵌入对象"],
-      warnings: ["图片未扫描，未出现的映射不代表异常。"],
+      warnings: ["图片未扫描，部分代号未出现不代表异常。"],
     };
   }
   const { restoreOfficeSafeFile } = await import("./officeOpenXmlEngine.js");

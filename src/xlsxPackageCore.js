@@ -30,11 +30,11 @@ export async function preflightXlsxPackage(input, limits = XLSX_LIMITS) {
   const worksheetCount = entries.filter((entry) => /^xl\/worksheets\/sheet\d+\.xml$/i.test(entry.name)).length;
   if (worksheetCount > limits.worksheets) throw packageError("PACKAGE_TOO_LARGE", "XLSX 工作表超过 200 个。");
   const unsafeEntry = entries.find((entry) => /(^|\/)(embeddings|activeX)\//i.test(entry.name) || /vbaProject\.bin$/i.test(entry.name));
-  if (unsafeEntry) throw packageError("EMBEDDED_OBJECTS", "XLSX 包含宏、ActiveX、OLE 或嵌入包，首版不处理。", [unsafeEntry.name]);
+  if (unsafeEntry) throw packageError("EMBEDDED_OBJECTS", "XLSX 包含宏、ActiveX、OLE 或嵌入包，暂不处理。", [unsafeEntry.name]);
   const contentTypesFile = zip.file("[Content_Types].xml");
   if (!contentTypesFile) throw packageError("INVALID_XLSX", "XLSX 缺少内容类型声明。");
   const contentTypes = await contentTypesFile.async("string");
-  if (/macroEnabled|vnd\.ms-office\.vbaProject/i.test(contentTypes)) throw packageError("EMBEDDED_OBJECTS", "宏格式 XLSX 不在首版支持范围内。");
+  if (/macroEnabled|vnd\.ms-office\.vbaProject/i.test(contentTypes)) throw packageError("EMBEDDED_OBJECTS", "宏格式 XLSX 暂不支持。");
   if (!/spreadsheetml\.sheet\.main\+xml/i.test(contentTypes)) throw packageError("FORMAT_MISMATCH", "文件扩展名是 XLSX，但内部内容不是标准工作簿。");
   for (const entry of entries.filter((item) => /\.rels$/i.test(item.name))) {
     const relationships = await entry.async("string");
@@ -50,7 +50,7 @@ export async function preflightXlsxPackage(input, limits = XLSX_LIMITS) {
     const text = `${decoded}\n${decoded.replace(/<[^>]*>/g, "")}`;
     const shortTokens = [...text.matchAll(tokenPattern())].map(match => match[0]).filter(token => !token.startsWith("[["));
     const altered = findKnownShortTokens(text.replace(tokenPattern(), " "), new Set());
-    if (shortTokens.length || altered.length) throw packageError("UNSUPPORTED_CONTENT", "简短替身出现在不支持还原的 XLSX 区域，已停止处理。", [entry.name]);
+    if (shortTokens.length || altered.length) throw packageError("UNSUPPORTED_CONTENT", "简短代号出现在不支持还原的 XLSX 区域，已停止处理。", [entry.name]);
   }
   return { zip, entries: entries.length, totalSize, worksheetCount };
 }

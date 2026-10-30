@@ -317,7 +317,7 @@ test("本机存储不可用时不生成脱敏文件", async ({ page }) => {
   await page.locator('input[type="file"]:not([accept=".json"])').setInputFiles(path.resolve("tests/fixtures/01_标准销售数据_UTF8.csv"));
   await expect(page.getByText("确认替换列")).toBeVisible();
   await page.getByRole("button", { name: /生成脱敏文件/ }).click();
-  await expect(page.getByRole("heading", { name: "当前浏览器无法使用本机映射存储" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "当前浏览器无法使用本机还原记录存储" })).toBeVisible();
   await expect(page.getByText("没有生成输出文件")).toBeVisible();
 });
 
@@ -396,7 +396,7 @@ test("DOCX 可确认候选并完成原格式脱敏还原", async ({ page }) => {
   await expect(page.getByText(/已选择 \d+ 项敏感内容/)).toBeVisible();
   await page.getByRole("button", { name: "查看并调整" }).click();
   const drawer = page.getByRole("dialog", { name: /替换列|替换内容|检查详情/ });
-  await expect(drawer.getByText(/Word 首版处理正文/)).toBeVisible();
+  await expect(drawer.getByText(/Word 处理正文/)).toBeVisible();
   await drawer.getByPlaceholder("粘贴文件中需要替换的完整文字").fill("ECO/Soft-X2.0");
   await drawer.getByRole("button", { name: "添加", exact: true }).click();
   await drawer.getByRole("button", { name: "关闭详情" }).click();
@@ -439,7 +439,7 @@ test("AI 删除已知代号时提醒缺失但允许还原其余内容", async ({
   const check = page.locator(".compatibility-check");
   await expect(check).toHaveAttribute("data-content-loss", "true");
   await expect(check.getByText(/AI 返回内容中有 1 处代号未出现/)).toBeVisible();
-  await page.getByRole("button", { name: "查看匹配证据" }).click();
+  await page.getByRole("button", { name: "查看检查详情" }).click();
   await expect(page.getByRole("dialog", { name: /替换列|替换内容|检查详情/ }).getByText(/原始 \d+ · 返回 \d+/)).toBeVisible();
   await page.getByRole("dialog", { name: /替换列|替换内容|检查详情/ }).getByRole("button", { name: "关闭详情" }).click();
 

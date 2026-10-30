@@ -452,7 +452,7 @@ export function restoreWorkbookValues(workbook, mapping) {
 
   for (const occurrence of inspection.occurrences) {
     if (!mapping[occurrence.token]) {
-      unresolved.push({ ...occurrence, reason: "本机没有对应映射" });
+      unresolved.push({ ...occurrence, reason: "本机没有对应还原记录" });
     } else if (occurrence.kind === "formula") {
       unresolved.push({ ...occurrence, reason: "公式中的代号不自动改写" });
     }

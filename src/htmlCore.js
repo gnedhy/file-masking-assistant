@@ -195,7 +195,7 @@ export function restoreHtmlText(html, window, mapping) {
   if (!before.taskIds.length) throw safeError("NO_TOKENS", "HTML 中没有找到可还原的完整代号。");
   if (before.taskIds.length !== 1) throw safeError("MIXED_TASKS", "HTML 中混入了多个脱敏任务的代号。", before.taskIds);
   if (before.unsupportedOccurrences.length) throw safeError("UNSUPPORTED_CONTENT", "代号出现在脚本、样式、链接或其他不安全位置，已停止输出。", before.unsupportedOccurrences.map((item) => item.location));
-  if (unknown.length) throw safeError("UNRESOLVED_TOKENS", "HTML 中存在本机无法确认的正式代号。", unknown);
+  if (unknown.length) throw safeError("UNRESOLVED_TOKENS", "HTML 中存在本机无法确认的代号。", unknown);
   if (before.altered.length) throw safeError("ALTERED_TOKENS", "HTML 中存在残缺或被改写的已知代号。", before.altered.map((item) => `${item.location}：${item.value}`));
   if (!before.occurrences.length) throw safeError("NO_TOKENS", "HTML 中没有找到可还原的完整代号。");
 

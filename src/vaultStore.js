@@ -46,7 +46,7 @@ function openDatabase() {
     try {
       request = indexedDB.open(DB_NAME, DB_VERSION);
     } catch (error) {
-      reject(new VaultStoreError("VAULT_STORAGE_FAILED", "当前浏览器无法打开本机映射存储。", error));
+      reject(new VaultStoreError("VAULT_STORAGE_FAILED", "当前浏览器无法打开本机还原记录存储。", error));
       return;
     }
     request.onupgradeneeded = () => {
@@ -61,7 +61,7 @@ function openDatabase() {
       resolve(request.result);
     };
     request.onerror = () => reject(request.error);
-    request.onblocked = () => { blocked = true; reject(new VaultStoreError("VAULT_UPGRADE_BLOCKED", "其他页面仍占用旧版映射库，请关闭旧版页面后重试。不会删除已有任务。")); };
+    request.onblocked = () => { blocked = true; reject(new VaultStoreError("VAULT_UPGRADE_BLOCKED", "其他页面仍占用旧版还原记录库，请关闭旧版页面后重试。不会删除已有任务。")); };
   });
 }
 
@@ -88,7 +88,7 @@ async function getOrCreateKey(database) {
       await transactionDone(writeTransaction);
       if (inserted) return key;
       const winner = await getExistingKey(database);
-      if (!winner) throw new VaultStoreError("VAULT_KEY_MISSING", "无法取得本机映射密钥。");
+      if (!winner) throw new VaultStoreError("VAULT_KEY_MISSING", "无法取得本机还原记录的密钥。");
       return winner;
     })().finally(() => { keyCreationPromise = null; });
   }
@@ -103,7 +103,7 @@ async function getExistingKey(database) {
 }
 
 export async function saveVault(vault) {
-  if (ENTERPRISE_VAULT_ENABLED && vault.tokenFormat === "short") throw new VaultStoreError("SHORT_LOCAL_ONLY", "简短替身仅用于本机试验。");
+  if (ENTERPRISE_VAULT_ENABLED && vault.tokenFormat === "short") throw new VaultStoreError("SHORT_LOCAL_ONLY", "简短代号仅用于本机试验。");
   if (ENTERPRISE_VAULT_ENABLED) return saveEnterpriseVault(vault);
   let database;
   try {
@@ -129,10 +129,10 @@ export async function saveVault(vault) {
   } catch (error) {
     await recordOperation("save_mapping", "failed");
     if (error instanceof VaultStoreError) throw error;
-    if (error?.name === "ConstraintError") throw new VaultStoreError("VAULT_TASK_EXISTS", "任务编号已存在，原映射未改动。请重新生成脱敏文件。", error);
+    if (error?.name === "ConstraintError") throw new VaultStoreError("VAULT_TASK_EXISTS", "任务编号已存在，原还原记录未改动。请重新生成脱敏文件。", error);
     const message = error?.name === "QuotaExceededError"
-      ? "本机存储空间不足，无法保存还原映射。"
-      : "无法保存本机还原映射。";
+      ? "本机存储空间不足，无法保存还原记录。"
+      : "无法保存本机还原记录。";
     throw new VaultStoreError(error?.name === "QuotaExceededError" ? "VAULT_QUOTA_EXCEEDED" : "VAULT_SAVE_FAILED", message, error);
   } finally {
     database?.close();
@@ -149,12 +149,12 @@ export async function loadVault(taskId) {
     await transactionDone(transaction);
     if (!record) return null;
     const key = await getExistingKey(database);
-    if (!key) throw new VaultStoreError("VAULT_KEY_MISSING", "本机映射仍在，但解密密钥已经丢失。映射无法恢复。");
+    if (!key) throw new VaultStoreError("VAULT_KEY_MISSING", "本机还原记录仍在，但解密密钥已丢失，无法恢复。");
     try {
       const plaintext = await crypto.subtle.decrypt({ name: "AES-GCM", iv: record.iv }, key, record.ciphertext);
       return JSON.parse(new TextDecoder().decode(plaintext));
     } catch (error) {
-      throw new VaultStoreError("VAULT_DECRYPT_FAILED", "本机映射已损坏或无法使用当前密钥解密。", error);
+      throw new VaultStoreError("VAULT_DECRYPT_FAILED", "本机还原记录已损坏或无法使用当前密钥解密。", error);
     }
   } finally {
     database?.close();
@@ -174,7 +174,7 @@ export async function deleteVault(taskId) {
   } catch (error) {
     await recordOperation("delete_mapping", "failed", { taskId });
     if (error instanceof VaultStoreError) throw error;
-    throw new VaultStoreError("VAULT_DELETE_FAILED", "无法删除本机映射。", error);
+    throw new VaultStoreError("VAULT_DELETE_FAILED", "无法删除本机还原记录。", error);
   } finally {
     database?.close();
   }
@@ -209,7 +209,7 @@ export async function listVaultSummaries() {
 }
 
 export async function reserveTaskMarker(marker, taskId) {
-  if (ENTERPRISE_VAULT_ENABLED) throw new VaultStoreError("SHORT_LOCAL_ONLY", "简短替身仅用于本机试验。");
+  if (ENTERPRISE_VAULT_ENABLED) throw new VaultStoreError("SHORT_LOCAL_ONLY", "简短代号仅用于本机试验。");
   const database = await openDatabase();
   try {
     const transaction = database.transaction("markers", "readwrite");
@@ -226,6 +226,6 @@ export async function reserveTaskMarker(marker, taskId) {
     await done;
     return inserted;
   } catch (error) {
-    throw new VaultStoreError(error?.name === "QuotaExceededError" ? "VAULT_QUOTA_EXCEEDED" : "VAULT_SAVE_FAILED", "无法占用本机任务标记，未生成文件。", error);
+    throw new VaultStoreError(error?.name === "QuotaExceededError" ? "VAULT_QUOTA_EXCEEDED" : "VAULT_SAVE_FAILED", "无法登记本机任务编号，未生成文件。", error);
   } finally { database.close(); }
 }

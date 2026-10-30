@@ -41,7 +41,7 @@ test("当前模式不重置，切换取消保留选择并返回实际焦点", as
   await confirmSwitch(page);
   await expect(page.getByRole("heading", { name: "把处理结果恢复为实名文件" })).toBeVisible();
   await expect(input(page)).toHaveAttribute("accept", ".xlsx,.csv,.txt,.md,.docx,.pptx,.html");
-  await expect(page.getByLabel("选择凭据文件")).toHaveCount(0);
+  await expect(page.getByLabel("选择还原钥匙文件")).toHaveCount(0);
   expect(errors).toEqual([]);
 });
 
@@ -59,7 +59,7 @@ test("未交付任务清理，下载过凭据的任务切换后保留", async ({
   await page.getByRole("radio", { name: "简短代号（试验）" }).check();
   await page.getByRole("button", { name: "生成脱敏文件" }).click();
   const receipt = page.waitForEvent("download");
-  await page.getByRole("link", { name: "下载还原凭据" }).click();
+  await page.getByRole("link", { name: "下载还原钥匙文件" }).click();
   await receipt;
   const original = await summaries(page);
   expect(original).toHaveLength(1);
@@ -144,9 +144,9 @@ test("跨标签页通知只含变更标记，任务摘要自动更新", async ({
   await expect(page.locator(".local-task-panel")).toContainText("另页虚构任务");
   await page.getByRole("button", { name: "查看全部任务" }).click();
   const drawer = page.getByRole("dialog", { name: "本机任务", exact: true });
-  await expect(drawer.getByText("映射已保存", { exact: true })).toBeVisible();
+  await expect(drawer.getByText("还原记录已保存", { exact: true })).toBeVisible();
   await other.evaluate(async () => (await import("/src/vaultStore.js")).deleteVault("BBBB2222"));
-  await expect(drawer.getByText("0 个还原任务 · 0 条映射")).toBeVisible();
+  await expect(drawer.getByText("0 个还原任务 · 0 条还原记录")).toBeVisible();
   expect(await page.evaluate(() => window.testMessages)).toEqual(["changed", "changed"]);
 });
 
@@ -166,8 +166,8 @@ test("无广播时打开抽屉与恢复焦点均刷新，不把密钥丢失称�
   await page.getByRole("button", { name: "查看存储状态" }).click();
   const drawer = page.getByRole("dialog", { name: "本机任务", exact: true });
   await expect(drawer.getByText("摘要仍在", { exact: true })).toBeVisible();
-  await expect(drawer.getByText("映射已保存", { exact: true })).toBeVisible();
-  await expect(drawer.getByText("映射可用", { exact: true })).toHaveCount(0);
+  await expect(drawer.getByText("还原记录已保存", { exact: true })).toBeVisible();
+  await expect(drawer.getByText("还原记录可用", { exact: true })).toHaveCount(0);
   await drawer.getByRole("button", { name: "关闭本机任务" }).click();
   await other.evaluate(async () => (await import("/src/vaultStore.js")).deleteVault("BBBB2222"));
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
@@ -186,11 +186,11 @@ test("凭据错误可原地恢复，完整编号可复制，实名结果有回�
   });
   await switchToRestore(page);
   await input(page).setInputFiles({ name: "AI返回.txt", mimeType: "text/plain", buffer: Buffer.from(fixture.text) });
-  await expect(page.getByText("待导入凭据", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "选择凭据文件", exact: true })).toBeVisible();
-  const credentialInput = page.getByLabel("选择凭据文件", { exact: true });
+  await expect(page.getByText("待导入还原钥匙文件", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "选择还原钥匙文件", exact: true })).toBeVisible();
+  const credentialInput = page.getByLabel("选择还原钥匙文件", { exact: true });
   await credentialInput.setInputFiles({ name: "损坏.json", mimeType: "application/json", buffer: Buffer.from("bad") });
-  await expect(page.getByRole("alert")).toContainText("无法读取还原凭据");
+  await expect(page.getByRole("alert")).toContainText("无法读取还原钥匙文件");
   await expect(page.getByText("AI返回.txt", { exact: true })).toBeVisible();
   await credentialInput.setInputFiles({ name: "正确.json", mimeType: "application/json", buffer: Buffer.from(fixture.receipt) });
   await expect(page.getByRole("button", { name: "生成还原文件" })).toBeDisabled();

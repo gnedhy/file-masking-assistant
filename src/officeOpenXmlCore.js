@@ -244,7 +244,7 @@ export async function validateDocxProtectionStructure(zip) {
     if (/^word\/(?:footnotes|endnotes)\.xml$/i.test(entry.name) && /<w:(?:footnote|endnote)\b[^>]*w:id="(?:[1-9]\d*)"/i.test(xml)) details.push(`${entry.name}：脚注或尾注`);
     if (/\.rels$/i.test(entry.name) && /TargetMode=["']External["']/i.test(xml)) details.push(`${entry.name}：外部链接或远程模板`);
   }
-  if (details.length) throw Object.assign(new Error("DOCX 包含首版无法完整脱敏的结构。"), { code: "UNSUPPORTED_DOCX_STRUCTURE", details });
+  if (details.length) throw Object.assign(new Error("DOCX 包含暂时无法完整脱敏的结构。"), { code: "UNSUPPORTED_DOCX_STRUCTURE", details });
 }
 
 export async function assertNoSensitiveValuesInOfficePackage(zip, mapping) {
@@ -382,13 +382,13 @@ export async function loadOfficePackage(input, declaredFormat, limits = OFFICE_L
   const totalSize = entries.reduce((sum, entry) => sum + (Number(entry?._data?.uncompressedSize) || 0), 0);
   if (totalSize > limits.uncompressedBytes) throw Object.assign(new Error("文件解包后的总量超过 250 MB。"), { code: "PACKAGE_TOO_LARGE" });
   const unsafeEntry = entries.find((entry) => /(^|\/)(embeddings|activeX)\//i.test(entry.name) || /vbaProject\.bin$/i.test(entry.name));
-  if (unsafeEntry) throw Object.assign(new Error("文件包含宏、OLE 或嵌入包，首版不会处理。"), { code: "EMBEDDED_OBJECTS", details: [unsafeEntry.name] });
+  if (unsafeEntry) throw Object.assign(new Error("文件包含宏、OLE 或嵌入包，暂不处理。"), { code: "EMBEDDED_OBJECTS", details: [unsafeEntry.name] });
 
   const contentTypesFile = zip.file("[Content_Types].xml");
   if (!contentTypesFile) throw Object.assign(new Error("缺少 Office 内容类型声明。"), { code: "INVALID_OFFICE_PACKAGE" });
   const contentTypes = await contentTypesFile.async("string");
   if (/macroEnabled|vnd\.ms-office\.vbaProject/i.test(contentTypes)) {
-    throw Object.assign(new Error("宏格式文件不在首版支持范围内。"), { code: "EMBEDDED_OBJECTS" });
+    throw Object.assign(new Error("宏格式文件暂不支持。"), { code: "EMBEDDED_OBJECTS" });
   }
   const detectedFormat = Object.entries(OFFICE_FORMATS).find(([, config]) => contentTypes.includes(config.mainContentType))?.[0];
   if (!detectedFormat) throw Object.assign(new Error("不是受支持的 DOCX 或 PPTX 文件。"), { code: "UNSUPPORTED_FILE" });

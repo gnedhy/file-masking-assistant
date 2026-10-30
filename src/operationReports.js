@@ -24,7 +24,7 @@ export function operationsCsv(records, example = false) {
     if (/^[\s\uFEFF]*[=+@-]/u.test(text) || /^[\t\r\n]/.test(text)) text = "'" + text;
     return '"' + text.replaceAll('"', '""') + '"';
   };
-  const rows = [["数据来源", "用户", "时间", "任务", "任务标记", "输入文件名", "输出文件名", "格式", "操作", "结果"],
+  const rows = [["数据来源", "用户", "时间", "任务", "任务编号（简短）", "输入文件名", "输出文件名", "格式", "操作", "结果"],
     ...records.map(r => [example ? "虚构示例" : "本机记录", r.userName || "本机（未登录）", r.time, r.taskId, r.marker, r.inputName || "未记录", r.outputName || "未记录", r.format?.toUpperCase(), OPERATION_LABELS[r.action], OPERATION_RESULTS[r.result]])];
   return "\uFEFF" + rows.map(row => row.map(cell).join(",")).join("\r\n");
 }

@@ -133,7 +133,7 @@ test("简短模式界面下载、重新打开、导入凭据和确认还原", as
   await page.getByRole("radio", { name: "简短代号（试验）" }).check();
   await page.getByRole("button", { name: "生成脱敏文件" }).click();
   const receiptPromise = page.waitForEvent("download");
-  await page.getByRole("link", { name: "下载还原凭据" }).click();
+  await page.getByRole("link", { name: "下载还原钥匙文件" }).click();
   const receipt = await receiptPromise;
   await expect(page.getByRole("link", { name: "下载脱敏文件" })).toBeVisible();
   const safePromise = page.waitForEvent("download");
@@ -149,8 +149,8 @@ test("简短模式界面下载、重新打开、导入凭据和确认还原", as
   await reopened.goto("/");
   await reopened.getByRole("button", { name: "还原处理文件" }).click();
   await reopened.locator('input[type="file"]:not([accept=".json"])').setInputFiles(safePath);
-  await expect(reopened.getByText("待导入凭据", { exact: true })).toBeVisible();
-  await reopened.getByLabel("选择凭据文件", { exact: true }).setInputFiles(receiptPath);
+  await expect(reopened.getByText("待导入还原钥匙文件", { exact: true })).toBeVisible();
+  await reopened.getByLabel("选择还原钥匙文件", { exact: true }).setInputFiles(receiptPath);
   await expect(reopened.getByRole("button", { name: "生成还原文件" })).toBeDisabled();
   await reopened.getByRole("checkbox", { name: "我确认此文件与以上任务配套" }).check();
   for (const [value, name] of [["dark", "深色模式"], ["light", "浅色模式"]]) {
@@ -167,8 +167,8 @@ test("简短模式界面下载、重新打开、导入凭据和确认还原", as
   await expect(reopened.getByRole("link", { name: "下载还原文件" })).toBeVisible();
   await reopened.getByRole("button", { name: "查看全部任务" }).click();
   const redownload = reopened.waitForEvent("download");
-  await reopened.getByRole("button", { name: "下载还原凭据" }).click();
-  expect((await redownload).suggestedFilename()).toMatch(/^还原凭据_/);
+  await reopened.getByRole("button", { name: "下载还原钥匙文件" }).click();
+  expect((await redownload).suggestedFilename()).toMatch(/^还原钥匙_/);
   expect(errors).toEqual([]);
 });
 

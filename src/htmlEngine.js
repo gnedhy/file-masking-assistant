@@ -42,10 +42,10 @@ export async function inspectHtmlRestoreFile(file, context) {
     validateInspection(initial);
     const vault = await resolveRestoreVault(initial, context);
     const taskId = vault.taskId;
-    if (!vault) throw new SafeFileError("VAULT_NOT_FOUND", `本机找不到任务 ${taskId} 的映射。`, [`任务 ${taskId}`]);
+    if (!vault) throw new SafeFileError("VAULT_NOT_FOUND", `本机找不到任务 ${taskId} 的还原记录。`, [`任务 ${taskId}`]);
     const inspection = inspectHtmlText(html, window, vault.mapping);
     const unknown = inspection.uniqueTokens.filter((token) => !vault.mapping[token]);
-    if (unknown.length) throw new SafeFileError("UNRESOLVED_TOKENS", "HTML 中存在本机无法确认的正式代号。", unknown);
+    if (unknown.length) throw new SafeFileError("UNRESOLVED_TOKENS", "HTML 中存在本机无法确认的代号。", unknown);
     if (inspection.altered.length) throw new SafeFileError("ALTERED_TOKENS", "HTML 中存在残缺或被改写的已知代号，已停止输出。", inspection.altered.map((item) => `${item.location}：${item.value}`));
     return {
       ...taskEvidence(vault), format: "html", formatLabel: "HTML", taskId, taskName: vault.taskName,
@@ -73,7 +73,7 @@ export async function restoreHtmlSafeFile(file, expectedTaskId, context) {
     const initial = inspectHtmlText(html, window);
     validateInspection(initial);
     const vault = await resolveRestoreVault(initial, context, expectedTaskId);
-    if (!vault) throw new SafeFileError("VAULT_NOT_FOUND", "本机映射已不存在，无法还原。");
+    if (!vault) throw new SafeFileError("VAULT_NOT_FOUND", "本机还原记录已不存在，无法还原。");
     const comparison = occurrenceComparison(vault.occurrenceBaseline, initial.occurrences);
     const restored = restoreHtmlText(html, window, vault.mapping);
     const buffer = new TextEncoder().encode(restored.html).buffer;

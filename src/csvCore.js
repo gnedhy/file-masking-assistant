@@ -406,7 +406,7 @@ export function restoreCsvValues(document, mapping) {
   const inspection = inspectCsvTokens(document);
   const unresolved = inspection.occurrences
     .filter((occurrence) => !mapping[occurrence.token])
-    .map((occurrence) => ({ ...occurrence, reason: "本机没有对应映射" }));
+    .map((occurrence) => ({ ...occurrence, reason: "本机没有对应还原记录" }));
   if (unresolved.length) return { restoredOccurrences: 0, unresolved, inspection };
 
   let restoredOccurrences = 0;

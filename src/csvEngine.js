@@ -129,16 +129,16 @@ export async function inspectCsvRestoreFile(file, context) {
     throw new SafeFileError("NO_TOKENS", "CSV 中没有找到本应用生成的代号。");
   }
   if (inspection.taskIds.length !== 1) {
-    throw new SafeFileError("MIXED_TASKS", "CSV 中混入了多个脱敏任务的代号，已停止还原。", inspection.taskIds.map((id) => `任务指纹 ${id}`));
+    throw new SafeFileError("MIXED_TASKS", "CSV 中混入了多个脱敏任务的代号，已停止还原。", inspection.taskIds.map((id) => `任务编号 ${id}`));
   }
   const vault = await resolveRestoreVault(inspection, context);
   const id = vault.taskId;
-  if (!vault) throw new SafeFileError("VAULT_NOT_FOUND", `本机找不到任务 ${id} 的映射，已停止还原。`, [`任务指纹 ${id}`]);
+  if (!vault) throw new SafeFileError("VAULT_NOT_FOUND", `本机找不到任务 ${id} 的还原记录，已停止还原。`, [`任务编号 ${id}`]);
   const unresolved = inspection.uniqueTokens.filter((token) => !vault.mapping[token]);
   const altered = inspectCsvAlteredTokens(document, vault.mapping);
   if (unresolved.length || altered.length) {
     throw new SafeFileError("UNRESOLVED_TOKENS", "CSV 中存在无法安全还原的代号，已停止输出。", [
-      ...unresolved.map((token) => `${token}：本机没有映射`),
+      ...unresolved.map((token) => `${token}：本机没有还原记录`),
       ...altered.map((item) => `${item.location}：代号已改写为 ${item.value}`),
     ]);
   }
@@ -151,7 +151,7 @@ export async function restoreSafeCsv(file, expectedTaskId, context) {
   const document = await loadCsv(file);
   const inspection = inspectCsvTokens(document);
   const vault = await resolveRestoreVault(inspection, context, expectedTaskId);
-  if (!vault) throw new SafeFileError("VAULT_NOT_FOUND", "本机映射已不存在，无法还原。");
+  if (!vault) throw new SafeFileError("VAULT_NOT_FOUND", "本机还原记录已不存在，无法还原。");
   const comparison = occurrenceComparison(vault.occurrenceBaseline, inspection.occurrences);
   const altered = inspectCsvAlteredTokens(document, vault.mapping);
   if (altered.length) {

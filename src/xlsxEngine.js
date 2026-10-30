@@ -159,21 +159,21 @@ export async function inspectRestoreFile(file, context) {
     throw new SafeFileError(
       "MIXED_TASKS",
       "文件中混入了多个脱敏任务的代号，已停止还原。",
-      inspection.taskIds.map((id) => `任务指纹 ${id}`),
+      inspection.taskIds.map((id) => `任务编号 ${id}`),
     );
   }
 
   const vault = await resolveRestoreVault(inspection, context);
   const id = vault.taskId;
   if (!vault) {
-    throw new SafeFileError("VAULT_NOT_FOUND", `本机找不到任务 ${id} 的映射，已停止还原。`, [`任务指纹 ${id}`]);
+    throw new SafeFileError("VAULT_NOT_FOUND", `本机找不到任务 ${id} 的还原记录，已停止还原。`, [`任务编号 ${id}`]);
   }
   const unresolved = inspection.uniqueTokens.filter((token) => !vault.mapping[token]);
   const unsupported = inspection.occurrences.filter((item) => item.kind === "formula");
   const altered = inspectWorkbookAlteredTokens(workbook, vault.mapping);
   if (unresolved.length || unsupported.length || altered.length) {
     const details = [
-      ...unresolved.map((token) => `${token}：本机没有映射`),
+      ...unresolved.map((token) => `${token}：本机没有还原记录`),
       ...unsupported.map((item) => `${item.sheetName}!${item.address}：公式中的代号不自动改写`),
       ...altered.map((item) => `${item.sheetName}!${item.address}：代号已改写为 ${item.value}`),
     ];
@@ -193,7 +193,7 @@ export async function restoreSafeWorkbook(file, expectedTaskId, context) {
   const workbook = await loadWorkbook(file);
   const inspection = inspectWorkbookTokens(workbook);
   const vault = await resolveRestoreVault(inspection, context, expectedTaskId);
-  if (!vault) throw new SafeFileError("VAULT_NOT_FOUND", "本机映射已不存在，无法还原。");
+  if (!vault) throw new SafeFileError("VAULT_NOT_FOUND", "本机还原记录已不存在，无法还原。");
   const comparison = occurrenceComparison(vault.occurrenceBaseline, inspection.occurrences);
   const altered = inspectWorkbookAlteredTokens(workbook, vault.mapping);
   if (altered.length) {

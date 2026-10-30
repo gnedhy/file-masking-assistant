@@ -169,7 +169,7 @@ test("未知 Token 与公式中的 Token 均失败关闭", () => {
   });
   assert.equal(result.restoredOccurrences, 0);
   assert.equal(result.unresolved.length, 2);
-  assert.match(result.unresolved[0].reason, /没有对应映射/);
+  assert.match(result.unresolved[0].reason, /没有对应还原记录/);
   assert.match(result.unresolved[1].reason, /公式/);
 });
 

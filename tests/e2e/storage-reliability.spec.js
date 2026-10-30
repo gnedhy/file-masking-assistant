@@ -20,7 +20,7 @@ test("持久保存申请被拒绝或批准时准确显示，不承诺备份", as
   await page.getByRole("button", { name: "申请持久保存" }).click();
   await expect(page.getByText("已获准持久保存", { exact: true })).toBeVisible();
   await page.getByText("保存方式与限制", { exact: true }).click();
-  await expect(page.getByText(/持久保存可降低自动清理风险，但不是备份/)).toBeVisible();
+  await expect(page.getByText(/持久保存只降低自动清理的风险，不是备份/)).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 

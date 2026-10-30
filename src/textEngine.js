@@ -76,7 +76,7 @@ export async function inspectTextRestoreFile(file, format, context) {
   if (inspection.taskIds.length !== 1) throw new SafeFileError("MIXED_TASKS", "文件中混入了多个脱敏任务的代号。", inspection.taskIds);
   const vault = await resolveRestoreVault(inspection, context);
   const taskId = vault.taskId;
-  if (!vault) throw new SafeFileError("VAULT_NOT_FOUND", `本机找不到任务 ${taskId} 的映射。`);
+  if (!vault) throw new SafeFileError("VAULT_NOT_FOUND", `本机找不到任务 ${taskId} 的还原记录。`);
   const unknown = inspection.uniqueTokens.filter((token) => !vault.mapping[token]);
   const altered = inspectAlteredTextTokens(document.text, vault.mapping);
   if (unknown.length || altered.length) throw new SafeFileError("UNRESOLVED_TOKENS", "文件中存在无法安全还原的代号。", [...unknown, ...altered.map((item) => item.value)]);
@@ -85,7 +85,7 @@ export async function inspectTextRestoreFile(file, format, context) {
     occurrences: inspection.occurrences.length, usedMappings: inspection.uniqueTokens.length,
     occurrenceComparison: occurrenceComparison(vault.occurrenceBaseline, inspection.occurrences),
     checkedAreas: ["全部纯文本内容"], uncheckedAreas: ["图片、脚本和嵌入对象（纯文本本身不包含）"],
-    warnings: [format === "md" ? "未出现的映射不代表异常；Markdown 不会被渲染或执行。" : "未出现的映射不代表异常；TXT 按纯文本处理。"],
+    warnings: [format === "md" ? "部分代号未出现不代表异常；Markdown 不会被渲染或执行。" : "部分代号未出现不代表异常；TXT 按纯文本处理。"],
   };
 }
 
@@ -93,7 +93,7 @@ export async function restoreSafeText(file, expectedTaskId, format, context) {
   const document = await loadText(file);
   const inspection = inspectTextTokens(document.text);
   const vault = await resolveRestoreVault(inspection, context, expectedTaskId);
-  if (!vault) throw new SafeFileError("VAULT_NOT_FOUND", "本机映射已不存在，无法还原。");
+  if (!vault) throw new SafeFileError("VAULT_NOT_FOUND", "本机还原记录已不存在，无法还原。");
   const comparison = occurrenceComparison(vault.occurrenceBaseline, inspection.occurrences);
   const altered = inspectAlteredTextTokens(document.text, vault.mapping);
   if (altered.length) throw new SafeFileError("ALTERED_TOKENS", "文件中存在残缺或被改写的已知代号。", altered.map((item) => item.value));

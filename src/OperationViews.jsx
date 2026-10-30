@@ -10,7 +10,7 @@ export function RecordFilters({ value, onChange, users }) {
     <label>结束日期<input type="date" value={value.to || ""} onChange={e => control("to", e.target.value)} /></label>
     {users ? <><label>用户<select aria-label="用户" value={value.user || ""} onChange={e => control("user", e.target.value)}><option value="">全部用户</option>{users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select></label><label>格式<select aria-label="格式" value={value.format || ""} onChange={e => control("format", e.target.value)}><option value="">全部格式</option>{["xlsx", "csv", "txt", "md", "docx", "pptx", "html"].map(f => <option key={f} value={f}>{f.toUpperCase()}</option>)}</select></label></> : <label>操作类型<select aria-label="操作类型" value={value.action || ""} onChange={e => control("action", e.target.value)}><option value="">全部操作</option>{Object.entries(OPERATION_LABELS).map(([k,v]) => <option key={k} value={k}>{v}</option>)}</select></label>}
     <label>结果<select aria-label="结果" value={value.result || ""} onChange={e => control("result", e.target.value)}><option value="">全部结果</option>{Object.entries(OPERATION_RESULTS).map(([k,v]) => <option key={k} value={k}>{v}</option>)}</select></label>
-    {!users && <label className="record-search">搜索<input type="search" placeholder="文件名或任务标记" value={value.query || ""} onChange={e => control("query", e.target.value)} /></label>}
+    {!users && <label className="record-search">搜索<input type="search" placeholder="文件名或任务编号" value={value.query || ""} onChange={e => control("query", e.target.value)} /></label>}
     {value.from && value.to && value.from > value.to && <p role="alert">开始日期不能晚于结束日期。</p>}
   </div>;
 }
