@@ -57,6 +57,7 @@ test("未交付任务清理，下载过凭据的任务切换后保留", async ({
   await confirmSwitch(page);
   await expect.poll(() => summaries(page)).toHaveLength(0);
   await page.getByRole("button", { name: "制作脱敏文件" }).click();
+  await expect(page.getByRole("heading", { name: "让文件安全进入 AI 工作流" })).toBeVisible();
   await upload(page);
   await page.locator(".advanced-options > summary").click();
   await page.getByRole("radio", { name: "简短代号（试验）" }).check();
@@ -179,7 +180,6 @@ test("无广播时打开抽屉与恢复焦点均刷新，不把密钥丢失称�
 });
 
 test("凭据错误可原地恢复，完整编号可复制，实名结果有回传警告", async ({ page }, testInfo) => {
-  test.slow();
   await page.addInitScript(() => Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async text => localStorage.setItem("testCopiedId", text) } }));
   await page.goto("/");
   const fixture = await page.evaluate(async () => {

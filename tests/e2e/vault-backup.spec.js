@@ -54,7 +54,6 @@ async function createTasks(page) {
 }
 
 test("备份导出后可在另一浏览器导入并还原，重复导入只跳过", async ({ page, browser }, testInfo) => {
-  test.slow();
   const { standard, short } = await createTasks(page);
   const backup = await exportBackup(page);
   expect(backup.name).toMatch(/^还原记录备份_含真实信息_\d{8}-\d{4}\.json$/);

@@ -1098,7 +1098,11 @@ export function App() {
     const oldOverflow = document.body.style.overflow;
     const trigger = drawerTriggerRef.current;
     document.body.style.overflow = "hidden";
-    window.requestAnimationFrame(() => (auditOpen ? auditCloseButtonRef : localTasksOpen ? localTasksCloseButtonRef : closeButtonRef).current?.focus());
+    // Delayed under load: never pull focus away from a control the user already reached inside the drawer.
+    window.requestAnimationFrame(() => {
+      const drawer = (auditOpen ? auditDrawerRef : localTasksOpen ? localTasksDrawerRef : drawerRef).current;
+      if (!drawer?.contains(document.activeElement)) (auditOpen ? auditCloseButtonRef : localTasksOpen ? localTasksCloseButtonRef : closeButtonRef).current?.focus();
+    });
     const onKey = (event) => {
       if (event.key === "Escape") {
         if (auditOpen) closeAudit();
