@@ -2,6 +2,7 @@ import { Fragment, lazy, Suspense, useCallback, useEffect, useRef, useState } fr
 import { readTaskCredential } from "./taskIdentity.js";
 import { CredentialDownload, CredentialInput, PairingConfirmation, TaskIdentityDetails, TokenFormatChoice } from "./ShortTokenControls.jsx";
 import { StorageStatus } from "./StorageStatus.jsx";
+import { THEME_OPTIONS, ThemeSwitcher } from "./ThemeSwitcher.jsx";
 import { BackupControls } from "./BackupControls.jsx";
 import { ConfirmDialog } from "./ConfirmDialog.jsx";
 import { OperationDrawer } from "./OperationDrawer.jsx";
@@ -25,12 +26,9 @@ import {
   FileXls,
   Info,
   LockKey,
-  Monitor,
   MagnifyingGlass,
-  Moon,
   ClockCounterClockwise,
   ShieldCheck,
-  Sun,
   Trash,
   UploadSimple,
   WarningCircle,
@@ -55,11 +53,6 @@ import {
 } from "./fileEngine.js";
 import { ENTERPRISE_VAULT_ENABLED } from "./vaultStore.js";
 
-const THEME_OPTIONS = [
-  { value: "light", label: "浅色", icon: Sun },
-  { value: "dark", label: "深色", icon: Moon },
-  { value: "system", label: "系统", icon: Monitor },
-];
 const UsagePreview = import.meta.env.DEV ? lazy(() => import("./UsagePreview.jsx")) : null;
 
 const WORKSPACE_COPY = {
@@ -82,18 +75,6 @@ const TEXT_SIZE_LIMIT_MB = FILE_SIZE_LIMITS.csv / 1024 / 1024;
 const OFFICE_SIZE_LIMIT_MB = FILE_SIZE_LIMITS.xlsx / 1024 / 1024;
 const LOCAL_PROCESSING_COPY = ENTERPRISE_VAULT_ENABLED ? "文件本机处理，还原记录保存在企业 Vault" : "文件本机处理，还原记录加密保存在当前浏览器";
 const formatList = (mode) => (mode === "protect" ? SUPPORTED_PROTECT_FORMATS : SUPPORTED_RESTORE_FORMATS).map(format => format.toUpperCase()).join("、");
-
-function ThemeSwitcher({ value, onChange }) {
-  const { icon: Icon } = THEME_OPTIONS.find((option) => option.value === value) ?? THEME_OPTIONS[0];
-  return (
-    <label className="theme-switcher" title="界面颜色模式">
-      <Icon aria-hidden="true" />
-      <select aria-label="界面颜色模式" value={value} onChange={(event) => onChange(event.target.value)}>
-        {THEME_OPTIONS.map(({ value: option, label }) => <option key={option} value={option}>{label}</option>)}
-      </select>
-    </label>
-  );
-}
 
 const MODE_COPY = {
   protect: {

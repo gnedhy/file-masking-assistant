@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { chooseTheme } from "./theme-helper.js";
 
 const source = "客户名称：虚构星河测试公司\n产品名称：DEMO-826\n销售人员：测试人员甲";
 const input = page => page.locator('input[type="file"]:not([accept=".json"])');
@@ -178,6 +179,7 @@ test("无广播时打开抽屉与恢复焦点均刷新，不把密钥丢失称�
 });
 
 test("凭据错误可原地恢复，完整编号可复制，实名结果有回传警告", async ({ page }, testInfo) => {
+  test.slow();
   await page.addInitScript(() => Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async text => localStorage.setItem("testCopiedId", text) } }));
   await page.goto("/");
   const fixture = await page.evaluate(async () => {
@@ -213,10 +215,9 @@ test("凭据错误可原地恢复，完整编号可复制，实名结果有回�
   await drawer.getByRole("button", { name: "复制任务编号" }).click();
   await expect(drawer.getByText("任务编号已复制", { exact: true })).toBeVisible();
   expect(await page.evaluate(() => localStorage.getItem("testCopiedId"))).toBe(fixture.taskId);
-  for (const [value, label] of [["dark", "深色模式"], ["light", "浅色模式"], ["system", "系统模式"]]) {
+  for (const value of ["dark", "light", "system"]) {
     await drawer.getByRole("button", { name: "关闭本机任务" }).click();
-    const select = page.getByRole("combobox", { name: "界面颜色模式" });
-    if (await select.isVisible()) await select.selectOption(value); else await page.getByRole("button", { name: label }).click();
+    await chooseTheme(page, value);
     await page.getByRole("button", { name: "查看全部任务" }).click();
     await expect(drawer).toBeVisible();
     const persistenceButton = drawer.locator(".backup-controls .secondary-button").last();

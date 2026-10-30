@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 import path from "node:path";
 import os from "node:os";
+import { chooseTheme } from "./theme-helper.js";
 
 test("完成页文件卡、下载提醒和检查抽屉在各主题保持布局", async ({ page }, testInfo) => {
   const errors = [];
@@ -30,9 +31,7 @@ test("完成页文件卡、下载提醒和检查抽屉在各主题保持布局",
   await page.getByRole("button", { name: "生成还原文件", exact: true }).click();
   await expect(page.getByRole("link", { name: "下载还原文件", exact: true })).toBeVisible();
   for (const theme of ["light", "dark", "system"]) {
-    const select = page.getByRole("combobox", { name: "界面颜色模式" });
-    if (await select.isVisible()) await select.selectOption(theme);
-    else await page.getByRole("button", { name: { light: "浅色模式", dark: "深色模式", system: "系统模式" }[theme] }).click();
+    await chooseTheme(page, theme);
     await checkCard();
     const note = page.locator(".restored-sensitive-note");
     await expect(note).toHaveText("包含真实信息，请勿再次交给外部 AI。");

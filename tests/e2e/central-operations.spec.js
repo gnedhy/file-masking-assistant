@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
+import { chooseTheme } from "./theme-helper.js";
 
 test("集中记录：真实数据库、本人权限、管理员统计、导出与文件往返", async ({ page, context }, info) => {
   const login = async user => {
@@ -56,7 +57,7 @@ test("集中记录：真实数据库、本人权限、管理员统计、导出�
   await central.getByRole('button',{name:'重新读取',exact:true}).click();
   await expect(central.locator('.operation-list li').first()).toBeVisible();
   for (const theme of ['浅色','深色','系统']) {
-    await page.getByRole('combobox',{name:'界面颜色模式'}).selectOption({label:theme});
+    await chooseTheme(page,{ 浅色:'light', 深色:'dark', 系统:'system' }[theme]);
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
     await page.screenshot({animations:'disabled',path:path.join(os.tmpdir(),`central-records-${info.project.name}-${theme}.png`)});
   }

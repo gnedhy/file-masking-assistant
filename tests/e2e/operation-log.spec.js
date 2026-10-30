@@ -2,6 +2,7 @@ import { test, expect } from "@playwright/test";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
+import { chooseTheme } from "./theme-helper.js";
 
 test("操作记录覆盖往返、下载、删除和失败，不留敏感内容", async ({ page }, testInfo) => {
   await page.goto("/");
@@ -77,10 +78,10 @@ test("记录并发写入、容量上限及写入失败不影响映射", async ({
 
 test("审计抽屉与三个主题图标适配浅深色和移动端", async ({ page }, testInfo) => {
   await page.goto("/");
-  for (const theme of ["浅色", "深色", "系统"]) {
-    const select = page.getByRole("combobox", { name: "界面颜色模式" });
-    await select.selectOption({ label: theme });
-    await expect(select.locator("option")).toHaveCount(3);
+  for (const theme of ["light", "dark", "system"]) {
+    await chooseTheme(page, theme);
+    await expect(page.getByRole("menu", { name: "界面颜色模式" })).toHaveCount(0);
+    await expect(page.locator("html")).toHaveAttribute("data-theme-preference", theme);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.screenshot({ path: path.join(os.tmpdir(), `masking-header-${testInfo.project.name}-${theme}.png`) });
     await page.getByRole("button", { name: "操作记录", exact: true }).click();

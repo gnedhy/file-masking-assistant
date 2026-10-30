@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 import JSZip from "jszip";
 import ExcelJS from "exceljs";
+import { chooseTheme } from "./theme-helper.js";
 
 const source = "客户名称：虚构测试客户\n产品名称：TEST-826\n销售人员：测试人员";
 async function office(format, text) {
@@ -154,10 +155,8 @@ test("简短模式界面下载、重新打开、导入凭据和确认还原", as
   await reopened.getByLabel("选择还原钥匙文件", { exact: true }).setInputFiles(receiptPath);
   await expect(reopened.getByRole("button", { name: "生成还原文件" })).toBeDisabled();
   await reopened.getByRole("checkbox", { name: "我确认此文件与以上任务配套" }).check();
-  for (const [value, name] of [["dark", "深色模式"], ["light", "浅色模式"]]) {
-    const theme = reopened.getByRole("combobox", { name: "界面颜色模式" });
-    if (await theme.isVisible()) await theme.selectOption(value);
-    else await reopened.getByRole("button", { name }).click();
+  for (const value of ["dark", "light"]) {
+    await chooseTheme(reopened, value);
     await expect(reopened.locator("html")).toHaveAttribute("data-theme", value);
     await expect(reopened.getByRole("checkbox", { name: "我确认此文件与以上任务配套" })).toBeVisible();
     await reopened.screenshot({ path: testInfo.outputPath(`配对-${value}.png`), fullPage: true });

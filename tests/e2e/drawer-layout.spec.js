@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 import path from "node:path";
 import os from "node:os";
+import { chooseTheme } from "./theme-helper.js";
 
 test("抽屉关闭保留退出动画，结束后解锁并恢复焦点", async ({ page }) => {
   await page.goto("/");
@@ -49,9 +50,7 @@ test("任务与详情抽屉固定标题、独立滚动并适配主题和窄屏",
   });
   await page.locator('input[type="file"]:not([accept=".json"])').setInputFiles({ name: "虚构抽屉验证.txt", mimeType: "text/plain", buffer: Buffer.from("客户名称：虚构测试公司\n产品名称：DEMO-01") });
   for (const theme of ["light", "dark"]) {
-    const select = page.getByRole("combobox", { name: "界面颜色模式" });
-    if (await select.isVisible()) await select.selectOption(theme);
-    else await page.getByRole("button", { name: theme === "light" ? "浅色模式" : "深色模式", exact: true }).click();
+    await chooseTheme(page, theme);
     for (const kind of ["tasks", "details"]) {
       const trigger = page.getByRole("button", { name: kind === "tasks" ? "查看全部任务" : "确认替换内容 查看并调整", exact: true });
       await trigger.click();

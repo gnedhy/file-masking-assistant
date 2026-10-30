@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import fs from "node:fs/promises";
 import path from "node:path";
 import JSZip from "jszip";
+import { chooseTheme } from "./theme-helper.js";
 
 test("中文多工作表的字段标签独立关联，替换方式与代号格式说明明确", async ({ page }) => {
   const { default: ExcelJS } = await import("exceljs");
@@ -41,11 +42,7 @@ test("核心工作台、主题和说明抽屉可用", async ({ page }) => {
   await expect(page).toHaveTitle(/文件脱敏助手/);
   await expect(page.getByRole("heading", { name: "让文件安全进入 AI 工作流" })).toBeVisible();
 
-  const themeSelect = page.getByRole("combobox", { name: "界面颜色模式" });
-  const setTheme = async (value, buttonName) => {
-    if (await themeSelect.isVisible()) await themeSelect.selectOption(value);
-    else await page.getByRole("button", { name: buttonName }).click();
-  };
+  const setTheme = (value) => chooseTheme(page, value);
 
   await setTheme("dark", "深色模式");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
@@ -93,7 +90,7 @@ test("390px 操作记录可访问且两种模式保持一致布局", async ({ pa
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
 
-  const themeControl = page.getByRole("combobox", { name: "界面颜色模式" });
+  const themeControl = page.getByRole("button", { name: "界面颜色模式", exact: true });
   const principleButton = page.getByRole("button", { name: "操作记录", exact: true });
   const brandBox = await page.locator(".brand").boundingBox();
   const themeBox = await themeControl.boundingBox();
