@@ -1,7 +1,7 @@
 import { SafeFileError } from "./xlsxEngine.js";
 import { listVaultSummaries, loadVault } from "./vaultStore.js";
 import { decodeHtmlFileBytes, inspectHtmlText, restoreHtmlText } from "./htmlCore.js";
-import { occurrenceComparison } from "./fileSafety.js";
+import { occurrenceComparison, restoredOutputName } from "./fileSafety.js";
 import { resolveRestoreVault, taskEvidence } from "./taskIdentity.js";
 
 function asSafeFileError(error) {
@@ -77,9 +77,8 @@ export async function restoreHtmlSafeFile(file, expectedTaskId, context) {
     const comparison = occurrenceComparison(vault.occurrenceBaseline, initial.occurrences);
     const restored = restoreHtmlText(html, window, vault.mapping);
     const buffer = new TextEncoder().encode(restored.html).buffer;
-    const baseName = file.name.replace(/\.html?$/i, "").replace(/_(?:脱敏版|安全副本|还原版)(?:_[A-F0-9]{8})?$/i, "");
     return {
-      buffer, outputName: `${baseName}_还原版_${expectedTaskId}.html`, mimeType: "text/html;charset=utf-8",
+      buffer, outputName: restoredOutputName(file.name, "html", vault), mimeType: "text/html;charset=utf-8",
       format: "html", formatLabel: "HTML", taskId: expectedTaskId, taskName: vault.taskName,
       restoredOccurrences: restored.restoredOccurrences, usedMappings: restored.usedMappings,
       occurrenceComparison: comparison,

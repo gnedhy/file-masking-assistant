@@ -1,6 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { highRiskTextFindings, occurrenceBaseline, occurrenceComparison, protectedOutputName, suspiciousTextFindings } from "../src/fileSafety.js";
+import { highRiskTextFindings, occurrenceBaseline, occurrenceComparison, protectedOutputName, restoredOutputName, suspiciousTextFindings } from "../src/fileSafety.js";
+
+test("还原文件名按任务标签命名且不重复编号", () => {
+  const legacy = { taskId: "2A5F9A87" };
+  const short = { taskId: "c566f90e-20cc-44ac-9af0-587b72caf687", marker: "X55K" };
+  assert.equal(restoredOutputName("脱敏文件_2A5F9A87.txt", "txt", legacy), "还原文件_2A5F9A87.txt");
+  assert.equal(restoredOutputName("脱敏文件_X55K.txt", "txt", short), "还原文件_X55K.txt");
+  assert.equal(restoredOutputName("AI分析结果.docx", "docx", legacy), "AI分析结果_还原版_2A5F9A87.docx");
+  assert.equal(restoredOutputName("报告_脱敏版_2A5F9A87.xlsx", "xlsx", legacy), "报告_还原版_2A5F9A87.xlsx");
+  assert.equal(restoredOutputName("报告_X55K.md", "md", short), "报告_还原版_X55K.md");
+  assert.equal(restoredOutputName("脱敏文件_X55K_还原版_X55K.txt", "txt", short), "还原文件_X55K.txt");
+  assert.equal(restoredOutputName("page.v2.html", "html", legacy), "page.v2_还原版_2A5F9A87.html");
+});
 
 test("脱敏输出不携带原文件名并保存出现次数", () => {
   assert.equal(protectedOutputName("docx", "A1B2C3D4"), "脱敏文件_A1B2C3D4.docx");

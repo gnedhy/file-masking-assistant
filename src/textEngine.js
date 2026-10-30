@@ -3,7 +3,7 @@ import { SafeFileError } from "./xlsxEngine.js";
 import { FILE_SIZE_LIMITS } from "./filePreflight.js";
 import { createProtectionIdentity, protectionTokenIdentity, protectionResult, resolveRestoreVault, taskEvidence } from "./taskIdentity.js";
 import { listVaultSummaries, loadVault, saveVault } from "./vaultStore.js";
-import { highRiskTextFindings, occurrenceBaseline, occurrenceComparison, protectedOutputName, suspiciousTextFindings } from "./fileSafety.js";
+import { highRiskTextFindings, occurrenceBaseline, occurrenceComparison, protectedOutputName, restoredOutputName, suspiciousTextFindings } from "./fileSafety.js";
 
 const MAX_TEXT_BYTES = FILE_SIZE_LIMITS.txt;
 
@@ -102,7 +102,7 @@ export async function restoreSafeText(file, expectedTaskId, format, context) {
   if (inspectTextTokens(result.text).occurrences.length) throw new SafeFileError("RESIDUAL_TOKENS", "还原后仍检测到代号，已停止导出。");
   return {
     buffer: encodeText(result.text, document.hadBom),
-    outputName: `${baseName(file.name).replace(/_(?:脱敏版|还原版)(?:_[A-F0-9]{8})?$/i, "")}_还原版_${expectedTaskId}.${format}`,
+    outputName: restoredOutputName(file.name, format, vault),
     mimeType: "text/plain;charset=utf-8", format, taskId: expectedTaskId, taskName: vault.taskName,
     restoredOccurrences: result.restoredOccurrences, usedMappings: result.inspection.uniqueTokens.length,
     occurrenceComparison: comparison,

@@ -5,6 +5,7 @@ const input = page => page.locator('input[type="file"]:not([accept=".json"])');
 const upload = page => input(page).setInputFiles({ name: "虚构测试.txt", mimeType: "text/plain", buffer: Buffer.from(source) });
 const summaries = page => page.evaluate(async () => (await import("/src/vaultStore.js")).listVaultSummaries());
 const switchToRestore = page => page.getByRole("button", { name: /^还原处理文件/ }).click();
+const confirmSwitch = page => page.getByRole("alertdialog", { name: "切换任务？" }).getByRole("button", { name: "切换并清空" }).click();
 
 test("当前模式不重置，切换取消保留选择并返回实际焦点", async ({ page }) => {
   const errors = [];
@@ -25,11 +26,19 @@ test("当前模式不重置，切换取消保留选择并返回实际焦点", as
   await page.getByRole("button", { name: /^制作脱敏文件/ }).click();
   await expect(page.getByText(/已选择 2 项敏感内容/)).toBeVisible();
   await expect(page.getByRole("radio", { name: "简短代号（试验）" })).toBeChecked();
-  page.once("dialog", dialog => { expect(dialog.message()).toBe("切换后将清空当前页面选择，原文件不变"); return dialog.dismiss(); });
   await switchToRestore(page);
+  const prompt = page.getByRole("alertdialog", { name: "切换任务？" });
+  await expect(prompt).toContainText("切换后将清空当前页面选择，原文件不变");
+  await expect(prompt.getByRole("button", { name: "取消" })).toBeFocused();
+  await expect(page.locator(".workspace")).toHaveAttribute("inert", "");
+  await page.keyboard.press("Escape");
+  await expect(prompt).toHaveCount(0);
   await expect(page.getByText(/已选择 2 项敏感内容/)).toBeVisible();
-  page.once("dialog", dialog => dialog.accept());
   await switchToRestore(page);
+  await prompt.getByRole("button", { name: "取消" }).click();
+  await expect(page.getByText(/已选择 2 项敏感内容/)).toBeVisible();
+  await switchToRestore(page);
+  await confirmSwitch(page);
   await expect(page.getByRole("heading", { name: "把处理结果恢复为实名文件" })).toBeVisible();
   await expect(input(page)).toHaveAttribute("accept", ".xlsx,.csv,.txt,.md,.docx,.pptx,.html");
   await expect(page.getByLabel("选择凭据文件")).toHaveCount(0);
@@ -42,9 +51,9 @@ test("未交付任务清理，下载过凭据的任务切换后保留", async ({
   await page.getByRole("button", { name: "生成脱敏文件" }).click();
   await expect(page.getByRole("link", { name: "下载脱敏文件" })).toBeVisible();
   expect(await summaries(page)).toHaveLength(1);
-  page.once("dialog", dialog => dialog.accept());
   await switchToRestore(page);
-  expect(await summaries(page)).toHaveLength(0);
+  await confirmSwitch(page);
+  await expect.poll(() => summaries(page)).toHaveLength(0);
   await page.getByRole("button", { name: "制作脱敏文件" }).click();
   await upload(page);
   await page.getByRole("radio", { name: "简短代号（试验）" }).check();
@@ -54,8 +63,11 @@ test("未交付任务清理，下载过凭据的任务切换后保留", async ({
   await receipt;
   const original = await summaries(page);
   expect(original).toHaveLength(1);
-  page.once("dialog", dialog => dialog.accept());
+  const credentialRecord = await page.evaluate(async () => (await (await import("/src/operationLog.js")).listOperations()).find(r => r.action === "download_credential"));
+  expect(credentialRecord.marker).toBe(original[0].marker);
   await switchToRestore(page);
+  await confirmSwitch(page);
+  await expect(page.getByRole("heading", { name: "把处理结果恢复为实名文件" })).toBeVisible();
   expect(await summaries(page)).toEqual(original);
 });
 

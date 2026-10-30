@@ -4,6 +4,15 @@ export function protectedOutputName(format, taskId) {
   return `脱敏文件_${taskId}.${format}`;
 }
 
+// Name restored files by the short marker when present, without repeating the task label.
+export function restoredOutputName(fileName, format, vault) {
+  const label = vault.marker || vault.taskId;
+  const base = String(fileName).replace(/\.[^.]+$/, "").replace(/_(?:脱敏版|安全副本|还原版)(?:_[A-Za-z0-9-]+)?$/, "");
+  if (base === `脱敏文件_${label}`) return `还原文件_${label}.${format}`;
+  const stem = base.endsWith(`_${label}`) ? base.slice(0, -label.length - 1) : base;
+  return `${stem}_还原版_${label}.${format}`;
+}
+
 export function occurrenceBaseline(occurrences) {
   return occurrences.reduce((counts, { token }) => ({ ...counts, [token]: (counts[token] || 0) + 1 }), {});
 }

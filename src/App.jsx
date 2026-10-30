@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react"
 import { readTaskCredential } from "./taskIdentity.js";
 import { CredentialDownload, CredentialInput, PairingConfirmation, TaskIdentityDetails, TokenFormatChoice } from "./ShortTokenControls.jsx";
 import { StorageStatus } from "./StorageStatus.jsx";
+import { ConfirmDialog } from "./ConfirmDialog.jsx";
 import { OperationDrawer } from "./OperationDrawer.jsx";
 import CentralOperations from "./CentralOperations.jsx";
 import { recordOperation, hasOperationWriteFailure } from "./operationLog.js";
@@ -289,7 +290,7 @@ function LocalTasksDrawer({ localTasks, currentTaskId, pendingDeleteId, deleting
                 </dl>
               </div>
               {task.marker && <TaskIdentityDetails taskId={task.taskId} />}
-              {task.tokenFormat === "short" && <CredentialDownload taskId={task.taskId} />}
+              {task.tokenFormat === "short" && <CredentialDownload taskId={task.taskId} marker={task.marker} />}
               {confirming ? (
                 <div className="local-task-row__confirm" role="alert">
                   <strong>确定删除这项本机映射？</strong>
@@ -562,7 +563,7 @@ function SuccessState({ mode, result, downloadRequested, detailsOpen, onDetails,
       {protect && result.credential && <section className="short-token-panel">
         <strong>简短替身试验 · {result.marker}</strong>
         <p>只把脱敏文件交给 AI，凭据留在本机。凭据不包含真实值，也不能替代本机映射。</p>
-        <CredentialDownload result={result.credential} taskId={result.taskId} onRequested={onCredentialRequested} />
+        <CredentialDownload result={result.credential} taskId={result.taskId} marker={result.marker} onRequested={onCredentialRequested} />
         <details><summary>查看本次替身（{result.aliases.length} 个）</summary><div className="short-alias-list">{result.aliases.map(alias => <code key={alias}>{alias}</code>)}</div></details>
       </section>}
       {handoff && <AiHandoff taskId={result.taskId} marker={result.marker} />}
@@ -1026,6 +1027,8 @@ export function App() {
   const [deletingTaskId, setDeletingTaskId] = useState(null);
   const [taskManagerError, setTaskManagerError] = useState("");
   const [auditOpen, setAuditOpen] = useState(false);
+  const [switchPrompt, setSwitchPrompt] = useState(false);
+  const switchResolveRef = useRef(null);
   const [usagePreview, setUsagePreview] = useState(false);
   const [filenameNotice, setFilenameNotice] = useState(() => { try { return !localStorage.getItem("operation-filenames-notice"); } catch { return true; } });
   const [auditIncomplete, setAuditIncomplete] = useState(hasOperationWriteFailure);
@@ -1207,9 +1210,16 @@ export function App() {
     setError(normalized); setStatus("error"); setDetailsOpen(false);
   };
 
+  const askSwitch = () => new Promise((resolve) => { switchResolveRef.current = resolve; setSwitchPrompt(true); });
+  const closeSwitchPrompt = useCallback((accepted) => {
+    switchResolveRef.current?.(accepted);
+    switchResolveRef.current = null;
+    setSwitchPrompt(false);
+  }, []);
+
   const changeMode = async (nextMode, chooseFile = false) => {
     if (nextMode === mode && !chooseFile) return false;
-    if ((file || credential || error || result) && !window.confirm("切换后将清空当前页面选择，原文件不变")) return false;
+    if ((file || credential || error || result) && !(await askSwitch())) return false;
     return reset(nextMode);
   };
 
@@ -1321,8 +1331,8 @@ export function App() {
       } else {
         output = await restoreSafeFile(file, restoreInspection.taskId, { credential, pairingConfirmed });
       }
-      output = { ...output, inputName: file.name, operationId: operationIdRef.current };
-      setResult(mode === "restore" ? { ...output, marker: restoreInspection.marker } : output); setStatus("success");
+      output = { ...output, inputName: file.name, operationId: operationIdRef.current, ...(mode === "restore" ? { marker: restoreInspection.marker } : {}) };
+      setResult(output); setStatus("success");
       recordFileOperation(mode, output.partialRestore ? "partial" : output.occurrenceComparison?.missing ? "missing" : "success", { ...output, format: fileFormatFromName(file.name) });
       if (mode === "protect") {
         getLocalTaskStatus()
@@ -1393,7 +1403,7 @@ export function App() {
 
   return (
     <div className="app" data-mode={mode}>
-      <header className="app-header" inert={detailsOpen || localTasksOpen || auditOpen}>
+      <header className="app-header" inert={detailsOpen || localTasksOpen || auditOpen || switchPrompt}>
         <div className="brand"><span className="brand__mark" aria-hidden="true"><ShieldCheck weight="duotone" /></span><div><strong>文件脱敏助手</strong><span>{ENTERPRISE_VAULT_ENABLED ? "文件本机处理，映射同步到企业 Vault。" : "本机脱敏后交给 AI，处理完成再还原。"}</span></div></div>
         <BoundaryRoute />
         <div className="local-status">
@@ -1403,10 +1413,10 @@ export function App() {
           <button className="audit-trigger" type="button" title={auditIncomplete ? "操作记录：有记录未能保存" : "操作记录"} aria-label="操作记录" aria-haspopup="dialog" aria-expanded={auditOpen} onClick={event => { drawerTriggerRef.current = event.currentTarget; setAuditOpen(true); }}><ClockCounterClockwise aria-hidden="true" weight="bold" /><span>操作记录</span>{auditIncomplete && <b aria-label="有操作记录未保存">!</b>}</button>
         </div>
       </header>
-      {filenameNotice && <div className="filename-notice" role="status" inert={detailsOpen || localTasksOpen || auditOpen}><span>操作记录现会保存文件名，文件名可能含敏感信息；正文和映射不会写入记录。</span><button type="button" className="text-button" onClick={() => { setFilenameNotice(false); try { localStorage.setItem("operation-filenames-notice", "seen"); } catch { /* Notice may reappear when preferences cannot be saved. */ } }}>知道了</button></div>}
+      {filenameNotice && <div className="filename-notice" role="status" inert={detailsOpen || localTasksOpen || auditOpen || switchPrompt}><span>操作记录现会保存文件名，文件名可能含敏感信息；正文和映射不会写入记录。</span><button type="button" className="text-button" onClick={() => { setFilenameNotice(false); try { localStorage.setItem("operation-filenames-notice", "seen"); } catch { /* Notice may reappear when preferences cannot be saved. */ } }}>知道了</button></div>}
       {usagePreview && <div inert={auditOpen}>{usagePreview === "central" ? <CentralOperations onBack={() => { setUsagePreview(false); requestAnimationFrame(() => document.querySelector(".audit-trigger")?.focus()); }} /> : UsagePreview && <Suspense fallback={<p role="status">正在打开统计预览…</p>}><UsagePreview onBack={() => { setUsagePreview(false); requestAnimationFrame(() => document.querySelector(".audit-trigger")?.focus()); }}/></Suspense>}</div>}
       <main className="app-main" hidden={usagePreview}>
-        <section className="workspace" aria-label="文件处理工作区" inert={detailsOpen || localTasksOpen || auditOpen}>
+        <section className="workspace" aria-label="文件处理工作区" inert={detailsOpen || localTasksOpen || auditOpen || switchPrompt}>
           <header className="workspace-intro">
             <p>{WORKSPACE_COPY[mode].eyebrow}</p>
             <h1>{WORKSPACE_COPY[mode].title}</h1>
@@ -1433,6 +1443,7 @@ export function App() {
         {localTasksOpen && <><button className="drawer-scrim drawer-scrim--local" type="button" tabIndex={-1} onClick={closeLocalTasks} aria-label="关闭本机任务" /><LocalTasksDrawer localTasks={localTasks} currentTaskId={result?.taskId ?? restoreInspection?.taskId ?? null} pendingDeleteId={pendingDeleteId} deletingTaskId={deletingTaskId} error={taskManagerError} modal drawerRef={localTasksDrawerRef} closeButtonRef={localTasksCloseButtonRef} onClose={closeLocalTasks} onRequestDelete={setPendingDeleteId} onCancelDelete={() => setPendingDeleteId(null)} onConfirmDelete={deleteLocalTask} /></>}
       </main>
       {auditOpen && <><button className="drawer-scrim" type="button" tabIndex={-1} onClick={closeAudit} aria-label="关闭记录遮罩" /><OperationDrawer drawerRef={auditDrawerRef} closeButtonRef={auditCloseButtonRef} onClose={closeAudit} onPreview={async view => { await closeAudit(); setUsagePreview(view); }} /></>}
+      {switchPrompt && <ConfirmDialog title="切换任务？" message="切换后将清空当前页面选择，原文件不变。" confirmLabel="切换并清空" onClose={closeSwitchPrompt} />}
     </div>
   );
 }

@@ -10,7 +10,7 @@ import {
 import { deleteVault, listVaultSummaries, loadVault, saveVault } from "./vaultStore.js";
 import { createProtectionIdentity, protectionTokenIdentity, protectionResult, resolveRestoreVault, taskEvidence } from "./taskIdentity.js";
 import { assertNoSensitiveValuesInXlsxPackage, preflightXlsxPackage } from "./xlsxPackageCore.js";
-import { highRiskTextFindings, occurrenceBaseline, occurrenceComparison, protectedOutputName } from "./fileSafety.js";
+import { highRiskTextFindings, occurrenceBaseline, occurrenceComparison, protectedOutputName, restoredOutputName } from "./fileSafety.js";
 
 export class SafeFileError extends Error {
   constructor(code, message, details = []) {
@@ -221,7 +221,7 @@ export async function restoreSafeWorkbook(file, expectedTaskId, context) {
   workbook.calcProperties.forceFullCalc = true;
   return {
     buffer: await workbook.xlsx.writeBuffer(),
-    outputName: `${baseName(file.name).replace(/_(?:脱敏版|安全副本)(?:_[A-F0-9]{8})?$/i, "")}_还原版_${expectedTaskId}.xlsx`,
+    outputName: restoredOutputName(file.name, "xlsx", vault),
     taskId: expectedTaskId,
     taskName: vault.taskName,
     restoredOccurrences: result.restoredOccurrences,

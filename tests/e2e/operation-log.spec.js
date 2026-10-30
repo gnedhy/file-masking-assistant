@@ -12,8 +12,8 @@ test("操作记录覆盖往返、下载、删除和失败，不留敏感内容",
   await page.getByRole("link", { name: "下载脱敏文件", exact: true }).click();
   const download = await downloadPromise;
   const buffer = await fs.readFile(await download.path());
-  page.on("dialog", dialog => dialog.accept());
   await page.getByRole("button", { name: /^还原处理文件/ }).click();
+  await page.getByRole("alertdialog", { name: "切换任务？" }).getByRole("button", { name: "切换并清空" }).click();
   await input.setInputFiles({ name: "AI结果.txt", mimeType: "text/plain", buffer });
   await page.getByRole("button", { name: /生成还原文件|开始还原|核对并还原/ }).click();
   await page.getByRole("link", { name: "下载还原文件", exact: true }).click();

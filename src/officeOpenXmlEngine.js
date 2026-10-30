@@ -3,7 +3,7 @@ import { listVaultSummaries, loadVault, saveVault } from "./vaultStore.js";
 import { createProtectionIdentity, protectionTokenIdentity, protectionResult, resolveRestoreVault, taskEvidence } from "./taskIdentity.js";
 import { OFFICE_FORMATS, analyzeDocxProtectionPackage, assertNoSensitiveValuesInOfficePackage, findAlteredTokens, inspectOfficePackage, loadOfficePackage, restoreOfficePackage, tokenizeDocxPackage } from "./officeOpenXmlCore.js";
 import { scrubOfficeMetadata, allXmlText } from "./officeOpenXmlCore.js";
-import { highRiskTextFindings, occurrenceBaseline, occurrenceComparison, protectedOutputName } from "./fileSafety.js";
+import { highRiskTextFindings, occurrenceBaseline, occurrenceComparison, protectedOutputName, restoredOutputName } from "./fileSafety.js";
 
 function extensionOf(filename) {
   return filename.toLowerCase().match(/\.([a-z0-9]+)$/)?.[1] ?? "";
@@ -163,7 +163,7 @@ export async function restoreOfficeSafeFile(file, expectedTaskId, context) {
     const buffer = await zip.generateAsync({ type: "arraybuffer", compression: "DEFLATE", compressionOptions: { level: 6 } });
     return {
       buffer,
-      outputName: `${cleanBaseName(file.name)}_还原版_${expectedTaskId}.${format}`,
+      outputName: restoredOutputName(file.name, format, vault),
       mimeType: OFFICE_FORMATS[format].mimeType,
       format,
       formatLabel: OFFICE_FORMATS[format].label,

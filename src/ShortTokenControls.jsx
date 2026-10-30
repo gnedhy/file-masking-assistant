@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { downloadCredentialForTask } from "./taskIdentity.js";
 import { recordOperation } from "./operationLog.js";
 
-export function CredentialDownload({ result, taskId, onRequested }) {
+export function CredentialDownload({ result, taskId, marker, onRequested }) {
   const download = result || null;
   const [url, setUrl] = useState("");
   const [message, setMessage] = useState("");
@@ -16,7 +16,7 @@ export function CredentialDownload({ result, taskId, onRequested }) {
     return () => URL.revokeObjectURL(next);
   }, [download]);
   return <div className="credential-download">
-    {url ? <a className="secondary-button" href={url} download={download.outputName} onClick={() => { recordOperation("download_credential", "requested", { taskId }); setMessage("已发起凭据下载，请在下载列表确认。"); onRequested?.(); }}>下载还原凭据</a>
+    {url ? <a className="secondary-button" href={url} download={download.outputName} onClick={() => { recordOperation("download_credential", "requested", { taskId, marker }); setMessage("已发起凭据下载，请在下载列表确认。"); onRequested?.(); }}>下载还原凭据</a>
       : <button className="text-button" type="button" disabled={busy} onClick={async () => {
         setBusy(true);
         try {
@@ -29,11 +29,11 @@ export function CredentialDownload({ result, taskId, onRequested }) {
           document.body.append(link);
           link.click();
           link.remove();
-          recordOperation("download_credential", "requested", { taskId });
+          recordOperation("download_credential", "requested", { taskId, marker });
           setMessage("已发起凭据下载，请在下载列表确认。");
           onRequested?.();
         }
-        catch (error) { recordOperation("download_credential", "failed", { taskId }); setMessage(error.message); }
+        catch (error) { recordOperation("download_credential", "failed", { taskId, marker }); setMessage(error.message); }
         finally { setBusy(false); }
       }}>{busy ? "正在读取凭据" : "下载还原凭据"}</button>}
     {message && <small role="status">{message}</small>}

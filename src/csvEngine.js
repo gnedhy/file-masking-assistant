@@ -9,7 +9,7 @@ import {
   stringifyCsv,
   tokenizeCsv,
 } from "./csvCore.js";
-import { highRiskTextFindings, occurrenceBaseline, occurrenceComparison, protectedOutputName, suspiciousTextFindings } from "./fileSafety.js";
+import { highRiskTextFindings, occurrenceBaseline, occurrenceComparison, protectedOutputName, restoredOutputName, suspiciousTextFindings } from "./fileSafety.js";
 import { SafeFileError } from "./xlsxEngine.js";
 import { FILE_SIZE_LIMITS } from "./filePreflight.js";
 import { createProtectionIdentity, protectionTokenIdentity, protectionResult, resolveRestoreVault, taskEvidence } from "./taskIdentity.js";
@@ -167,7 +167,7 @@ export async function restoreSafeCsv(file, expectedTaskId, context) {
   }
   return {
     buffer: encodeCsv(document),
-    outputName: `${baseName(file.name).replace(/_(?:脱敏版|安全副本|还原版)(?:_[A-F0-9]{8})?$/i, "")}_还原版_${expectedTaskId}.csv`,
+    outputName: restoredOutputName(file.name, "csv", vault),
     mimeType: "text/csv;charset=utf-8",
     format: "csv",
     taskId: expectedTaskId,

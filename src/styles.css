@@ -5059,3 +5059,60 @@ input {
     transition-property: color, background-color, border-color, box-shadow, opacity !important;
   }
 }
+
+.confirm-scrim {
+  z-index: 70;
+}
+
+.confirm-dialog {
+  position: fixed;
+  z-index: 71;
+  top: 50%;
+  left: 50%;
+  width: min(400px, calc(100vw - 32px));
+  padding: 22px 22px 18px;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-raised);
+  transform: translate(-50%, -50%);
+  animation: scrim-enter 180ms ease-out both;
+}
+
+.confirm-dialog h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.confirm-dialog p {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.confirm-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.confirm-dialog__actions > * {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.confirm-dialog__actions .secondary-button {
+  min-height: 42px;
+  padding: 10px 15px;
+  border-radius: 7px;
+  font-size: 13px;
+}
+
+@media (max-width: 480px) {
+  .confirm-dialog__actions > * {
+    flex: 1;
+  }
+}
