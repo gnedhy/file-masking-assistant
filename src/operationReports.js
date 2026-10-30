@@ -68,6 +68,55 @@ export function groupByDay(groups, now = new Date()) {
   return [...days.values()];
 }
 
+const RESTORED = ["success", "partial", "missing"];
+
+// Dashboard aggregates: counts distinct user + task per day, matching summarizeOperations.
+export function dailyActivity(records, from, to) {
+  const days = [];
+  for (const cursor = new Date(`${from}T00:00:00`); localDay(cursor) <= to; cursor.setDate(cursor.getDate() + 1)) {
+    const day = localDay(cursor);
+    const rows = records.filter((r) => localDay(r.time) === day);
+    const tasks = (action, results) => new Set(rows.filter((r) => r.action === action && results.includes(r.result) && r.taskId).map((r) => `${r.userId}:${r.taskId}`)).size;
+    days.push({ day, label: `${cursor.getMonth() + 1}/${cursor.getDate()}`, protected: tasks("protect", ["success"]), restored: tasks("restore", RESTORED), users: new Set(rows.map((r) => r.userId).filter(Boolean)).size, failed: rows.filter((r) => r.result === "failed").length });
+  }
+  return days;
+}
+
+export function bucketActivity(days, size) {
+  if (size <= 1) return days;
+  const buckets = [];
+  // Whole buckets end on the latest day, so only the oldest bucket can be short.
+  for (let end = days.length; end > 0; end -= size) {
+    const slice = days.slice(Math.max(0, end - size), end);
+    const total = (key) => slice.reduce((sum, day) => sum + day[key], 0);
+    buckets.unshift({ day: slice[0].day, to: slice[slice.length - 1].day, label: slice[0].label, protected: total("protected"), restored: total("restored") });
+  }
+  return buckets;
+}
+
+export const ISSUE_RESULTS = ["failed", "partial", "missing", "waiting"];
+const ISSUE_LABELS = { failed: "失败", partial: "部分还原", missing: "内容缺失", waiting: "待导入钥匙文件" };
+const isFinalStep = (r) => ["protect", "restore", "inspect_protect", "inspect_restore"].includes(r.action);
+
+// Share of finished steps that completed fully; a task that was never restored does not count against it.
+export function outcomeSummary(records) {
+  const finals = records.filter(isFinalStep);
+  const completed = finals.filter((r) => r.result === "success" && ["protect", "restore"].includes(r.action)).length;
+  const issues = ISSUE_RESULTS.map((key) => ({ key, label: ISSUE_LABELS[key], count: finals.filter((r) => r.result === key).length })).filter((item) => item.count);
+  const attention = issues.reduce((sum, item) => sum + item.count, 0);
+  const total = completed + attention;
+  return { rate: total ? Math.round((completed / total) * 100) : 100, attention, issues };
+}
+
+export function rankBy(records, keyOf, labelOf, limit = 6) {
+  const counts = new Map();
+  for (const r of records) {
+    if (r.action !== "protect" || r.result !== "success") continue;
+    const key = keyOf(r); counts.set(key, { key, label: labelOf(r), count: (counts.get(key)?.count ?? 0) + 1 });
+  }
+  return [...counts.values()].sort((a, b) => b.count - a.count).slice(0, limit);
+}
+
 export function summarizeOperations(records) {
   const business = records.filter(r => /^(import|inspect|download)_(protect|restore)$/.test(r.action) || ["protect", "restore"].includes(r.action));
   const taskCount = action => new Set(business.filter(r => r.action === action && (r.result === "success" || action === "restore" && ["partial", "missing"].includes(r.result)) && r.taskId).map(r => `${r.userId}:${r.taskId}`)).size;
