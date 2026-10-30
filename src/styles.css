@@ -2,7 +2,7 @@
 .short-token-panel legend { padding: 0 6px; font-weight: var(--fw-semibold); }
 .short-token-panel label { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-height: 44px; }
 .short-token-panel p { margin: 8px 0; }
-.short-token-panel small, .credential-download small { display: block; color: var(--muted); }
+.short-token-panel small, .credential-download small { display: block; margin-top: var(--sp-2); color: var(--muted); }
 .short-token-panel input[type="file"] { display: block; max-width: 100%; min-width: 0; width: 100%; padding: 8px 0; }
 .short-token-panel input[type="checkbox"], .short-token-panel input[type="radio"] { accent-color: var(--blue); flex-shrink: 0; }
 .short-alias-list { display: flex; flex-wrap: wrap; gap: 8px; max-height: 160px; overflow: auto; padding-top: 8px; }
