@@ -102,6 +102,15 @@ async function getExistingKey(database) {
   return key;
 }
 
+// Best effort and at most once per page: the browser decides, and a refusal changes nothing for the user.
+let persistenceRequested = false;
+function requestPersistenceOnce() {
+  if (persistenceRequested) return;
+  persistenceRequested = true;
+  const storage = globalThis.navigator?.storage;
+  storage?.persisted?.().then((persisted) => (persisted ? undefined : storage.persist?.())).catch(() => {});
+}
+
 export async function saveVault(vault) {
   if (ENTERPRISE_VAULT_ENABLED && vault.tokenFormat === "short") throw new VaultStoreError("SHORT_LOCAL_ONLY", "简短代号仅用于本机试验。");
   if (ENTERPRISE_VAULT_ENABLED) return saveEnterpriseVault(vault);
@@ -125,6 +134,7 @@ export async function saveVault(vault) {
     });
     await transactionDone(transaction);
     notifyVaultChange();
+    requestPersistenceOnce();
     await recordOperation("save_mapping", "success", vault);
   } catch (error) {
     await recordOperation("save_mapping", "failed");
@@ -206,6 +216,16 @@ export async function listVaultSummaries() {
   } finally {
     database?.close();
   }
+}
+
+export async function getMarkerOwner(marker) {
+  const database = await openDatabase();
+  try {
+    const transaction = database.transaction("markers", "readonly");
+    const record = await requestResult(transaction.objectStore("markers").get(marker));
+    await transactionDone(transaction);
+    return record?.taskId ?? null;
+  } finally { database.close(); }
 }
 
 export async function reserveTaskMarker(marker, taskId) {

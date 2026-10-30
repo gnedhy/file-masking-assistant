@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 
 // In-page replacement for window.confirm, which some embedded browsers dismiss silently.
 export function ConfirmDialog({ title, message, confirmLabel, onClose }) {
@@ -8,8 +9,10 @@ export function ConfirmDialog({ title, message, confirmLabel, onClose }) {
     const previous = document.activeElement;
     cancelRef.current?.focus();
     const onKeyDown = (event) => {
+      if (event.key !== "Escape" && event.key !== "Tab") return;
+      // An open drawer also listens for these keys on window; the dialog on top takes them first.
+      event.stopPropagation();
       if (event.key === "Escape") { event.preventDefault(); onClose(false); return; }
-      if (event.key !== "Tab") return;
       const buttons = [...dialogRef.current.querySelectorAll("button")];
       const first = buttons[0], last = buttons.at(-1);
       if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
@@ -21,7 +24,8 @@ export function ConfirmDialog({ title, message, confirmLabel, onClose }) {
       if (previous instanceof HTMLElement && previous.isConnected) previous.focus();
     };
   }, [onClose]);
-  return <>
+  // Rendered on body because drawers are transformed, which would re-anchor position: fixed.
+  return createPortal(<>
     <button className="drawer-scrim confirm-scrim" type="button" tabIndex={-1} onClick={() => onClose(false)} aria-label="取消" />
     <div className="confirm-dialog" ref={dialogRef} role="alertdialog" aria-modal="true" aria-labelledby="confirm-dialog-title" aria-describedby="confirm-dialog-message">
       <h2 id="confirm-dialog-title">{title}</h2>
@@ -31,5 +35,5 @@ export function ConfirmDialog({ title, message, confirmLabel, onClose }) {
         <button className="primary-button primary-button--small" type="button" onClick={() => onClose(true)}>{confirmLabel}</button>
       </div>
     </div>
-  </>;
+  </>, document.body);
 }

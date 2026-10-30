@@ -2,6 +2,7 @@ import { Fragment, lazy, Suspense, useCallback, useEffect, useRef, useState } fr
 import { readTaskCredential } from "./taskIdentity.js";
 import { CredentialDownload, CredentialInput, PairingConfirmation, TaskIdentityDetails, TokenFormatChoice } from "./ShortTokenControls.jsx";
 import { StorageStatus } from "./StorageStatus.jsx";
+import { BackupControls } from "./BackupControls.jsx";
 import { ConfirmDialog } from "./ConfirmDialog.jsx";
 import { OperationDrawer } from "./OperationDrawer.jsx";
 import CentralOperations from "./CentralOperations.jsx";
@@ -13,7 +14,6 @@ import {
   Check,
   CheckCircle,
   Copy,
-  Database,
   DesktopTower,
   DownloadSimple,
   FileArrowDown,
@@ -226,12 +226,12 @@ function LocalTaskPanel({ localTasks, disabled, onContinue, onViewAll, viewAllBu
             : "制作并下载脱敏文件后，对应的还原任务会显示在这里。"}
         </p>
       )}
-      {!hasTasks && <button ref={viewAllButtonRef} className="local-task-panel__view" type="button" disabled={disabled} onClick={onViewAll}>查看存储状态</button>}
+      {!hasTasks && <button ref={viewAllButtonRef} className="local-task-panel__view" type="button" disabled={disabled} onClick={onViewAll}>{ENTERPRISE_VAULT_ENABLED ? "查看本机任务" : "导入备份"}</button>}
     </section>
   );
 }
 
-function LocalTasksDrawer({ localTasks, currentTaskId, pendingDeleteId, deletingTaskId, error, modal, drawerRef, closeButtonRef, onClose, onRequestDelete, onCancelDelete, onConfirmDelete }) {
+function LocalTasksDrawer({ localTasks, currentTaskId, pendingDeleteId, deletingTaskId, error, modal, drawerRef, closeButtonRef, onClose, onRequestDelete, onCancelDelete, onConfirmDelete, onBackupImported }) {
   const [query, setQuery] = useState("");
   const normalizedQuery = query.trim().toLocaleLowerCase("zh-CN");
   const visibleTasks = normalizedQuery
@@ -249,9 +249,8 @@ function LocalTasksDrawer({ localTasks, currentTaskId, pendingDeleteId, deleting
       </div>
 
       <div className="drawer-body">
-      <p className="local-tasks-drawer__lead"><Database weight="duotone" />这些任务和还原记录只保存在当前浏览器，用于核对并还原对应的脱敏文件。</p>
       {error && <p className="local-tasks-drawer__error" role="alert"><WarningCircle weight="fill" />{error}</p>}
-      {!ENTERPRISE_VAULT_ENABLED && <StorageStatus />}
+      {!ENTERPRISE_VAULT_ENABLED && <><StorageStatus /><BackupControls taskCount={localTasks.count} onImported={onBackupImported} /></>}
 
       {localTasks.tasks.length > 0 && (
         <div className="local-task-search">
@@ -1473,7 +1472,7 @@ export function App() {
           <input ref={inputRef} className="visually-hidden" type="file" accept={(mode === "protect" ? SUPPORTED_PROTECT_FORMATS : SUPPORTED_RESTORE_FORMATS).map(format => `.${format}`).join(",")} tabIndex={-1} aria-label={`选择待${mode === "protect" ? "脱敏" : "还原"}的 ${formatList(mode)} 文件`} onChange={handleFileInput} />
         </section>
         {detailsOpen && <><button className="drawer-scrim" type="button" tabIndex={-1} onClick={closeDetails} aria-label="关闭详情" /><SecurityDrawer mode={mode} status={status} analysis={analysis} selectedIds={selectedIds} fieldModes={fieldModes} restoreInspection={restoreInspection} result={result} error={error} modal drawerRef={drawerRef} closeButtonRef={closeButtonRef} onClose={closeDetails} onToggleColumn={toggleProtectionColumn} onModeChange={changeProtectionMode} onAddCandidate={addTextCandidate} onRemoveCandidate={removeTextCandidate} onSetSelection={setSelectedIds} /></>}
-        {localTasksOpen && <><button className="drawer-scrim drawer-scrim--local" type="button" tabIndex={-1} onClick={closeLocalTasks} aria-label="关闭本机任务" /><LocalTasksDrawer localTasks={localTasks} currentTaskId={result?.taskId ?? restoreInspection?.taskId ?? null} pendingDeleteId={pendingDeleteId} deletingTaskId={deletingTaskId} error={taskManagerError} modal drawerRef={localTasksDrawerRef} closeButtonRef={localTasksCloseButtonRef} onClose={closeLocalTasks} onRequestDelete={setPendingDeleteId} onCancelDelete={() => setPendingDeleteId(null)} onConfirmDelete={deleteLocalTask} /></>}
+        {localTasksOpen && <><button className="drawer-scrim drawer-scrim--local" type="button" tabIndex={-1} onClick={closeLocalTasks} aria-label="关闭本机任务" /><LocalTasksDrawer localTasks={localTasks} currentTaskId={result?.taskId ?? restoreInspection?.taskId ?? null} pendingDeleteId={pendingDeleteId} deletingTaskId={deletingTaskId} error={taskManagerError} modal drawerRef={localTasksDrawerRef} closeButtonRef={localTasksCloseButtonRef} onClose={closeLocalTasks} onRequestDelete={setPendingDeleteId} onCancelDelete={() => setPendingDeleteId(null)} onConfirmDelete={deleteLocalTask} onBackupImported={refreshLocalTasks} /></>}
       </main>
       {auditOpen && <><button className="drawer-scrim" type="button" tabIndex={-1} onClick={closeAudit} aria-label="关闭记录遮罩" /><OperationDrawer drawerRef={auditDrawerRef} closeButtonRef={auditCloseButtonRef} onClose={closeAudit} onPreview={async view => { await closeAudit(); setUsagePreview(view); }} /></>}
       {switchPrompt && <ConfirmDialog title="切换任务？" message="切换后将清空当前页面选择，原文件不变。" confirmLabel="切换并清空" onClose={closeSwitchPrompt} />}

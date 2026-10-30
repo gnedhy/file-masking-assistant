@@ -11,6 +11,7 @@
 | 还原记录（本机还原记录） | 本机映射 | mapping、vault |
 | 还原钥匙文件（下载名 `还原钥匙_XXXX.json`） | 还原凭据 | credential |
 | 文件检查 | 兼容性预检 | restore inspection |
+| 还原记录备份 | 见 [ADR 0004](docs/adr/0004-本机还原记录明文备份.md)，明文，含全部真实值 | vault backup |
 
 ## 文件脱敏助手
 

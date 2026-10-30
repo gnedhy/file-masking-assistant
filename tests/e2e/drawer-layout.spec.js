@@ -8,7 +8,7 @@ test("抽屉关闭保留退出动画，结束后解锁并恢复焦点", async ({
   for (const reducedMotion of ["no-preference", "reduce"]) {
     await page.emulateMedia({ reducedMotion });
     for (const kind of ["tasks", "details"]) {
-      const trigger = page.getByRole("button", { name: kind === "tasks" ? "查看存储状态" : "确认替换内容 查看并调整", exact: true });
+      const trigger = page.getByRole("button", { name: kind === "tasks" ? "导入备份" : "确认替换内容 查看并调整", exact: true });
       for (const action of ["button", "scrim", "escape"]) {
         await trigger.click();
         const drawer = page.getByRole("dialog", { name: kind === "tasks" ? "本机任务" : "替换内容", exact: true });

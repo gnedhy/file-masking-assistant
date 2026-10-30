@@ -1,35 +1,36 @@
 import { test, expect } from "@playwright/test";
 import path from "node:path";
 
-test("持久保存申请被拒绝或批准时准确显示，不承诺备份", async ({ page }) => {
+test("保存任务时自动申请一次持久保存，界面只保留配额提醒", async ({ page }) => {
   await page.addInitScript(() => {
-    let persisted = false;
-    let calls = 0;
+    window.persistCalls = 0;
     Object.defineProperty(navigator, "storage", { configurable: true, value: {
-      persisted: async () => persisted,
+      persisted: async () => false,
       estimate: async () => ({ usage: 95, quota: 100 }),
-      persist: async () => { persisted = ++calls > 1; return persisted; },
+      persist: async () => { window.persistCalls += 1; return false; },
     } });
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "查看存储状态" }).click();
-  await expect(page.getByText("尚未获准持久保存", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "导入备份" }).click();
   await expect(page.getByText(/本站存储接近配额/)).toBeVisible();
-  await page.getByRole("button", { name: "申请持久保存" }).click();
-  await expect(page.getByText(/浏览器暂未批准/)).toBeVisible();
-  await page.getByRole("button", { name: "申请持久保存" }).click();
-  await expect(page.getByText("已获准持久保存", { exact: true })).toBeVisible();
-  await page.getByText("保存方式与限制", { exact: true }).click();
-  await expect(page.getByText(/持久保存只降低自动清理的风险，不是备份/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "申请持久保存" })).toHaveCount(0);
+  await page.evaluate(async () => {
+    const { saveVault } = await import("/src/vaultStore.js");
+    for (const taskId of ["AAAA1111", "BBBB2222"]) await saveVault({ taskId, taskName: taskId, createdAt: new Date().toISOString(), mapping: {} });
+  });
+  await expect.poll(() => page.evaluate(() => window.persistCalls)).toBe(1);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
 test("不支持存储状态接口时仍能使用任务抽屉", async ({ page }) => {
   await page.addInitScript(() => Object.defineProperty(navigator, "storage", { configurable: true, value: undefined }));
   await page.goto("/");
-  await page.getByRole("button", { name: "查看存储状态" }).click();
-  await expect(page.getByText("浏览器未提供持久保存状态")).toBeVisible();
-  await expect(page.getByRole("button", { name: "申请持久保存" })).toHaveCount(0);
+  await page.getByRole("button", { name: "导入备份" }).click();
+  const drawer = page.getByRole("dialog", { name: "本机任务", exact: true });
+  await expect(drawer.getByRole("region", { name: "备份与恢复" })).toBeVisible();
+  await expect(page.getByText(/本站存储接近配额/)).toHaveCount(0);
+  await page.evaluate(async () => (await import("/src/vaultStore.js")).saveVault({ taskId: "AAAA1111", taskName: "任务", createdAt: new Date().toISOString(), mapping: {} }));
+  await expect.poll(() => page.evaluate(async () => (await (await import("/src/vaultStore.js")).listVaultSummaries()).length)).toBe(1);
 });
 
 test("浏览器配额异常明确拦截输出且不保存任务", async ({ page }) => {

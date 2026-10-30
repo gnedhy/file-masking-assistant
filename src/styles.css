@@ -11,10 +11,6 @@
 .recognition-line span { min-width: 0; white-space: normal; overflow-wrap: anywhere; }
 .local-task-row dd { overflow-wrap: anywhere; }
 .storage-status { margin: 16px 0; padding: 16px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface); color: var(--ink); font-size: var(--fs-sm); line-height: 1.6; overflow-wrap: anywhere; }
-.storage-status p { margin: 8px 0; }
-.storage-status small { display: block; color: var(--muted); }
-.storage-status button { margin-top: 12px; }
-.storage-status p:empty { display: none; }
 
 /* Shared scales; colors live in the theme blocks further down. 12px is for labels only, body copy starts at 13px. */
 :root {
@@ -3736,7 +3732,6 @@ input {
   font-variant-numeric: tabular-nums;
 }
 
-.local-tasks-drawer__lead,
 .local-tasks-drawer__error,
 .local-tasks-drawer__boundary,
 .local-tasks-drawer__empty {
@@ -3750,22 +3745,11 @@ input {
   line-height: 1.55;
 }
 
-.local-tasks-drawer__lead {
-  color: var(--muted);
-  border: 1px solid var(--line);
-  background: var(--surface-soft);
-}
-
-.local-tasks-drawer__lead svg,
 .local-tasks-drawer__error svg,
 .local-tasks-drawer__boundary svg {
   width: 18px;
   height: 18px;
   flex: 0 0 auto;
-}
-
-.local-tasks-drawer__lead svg {
-  color: var(--green);
 }
 
 .local-tasks-drawer__error {
@@ -4752,10 +4736,9 @@ input {
 }
 
 .task-identity-details { margin-block: 10px; min-width: 0; font-size: var(--fs-xs); }
-.task-identity-details summary, .storage-status summary { cursor: pointer; color: var(--ink); }
+.task-identity-details summary { cursor: pointer; color: var(--ink); }
 .task-identity-details code { display: block; overflow-wrap: anywhere; margin-block: 10px; user-select: text; }
 .task-identity-details small { display: block; }
-.storage-status details { margin-top: 12px; }
 .credential-download { min-width: 0; }
 .workbench[data-status="awaiting-credential"] { align-content: center; row-gap: 12px; }
 .workbench > .short-token-panel { width: min(100%, 760px); }
@@ -4882,6 +4865,7 @@ input {
   white-space: nowrap;
 }
 
+.confirm-dialog__actions .primary-button,
 .confirm-dialog__actions .secondary-button {
   min-height: 42px;
   padding: 10px 15px;
@@ -4974,4 +4958,45 @@ input {
 .mobile-boundary > p span[aria-current="step"] {
   color: var(--blue);
   font-weight: var(--fw-bold);
+}
+
+.backup-controls {
+  margin: var(--sp-4) 0;
+  padding: var(--sp-4);
+  color: var(--muted);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-body);
+}
+
+.backup-controls > p {
+  margin: 0;
+}
+
+.backup-controls__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+}
+
+.backup-controls__actions .secondary-button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 40px;
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-sm);
+}
+
+.backup-controls__notice {
+  margin-top: var(--sp-3) !important;
+  color: var(--ink);
+}
+
+.backup-controls__notice[data-tone="alert"] {
+  color: var(--amber-ink);
 }

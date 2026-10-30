@@ -135,7 +135,7 @@ test("生成撞号时无下载且旧任务可还原，调整后可重新生成",
 
 test("跨标签页通知只含变更标记，任务摘要自动更新", async ({ page, context }) => {
   await page.goto("/");
-  await expect(page.getByRole("button", { name: "查看存储状态" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "导入备份" })).toBeVisible();
   await page.evaluate(() => {
     window.testMessages = [];
     window.testChannel = new BroadcastChannel("file-masking-assistant-v2-vault");
@@ -156,7 +156,7 @@ test("跨标签页通知只含变更标记，任务摘要自动更新", async ({
 test("无广播时打开抽屉与恢复焦点均刷新，不把密钥丢失称为映射可用", async ({ page, context }) => {
   await page.addInitScript(() => Object.defineProperty(window, "BroadcastChannel", { configurable: true, value: undefined }));
   await page.goto("/");
-  await expect(page.getByRole("button", { name: "查看存储状态" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "导入备份" })).toBeVisible();
   const other = await context.newPage();
   await other.goto("/");
   await other.evaluate(async () => {
@@ -166,7 +166,7 @@ test("无广播时打开抽屉与恢复焦点均刷新，不把密钥丢失称�
     await new Promise((resolve, reject) => { const tx = db.transaction("settings", "readwrite"); tx.objectStore("settings").delete("device-aes-key"); tx.oncomplete = resolve; tx.onerror = () => reject(tx.error); });
     db.close();
   });
-  await page.getByRole("button", { name: "查看存储状态" }).click();
+  await page.getByRole("button", { name: "导入备份" }).click();
   const drawer = page.getByRole("dialog", { name: "本机任务", exact: true });
   await expect(drawer.getByText("摘要仍在", { exact: true })).toBeVisible();
   await expect(drawer.getByText("还原记录已保存", { exact: true })).toBeVisible();
@@ -219,7 +219,7 @@ test("凭据错误可原地恢复，完整编号可复制，实名结果有回�
     if (await select.isVisible()) await select.selectOption(value); else await page.getByRole("button", { name: label }).click();
     await page.getByRole("button", { name: "查看全部任务" }).click();
     await expect(drawer).toBeVisible();
-    const persistenceButton = drawer.locator(".storage-status .secondary-button");
+    const persistenceButton = drawer.locator(".backup-controls .secondary-button").last();
     if (await persistenceButton.isVisible() && !testInfo.project.name.startsWith("mobile")) await persistenceButton.hover();
     if (await persistenceButton.isVisible()) await expect.poll(() => persistenceButton.evaluate(element => {
       const styles = getComputedStyle(element);

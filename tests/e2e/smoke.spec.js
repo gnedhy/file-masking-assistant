@@ -120,7 +120,7 @@ test("390px 操作记录可访问且两种模式保持一致布局", async ({ pa
   const taskPanel = page.locator(".local-task-panel");
   const workbench = page.locator(".workbench");
   await expect(taskPanel).toBeVisible();
-  await expect(page.getByRole("button", { name: "查看存储状态" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "导入备份" })).toBeVisible();
   expect((await taskPanel.boundingBox()).height).toBeLessThan(110);
   await expect(page.getByText("选择待脱敏文件", { exact: true })).toBeVisible();
   const chooseFileBox = await page.getByRole("button", { name: "选择文件" }).boundingBox();

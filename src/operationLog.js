@@ -8,6 +8,7 @@ export const OPERATION_LABELS = {
   save_mapping: "保存本机还原记录", delete_mapping: "删除本机还原记录",
   download_protect: "请求下载脱敏文件", download_restore: "请求下载还原文件",
   import_credential: "读取还原钥匙文件（仅格式检查）", download_credential: "请求下载还原钥匙文件",
+  backup_export: "导出还原记录备份", backup_import: "导入还原记录备份",
 };
 export const OPERATION_RESULTS = { success: "完成", partial: "部分还原", missing: "内容缺失", warning: "需留意（历史记录）", failed: "未完成", waiting: "待导入还原钥匙文件", requested: "已发起" };
 let writeFailed = false;
