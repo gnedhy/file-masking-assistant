@@ -12,3 +12,4 @@ tests/output/
 !.env.enterprise.example
 !.env.operations.example
 secrets/
+.claude/launch.json
