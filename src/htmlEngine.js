@@ -2,6 +2,7 @@ import { SafeFileError } from "./xlsxEngine.js";
 import { listVaultSummaries, loadVault } from "./vaultStore.js";
 import { decodeHtmlFileBytes, inspectHtmlText, restoreHtmlText } from "./htmlCore.js";
 import { occurrenceComparison } from "./fileSafety.js";
+import { resolveRestoreVault, taskEvidence } from "./taskIdentity.js";
 
 function asSafeFileError(error) {
   if (error instanceof SafeFileError) return error;
@@ -30,7 +31,7 @@ function validateInspection(inspection) {
   }
 }
 
-export async function inspectHtmlRestoreFile(file) {
+export async function inspectHtmlRestoreFile(file, context) {
   try {
     const html = await readHtml(file);
     const initial = inspectHtmlText(html, window);
@@ -39,15 +40,16 @@ export async function inspectHtmlRestoreFile(file) {
       if (altered.length) throw new SafeFileError("ALTERED_TOKENS", "HTML 中只剩下残缺或被改写的已知代号。", altered.map((item) => `${item.location}：${item.value}`));
     }
     validateInspection(initial);
-    const taskId = initial.taskIds[0];
-    const vault = await loadVault(taskId);
+    const vault = await resolveRestoreVault(initial, context);
+    const taskId = vault.taskId;
     if (!vault) throw new SafeFileError("VAULT_NOT_FOUND", `本机找不到任务 ${taskId} 的映射。`, [`任务 ${taskId}`]);
     const inspection = inspectHtmlText(html, window, vault.mapping);
     const unknown = inspection.uniqueTokens.filter((token) => !vault.mapping[token]);
     if (unknown.length) throw new SafeFileError("UNRESOLVED_TOKENS", "HTML 中存在本机无法确认的正式代号。", unknown);
     if (inspection.altered.length) throw new SafeFileError("ALTERED_TOKENS", "HTML 中存在残缺或被改写的已知代号，已停止输出。", inspection.altered.map((item) => `${item.location}：${item.value}`));
     return {
-      format: "html", formatLabel: "HTML", taskId, taskName: vault.taskName,
+      ...taskEvidence(vault), format: "html", formatLabel: "HTML", taskId, taskName: vault.taskName,
+      occurrenceComparison: occurrenceComparison(vault.occurrenceBaseline, inspection.occurrences),
       occurrences: inspection.occurrences.length, uniqueTokens: inspection.uniqueTokens.length,
       usedMappings: inspection.uniqueTokens.length,
       partialRestore: false,
@@ -65,13 +67,12 @@ export async function inspectHtmlRestoreFile(file) {
   }
 }
 
-export async function restoreHtmlSafeFile(file, expectedTaskId) {
+export async function restoreHtmlSafeFile(file, expectedTaskId, context) {
   try {
     const html = await readHtml(file);
     const initial = inspectHtmlText(html, window);
     validateInspection(initial);
-    if (initial.taskIds[0] !== expectedTaskId) throw new SafeFileError("TASK_CHANGED", "HTML 与刚才检查通过的任务不一致。", initial.taskIds);
-    const vault = await loadVault(expectedTaskId);
+    const vault = await resolveRestoreVault(initial, context, expectedTaskId);
     if (!vault) throw new SafeFileError("VAULT_NOT_FOUND", "本机映射已不存在，无法还原。");
     const comparison = occurrenceComparison(vault.occurrenceBaseline, initial.occurrences);
     const restored = restoreHtmlText(html, window, vault.mapping);

@@ -1,5 +1,5 @@
 import { classifyHeader, findKnownShortTokens, recommendedProcessingMode } from "./xlsxCore.js";
-import { createEntityToken, parseEntityToken, tokenPattern } from "./tokenFormat.js";
+import { createEntityToken, parseEntityToken, tokenPattern, tokenOccurrence } from "./tokenFormat.js";
 
 const DELIMITER_CANDIDATES = [",", "\t", ";"];
 export const CSV_LIMITS = { rows: 200_000, columns: 500, cells: 5_000_000 };
@@ -357,11 +357,10 @@ export function inspectCsvTokens(document) {
   document.rows.forEach((row, rowIndex) => {
     row.forEach((value, columnIndex) => {
       for (const match of String(value).matchAll(tokenPattern())) {
-        taskIds.add(match[2]);
+        const parsed = tokenOccurrence(match[0]);
+        taskIds.add(parsed.taskId);
         occurrences.push({
-          token: match[0],
-          shortToken: match[1],
-          taskId: match[2],
+          ...parsed,
           rowNumber: rowIndex + 1,
           columnNumber: columnIndex + 1,
           location: `第 ${rowIndex + 1} 行，第 ${columnIndex + 1} 列`,

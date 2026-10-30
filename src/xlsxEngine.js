@@ -8,6 +8,7 @@ import {
   tokenizeWorkbook,
 } from "./xlsxCore.js";
 import { deleteVault, listVaultSummaries, loadVault, saveVault } from "./vaultStore.js";
+import { createProtectionIdentity, protectionTokenIdentity, protectionResult, resolveRestoreVault, taskEvidence } from "./taskIdentity.js";
 import { assertNoSensitiveValuesInXlsxPackage, preflightXlsxPackage } from "./xlsxPackageCore.js";
 import { highRiskTextFindings, occurrenceBaseline, occurrenceComparison, protectedOutputName } from "./fileSafety.js";
 
@@ -73,11 +74,6 @@ function scrubWorkbookMetadata(workbook) {
   workbook.lastPrinted = undefined;
 }
 
-function taskId() {
-  const bytes = crypto.getRandomValues(new Uint8Array(4));
-  return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("").toUpperCase();
-}
-
 function baseName(filename) {
   return filename.replace(/\.xlsx$/i, "");
 }
@@ -95,13 +91,14 @@ export async function inspectProtectionFile(file) {
   return { ...analysis, riskFindings: highRiskTextFindings(text.join("\n")) };
 }
 
-export async function createSafeWorkbook(file, selectedColumns) {
+export async function createSafeWorkbook(file, selectedColumns, options) {
   if (!selectedColumns.length) throw new SafeFileError("NO_COLUMNS", "请至少选择一列需要替换的内容。");
   const workbook = await loadWorkbook(file);
-  const id = taskId();
+  const identity = await createProtectionIdentity(options, JSON.stringify(workbook.model));
+  const id = identity.taskId;
   const createdAt = new Date().toISOString();
   const taskName = baseName(file.name);
-  const result = tokenizeWorkbook(workbook, selectedColumns, id);
+  const result = tokenizeWorkbook(workbook, selectedColumns, protectionTokenIdentity(identity));
   if (!result.replacedCells) {
     throw new SafeFileError("NO_VALUES", "所选列中没有找到可替换值，或文中替换列没有出现已确认实体。", result.warnings);
   }
@@ -121,7 +118,7 @@ export async function createSafeWorkbook(file, selectedColumns) {
   await assertNoSensitiveValuesInXlsxPackage(buffer, result.mapping);
   const vault = {
     version: 2,
-    taskId: id,
+    ...identity,
     taskName,
     createdAt,
     sourceFormat: "xlsx",
@@ -132,7 +129,8 @@ export async function createSafeWorkbook(file, selectedColumns) {
 
   return {
     buffer,
-    outputName: protectedOutputName("xlsx", id),
+    ...protectionResult(identity, result.mapping),
+    outputName: protectedOutputName("xlsx", identity.marker || id),
     mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     format: "xlsx",
     taskId: id,
@@ -144,7 +142,7 @@ export async function createSafeWorkbook(file, selectedColumns) {
   };
 }
 
-export async function inspectRestoreFile(file) {
+export async function inspectRestoreFile(file, context) {
   const workbook = await loadWorkbook(file);
   const inspection = inspectWorkbookTokens(workbook);
   if (!inspection.occurrences.length) {
@@ -165,8 +163,8 @@ export async function inspectRestoreFile(file) {
     );
   }
 
-  const id = inspection.taskIds[0];
-  const vault = await loadVault(id);
+  const vault = await resolveRestoreVault(inspection, context);
+  const id = vault.taskId;
   if (!vault) {
     throw new SafeFileError("VAULT_NOT_FOUND", `本机找不到任务 ${id} 的映射，已停止还原。`, [`任务指纹 ${id}`]);
   }
@@ -183,7 +181,7 @@ export async function inspectRestoreFile(file) {
   }
 
   return {
-    taskId: id,
+    ...taskEvidence(vault), taskId: id,
     taskName: vault.taskName,
     occurrences: inspection.occurrences.length,
     uniqueTokens: inspection.uniqueTokens.length,
@@ -191,13 +189,10 @@ export async function inspectRestoreFile(file) {
   };
 }
 
-export async function restoreSafeWorkbook(file, expectedTaskId) {
+export async function restoreSafeWorkbook(file, expectedTaskId, context) {
   const workbook = await loadWorkbook(file);
   const inspection = inspectWorkbookTokens(workbook);
-  if (inspection.taskIds.length !== 1 || inspection.taskIds[0] !== expectedTaskId) {
-    throw new SafeFileError("TASK_CHANGED", "文件与刚才检查通过的任务不一致，已停止还原。", inspection.taskIds);
-  }
-  const vault = await loadVault(expectedTaskId);
+  const vault = await resolveRestoreVault(inspection, context, expectedTaskId);
   if (!vault) throw new SafeFileError("VAULT_NOT_FOUND", "本机映射已不存在，无法还原。");
   const comparison = occurrenceComparison(vault.occurrenceBaseline, inspection.occurrences);
   const altered = inspectWorkbookAlteredTokens(workbook, vault.mapping);

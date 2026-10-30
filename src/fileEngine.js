@@ -57,38 +57,38 @@ export async function inspectProtectionFile(file) {
   return { ...analysis, ...evidence, formatLabel: FILE_FORMAT_META.xlsx.label };
 }
 
-export async function createSafeFile(file, selection) {
+export async function createSafeFile(file, selection, options) {
   const prepared = await prepareFile(file, SUPPORTED_PROTECT_FORMATS);
   file = prepared.file;
   const { format } = prepared.evidence;
   if (format === "docx") {
     const { createSafeDocx } = await import("./officeOpenXmlEngine.js");
-    return createSafeDocx(file, selection);
+    return createSafeDocx(file, selection, options);
   }
   if (format === "txt" || format === "md") {
     const { createSafeText } = await import("./textEngine.js");
-    return createSafeText(file, selection, format);
+    return createSafeText(file, selection, format, options);
   }
   return format === "csv"
-    ? createSafeCsv(file, selection)
-    : createSafeWorkbook(file, selection);
+    ? createSafeCsv(file, selection, options)
+    : createSafeWorkbook(file, selection, options);
 }
 
-export async function inspectRestoreFile(file) {
+export async function inspectRestoreFile(file, context) {
   const prepared = await prepareFile(file, SUPPORTED_RESTORE_FORMATS);
   file = prepared.file;
   const { evidence } = prepared;
   const format = evidence.format;
   if (format === "txt" || format === "md") {
     const { inspectTextRestoreFile } = await import("./textEngine.js");
-    return { ...await inspectTextRestoreFile(file, format), ...evidence };
+    return { ...await inspectTextRestoreFile(file, format, context), ...evidence };
   }
   if (format === "html") {
     const { inspectHtmlRestoreFile } = await import("./htmlEngine.js");
-    return { ...await inspectHtmlRestoreFile(file), ...evidence };
+    return { ...await inspectHtmlRestoreFile(file, context), ...evidence };
   }
   if (format === "csv") {
-    const inspection = await inspectCsvRestoreFile(file);
+    const inspection = await inspectCsvRestoreFile(file, context);
     return {
       ...inspection,
       ...evidence,
@@ -101,7 +101,7 @@ export async function inspectRestoreFile(file) {
     };
   }
   if (format === "xlsx") {
-    const inspection = await inspectXlsxRestoreFile(file);
+    const inspection = await inspectXlsxRestoreFile(file, context);
     return {
       ...inspection,
       ...evidence,
@@ -114,23 +114,23 @@ export async function inspectRestoreFile(file) {
     };
   }
   const { inspectOfficeRestoreFile } = await import("./officeOpenXmlEngine.js");
-  return { ...await inspectOfficeRestoreFile(file), ...evidence };
+  return { ...await inspectOfficeRestoreFile(file, context), ...evidence };
 }
 
-export async function restoreSafeFile(file, expectedTaskId) {
+export async function restoreSafeFile(file, expectedTaskId, context) {
   const prepared = await prepareFile(file, SUPPORTED_RESTORE_FORMATS);
   file = prepared.file;
   const { format } = prepared.evidence;
   if (format === "txt" || format === "md") {
     const { restoreSafeText } = await import("./textEngine.js");
-    return restoreSafeText(file, expectedTaskId, format);
+    return restoreSafeText(file, expectedTaskId, format, context);
   }
   if (format === "html") {
     const { restoreHtmlSafeFile } = await import("./htmlEngine.js");
-    return restoreHtmlSafeFile(file, expectedTaskId);
+    return restoreHtmlSafeFile(file, expectedTaskId, context);
   }
   if (format === "csv") {
-    const result = await restoreSafeCsv(file, expectedTaskId);
+    const result = await restoreSafeCsv(file, expectedTaskId, context);
     return {
       ...result,
       format,
@@ -142,7 +142,7 @@ export async function restoreSafeFile(file, expectedTaskId) {
     };
   }
   if (format === "xlsx") {
-    const result = await restoreSafeWorkbook(file, expectedTaskId);
+    const result = await restoreSafeWorkbook(file, expectedTaskId, context);
     return {
       ...result,
       format,
@@ -155,5 +155,5 @@ export async function restoreSafeFile(file, expectedTaskId) {
     };
   }
   const { restoreOfficeSafeFile } = await import("./officeOpenXmlEngine.js");
-  return restoreOfficeSafeFile(file, expectedTaskId);
+  return restoreOfficeSafeFile(file, expectedTaskId, context);
 }

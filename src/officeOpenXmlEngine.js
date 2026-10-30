@@ -1,7 +1,8 @@
 import { SafeFileError } from "./xlsxEngine.js";
 import { listVaultSummaries, loadVault, saveVault } from "./vaultStore.js";
+import { createProtectionIdentity, protectionTokenIdentity, protectionResult, resolveRestoreVault, taskEvidence } from "./taskIdentity.js";
 import { OFFICE_FORMATS, analyzeDocxProtectionPackage, assertNoSensitiveValuesInOfficePackage, findAlteredTokens, inspectOfficePackage, loadOfficePackage, restoreOfficePackage, tokenizeDocxPackage } from "./officeOpenXmlCore.js";
-import { scrubOfficeMetadata } from "./officeOpenXmlCore.js";
+import { scrubOfficeMetadata, allXmlText } from "./officeOpenXmlCore.js";
 import { highRiskTextFindings, occurrenceBaseline, occurrenceComparison, protectedOutputName } from "./fileSafety.js";
 
 function extensionOf(filename) {
@@ -55,10 +56,6 @@ async function checkedPackage(file) {
   return loadOfficePackage(await file.arrayBuffer(), extensionOf(file.name));
 }
 
-function createTaskId() {
-  return [...crypto.getRandomValues(new Uint8Array(4))].map((byte) => byte.toString(16).padStart(2, "0")).join("").toUpperCase();
-}
-
 export async function inspectDocxProtectionFile(file) {
   try {
     const { zip, format } = await checkedPackage(file);
@@ -70,25 +67,28 @@ export async function inspectDocxProtectionFile(file) {
   }
 }
 
-export async function createSafeDocx(file, selectedCandidates) {
+export async function createSafeDocx(file, selectedCandidates, options) {
   try {
     if (!selectedCandidates.length) throw new SafeFileError("NO_TEXT_CANDIDATES", "请至少选择一项需要替换的敏感内容。");
     const { zip, format } = await checkedPackage(file);
     if (format !== "docx") throw new SafeFileError("FORMAT_MISMATCH", "DOCX 脱敏入口只处理标准 Word 文件。");
     await analyzeDocxProtectionPackage(zip);
-    const taskId = createTaskId();
+    const sourceParts = await Promise.all(Object.values(zip.files).filter(entry => !entry.dir && /\.xml$/i.test(entry.name)).map(entry => entry.async("string")));
+    const identity = await createProtectionIdentity(options, sourceParts.map(allXmlText).join("\n"));
+    const taskId = identity.taskId;
     const taskName = cleanBaseName(file.name);
-    const result = await tokenizeDocxPackage(zip, selectedCandidates, taskId);
+    const result = await tokenizeDocxPackage(zip, selectedCandidates, protectionTokenIdentity(identity));
     if (!result.replacedOccurrences || !result.uniqueValues) throw new SafeFileError("NO_VALUES", "没有找到可替换的完整文字。");
     const postCheck = await inspectOfficePackage(zip, "docx");
     const unknown = postCheck.uniqueTokens.filter((token) => !result.mapping[token]);
     if (postCheck.unsupportedOccurrences.length || unknown.length) throw new SafeFileError("UNSUPPORTED_CONTENT", "代号出现在 DOCX 首版不处理的区域。", [...postCheck.unsupportedOccurrences.map((item) => `${item.location}：${item.token}`), ...unknown]);
     await assertNoSensitiveValuesInOfficePackage(zip, result.mapping);
     await scrubOfficeMetadata(zip);
-    await saveVault({ version: 2, taskId, taskName, createdAt: new Date().toISOString(), sourceFormat: "docx", occurrenceBaseline: occurrenceBaseline(postCheck.occurrences), mapping: result.mapping });
+    const buffer = await zip.generateAsync({ type: "arraybuffer", compression: "DEFLATE", compressionOptions: { level: 6 } });
+    await saveVault({ version: 2, ...identity, taskName, createdAt: new Date().toISOString(), sourceFormat: "docx", occurrenceBaseline: occurrenceBaseline(postCheck.occurrences), mapping: result.mapping });
     return {
-      buffer: await zip.generateAsync({ type: "arraybuffer", compression: "DEFLATE", compressionOptions: { level: 6 } }),
-      outputName: protectedOutputName("docx", taskId), mimeType: OFFICE_FORMATS.docx.mimeType,
+      ...protectionResult(identity, result.mapping), buffer,
+      outputName: protectedOutputName("docx", identity.marker || taskId), mimeType: OFFICE_FORMATS.docx.mimeType,
       format: "docx", formatLabel: "Word", taskId, taskName,
       replacedCells: result.replacedOccurrences, uniqueValues: result.uniqueValues,
       checkedAreas: result.checkedAreas, uncheckedAreas: OFFICE_FORMATS.docx.unchecked,
@@ -99,7 +99,7 @@ export async function createSafeDocx(file, selectedCandidates) {
   }
 }
 
-export async function inspectOfficeRestoreFile(file) {
+export async function inspectOfficeRestoreFile(file, context) {
   try {
     const { zip, format } = await checkedPackage(file);
     const initial = await inspectOfficePackage(zip, format);
@@ -108,8 +108,8 @@ export async function inspectOfficeRestoreFile(file) {
       if (altered.length) throw new SafeFileError("ALTERED_TOKENS", "文件中只剩下残缺或被改写的已知代号，已停止输出。", altered);
     }
     validateInspection(initial);
-    const taskId = initial.taskIds[0];
-    const vault = await loadVault(taskId);
+    const vault = await resolveRestoreVault(initial, context);
+    const taskId = vault.taskId;
     if (!vault) throw new SafeFileError("VAULT_NOT_FOUND", `本机找不到任务 ${taskId} 的映射，已停止还原。`, [`任务 ${taskId}`]);
     const inspection = await inspectOfficePackage(zip, format, vault.mapping);
     const unknown = inspection.uniqueTokens.filter((token) => !vault.mapping[token]);
@@ -121,7 +121,7 @@ export async function inspectOfficeRestoreFile(file) {
       format,
       formatLabel: OFFICE_FORMATS[format].label,
       taskId,
-      taskName: vault.taskName,
+      ...taskEvidence(vault), taskName: vault.taskName,
       occurrences: inspection.occurrences.length,
       uniqueTokens: inspection.uniqueTokens.length,
       usedMappings: inspection.uniqueTokens.length,
@@ -135,15 +135,12 @@ export async function inspectOfficeRestoreFile(file) {
   }
 }
 
-export async function restoreOfficeSafeFile(file, expectedTaskId) {
+export async function restoreOfficeSafeFile(file, expectedTaskId, context) {
   try {
     const { zip, format } = await checkedPackage(file);
     const initial = await inspectOfficePackage(zip, format);
     validateInspection(initial);
-    if (initial.taskIds[0] !== expectedTaskId) {
-      throw new SafeFileError("TASK_CHANGED", "文件与刚才检查通过的任务不一致，已停止还原。", initial.taskIds);
-    }
-    const vault = await loadVault(expectedTaskId);
+    const vault = await resolveRestoreVault(initial, context, expectedTaskId);
     if (!vault) throw new SafeFileError("VAULT_NOT_FOUND", "本机映射已不存在，无法还原。");
     const before = await inspectOfficePackage(zip, format, vault.mapping);
     const comparison = occurrenceComparison(vault.occurrenceBaseline, before.occurrences);

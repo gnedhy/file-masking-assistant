@@ -1,0 +1,68 @@
+import { test, expect } from "@playwright/test";
+import { randomUUID } from "node:crypto";
+import fs from "node:fs/promises";
+import path from "node:path";
+import os from "node:os";
+
+test("集中记录：真实数据库、本人权限、管理员统计、导出与文件往返", async ({ page, context }, info) => {
+  const login = async user => {
+    const response=await context.request.post('/__test/session',{headers:{Origin:'http://127.0.0.1:4175','x-test-secret':'isolated-test-login-secret-not-for-deployment'},data:{user}});
+    expect(response.ok()).toBe(true); return response.json();
+  };
+  const alice=await login('alice');
+  const prefix=`闭环_${randomUUID().slice(0,8)}`;
+  await page.goto('/');
+  await page.waitForFunction(async()=>Boolean((await import('/src/operationSync.js')).getOperationSyncState().session));
+  await page.getByRole('button',{name:'知道了',exact:true}).click();
+  await page.locator('input[type=file]:not([accept=".json"])').setInputFiles({name:`${prefix}.txt`,mimeType:'text/plain',buffer:Buffer.from('客户名称：虚构测试企业\n产品名称：虚构产品甲')});
+  await page.getByRole('button',{name:'生成脱敏文件',exact:true}).click();
+  const generated=page.waitForEvent('download');
+  await page.getByRole('link',{name:'下载脱敏文件',exact:true}).click();
+  const safe=await generated;
+  await page.getByRole('button',{name:'导入 AI 处理后的文件',exact:true}).click();
+  await page.locator('input[type=file]:not([accept=".json"])').setInputFiles({name:safe.suggestedFilename(),mimeType:'text/plain',buffer:await fs.readFile(await safe.path())});
+  await page.getByRole('button',{name:'生成还原文件',exact:true}).click();
+  const restored=page.waitForEvent('download');await page.getByRole('link',{name:'下载还原文件',exact:true}).click();
+  expect(await fs.readFile(await (await restored).path(),'utf8')).toContain('虚构测试企业');
+  await page.evaluate(async()=>{await (await import('/src/operationSync.js')).retryOperationSync();});
+  await expect.poll(async()=>page.evaluate(async()=>(await import('/src/operationSync.js')).getOperationSyncState().pending)).toBe(0);
+  await page.getByRole('button',{name:'操作记录',exact:true}).click();
+  const drawer=page.getByRole('dialog',{name:'操作记录',exact:true});
+  await expect(drawer.getByText('我的记录 · 已识别测试身份')).toBeVisible();
+  await drawer.getByLabel('搜索',{exact:true}).fill(prefix);
+  await expect(drawer.locator('.operation-list li').first()).toBeVisible();
+  expect((await context.request.get('/api/v1/operation-events?user=test-bob')).status()).toBe(403);
+  expect((await context.request.get('/api/v1/vault-tasks')).status()).toBe(404);
+  await drawer.getByRole('button',{name:'关闭操作记录'}).click();
+  await login('admin');
+  await page.evaluate(async()=>{await (await import('/src/operationSync.js')).retryOperationSync();});
+  await page.getByRole('button',{name:'操作记录',exact:true}).click();
+  await drawer.getByRole('button',{name:'使用统计',exact:true}).click();
+  const central=page.getByRole('region',{name:'集中操作记录'});
+  await expect(central.locator('.operation-list li')).toHaveCount(10);
+  await central.getByRole('button',{name:'下一页',exact:true}).click();
+  await expect(central.getByRole('button',{name:'上一页',exact:true})).toBeEnabled();
+  await expect(central.locator('.operation-list li')).toHaveCount(10);
+  const searches=[];
+  page.on('request',request=>{const url=new URL(request.url());if(url.pathname==='/api/v1/operation-events'&&url.searchParams.get('query'))searches.push(url.searchParams.get('query'));});
+  await central.getByLabel('文件名／任务搜索',{exact:true}).pressSequentially(prefix,{delay:15});
+  await expect(central.getByRole('button',{name:'上一页',exact:true})).toBeDisabled();
+  await expect(central.locator('.operation-list li').first()).toBeVisible();
+  await expect.poll(()=>searches.at(-1)).toBe(prefix);
+  expect(searches).toEqual([prefix]);
+  await page.route('**/api/v1/operation-events?*',route=>route.fulfill({status:503,json:{code:'RECORDS_UNAVAILABLE'}}));
+  await central.getByRole('button',{name:'最近 7 天',exact:true}).click();
+  await expect(central.getByRole('alert')).toContainText('暂时无法读取记录');
+  await page.unroute('**/api/v1/operation-events?*');
+  await central.getByRole('button',{name:'重新读取',exact:true}).click();
+  await expect(central.locator('.operation-list li').first()).toBeVisible();
+  for (const theme of ['浅色','深色','系统']) {
+    await page.getByRole('button',{name:theme+'模式',exact:true}).click();
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+    await page.screenshot({animations:'disabled',path:path.join(os.tmpdir(),`central-records-${info.project.name}-${theme}.png`)});
+  }
+  const exported=page.waitForEvent('download');await central.getByRole('button',{name:'导出记录',exact:true}).click();
+  const csv=await fs.readFile(await (await exported).path(),'utf8');expect(csv).toContain(prefix);expect(csv).toContain('测试员工甲');expect(csv).not.toContain('虚构测试企业');
+  await central.getByRole('button',{name:'返回文件处理'}).click();
+  await expect(page.getByRole('link',{name:'再次下载',exact:true})).toBeVisible();
+});

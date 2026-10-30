@@ -1,5 +1,5 @@
 import { classifyHeader, findKnownShortTokens } from "./xlsxCore.js";
-import { createEntityToken, parseEntityToken, tokenPattern } from "./tokenFormat.js";
+import { createEntityToken, parseEntityToken, tokenPattern, tokenOccurrence } from "./tokenFormat.js";
 
 function splitMarkdownRow(line) {
   return line.trim().replace(/^\||\|$/g, "").split("|").map((cell) => cell.trim());
@@ -128,7 +128,7 @@ export function tokenizeText(text, selectedCandidates, taskId) {
 }
 
 export function inspectTextTokens(text) {
-  const occurrences = [...text.matchAll(tokenPattern())].map((match) => ({ token: match[0], shortToken: match[1], taskId: match[2], index: match.index }));
+  const occurrences = [...text.matchAll(tokenPattern())].map((match) => ({ ...tokenOccurrence(match[0]), index: match.index }));
   return {
     occurrences,
     taskIds: [...new Set(occurrences.map((item) => item.taskId))],

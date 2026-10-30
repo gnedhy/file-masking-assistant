@@ -70,7 +70,7 @@ test("emits the files required by Sites packaging", async () => {
   await access(new URL("../dist/.openai/hosting.json", import.meta.url));
 });
 
-test("static asset responses receive the same security policy as Worker responses", async () => {
+test("emits static header configuration matching the Worker policy (deployment must be probed separately)", async () => {
   const config = await readFile(new URL("../dist/client/_headers", import.meta.url), "utf8");
   assert.equal(config.split("\n")[0], "/*");
   const response = await worker.fetch(new Request("https://example.test/"), {

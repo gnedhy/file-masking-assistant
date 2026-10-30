@@ -1,4 +1,4 @@
-import { createEntityToken, parseEntityToken, tokenPattern } from "./tokenFormat.js";
+import { createEntityToken, parseEntityToken, tokenPattern, tokenOccurrence } from "./tokenFormat.js";
 
 export { tokenPattern };
 
@@ -21,6 +21,7 @@ function normalizeHeader(header) {
 
 export function findKnownShortTokens(text, knownShortTokens) {
   const findings = [];
+  for (const match of String(text).matchAll(/(?:客户|产品|人员|信息)(?:[\-－—–_][a-z0-9]{1,8}(?:[\s\-－—–_]+[a-z0-9]*)?|\s+[a-z0-9]{4}[\s\-－—–_]+[0-9]+)/gi)) findings.push(match[0]);
   for (const match of String(text).matchAll(/(^|[^A-Z0-9])([CPSX]\d{3,})(?=[^A-Z0-9]|$)/g)) {
     if (knownShortTokens.has(match[2])) findings.push(match[2]);
   }
@@ -371,7 +372,7 @@ export function addTaskMarker(workbook, metadata) {
 function textTokens(text) {
   const matches = [];
   for (const match of String(text).matchAll(tokenPattern())) {
-    matches.push({ token: match[0], shortToken: match[1], taskId: match[2] });
+    matches.push(tokenOccurrence(match[0]));
   }
   return matches;
 }

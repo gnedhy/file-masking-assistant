@@ -10,4 +10,5 @@ tests/output/
 .env.*
 !.env.example
 !.env.enterprise.example
+!.env.operations.example
 secrets/

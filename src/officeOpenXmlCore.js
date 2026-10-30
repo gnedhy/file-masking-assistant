@@ -2,7 +2,7 @@ import JSZip from "jszip";
 import { FILE_SIZE_LIMITS } from "./filePreflight.js";
 import { classifyHeader, findKnownShortTokens } from "./xlsxCore.js";
 import { analyzeText } from "./textCore.js";
-import { createEntityToken, parseEntityToken, tokenPattern } from "./tokenFormat.js";
+import { createEntityToken, parseEntityToken, tokenPattern, tokenOccurrence } from "./tokenFormat.js";
 
 export const OFFICE_LIMITS = {
   compressedBytes: FILE_SIZE_LIMITS.docx,
@@ -100,7 +100,7 @@ function isIndependentMatch(text, source, index) {
     && !(/[A-Za-z0-9]/.test(source.at(-1)) && /[A-Za-z0-9]/.test(after));
 }
 
-function allXmlText(xml) {
+export function allXmlText(xml) {
   const values = [];
   for (const match of xml.matchAll(/>([^<>]+)</g)) values.push(decodeXml(match[1]));
   return values.join("");
@@ -347,7 +347,7 @@ export async function tokenizeDocxPackage(zip, selectedCandidates, taskId) {
 function scanText(text, location) {
   const occurrences = [];
   for (const match of text.matchAll(tokenPattern())) {
-    occurrences.push({ token: match[0], shortToken: match[1], taskId: match[2], location });
+    occurrences.push({ ...tokenOccurrence(match[0]), location });
   }
   return occurrences;
 }
@@ -405,9 +405,13 @@ export async function inspectOfficePackage(zip, format, mapping = null) {
   const altered = [];
   const checkedAreas = new Set();
   for (const entry of Object.values(zip.files)) {
-    if (entry.dir || !entry.name.toLowerCase().endsWith(".xml")) continue;
+    if (entry.dir || !/\.(xml|rels)$/i.test(entry.name)) continue;
     const xml = await entry.async("string");
     const area = supportedArea(entry.name, config);
+    const hidden = [...xml.matchAll(/\b[\w:.-]+\s*=\s*(?:"([^"]*)"|'([^']*)')|<!--[\s\S]*?-->/g)]
+      .map(match => decodeXml(match[1] ?? match[2] ?? match[0])).join("\n");
+    unsupportedOccurrences.push(...scanText(hidden, `${entry.name} 属性或注释`).filter(item => item.taskId.startsWith("short:")));
+    if (mapping) altered.push(...findKnownShortTokens(hidden.replace(tokenPattern(), " "), new Set()).map(value => ({ location: `${entry.name} 属性或注释`, value })));
     const found = scanOfficeXml(xml, format, entry.name);
     if (area) {
       occurrences.push(...found);

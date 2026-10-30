@@ -1,5 +1,7 @@
 import JSZip from "jszip";
 import { FILE_SIZE_LIMITS } from "./filePreflight.js";
+import { tokenPattern } from "./tokenFormat.js";
+import { findKnownShortTokens } from "./xlsxCore.js";
 
 export const XLSX_LIMITS = {
   compressedBytes: FILE_SIZE_LIMITS.xlsx,
@@ -39,6 +41,16 @@ export async function preflightXlsxPackage(input, limits = XLSX_LIMITS) {
     if (/TargetMode=["']External["']/i.test(relationships)) {
       throw packageError("EXTERNAL_RELATIONSHIPS", "XLSX 包含外部链接或远程连接，已停止处理。", [entry.name]);
     }
+  }
+  for (const entry of entries.filter(item => /\.(xml|rels)$/i.test(item.name))) {
+    let xml = await entry.async("string");
+    // Only ordinary cell text is restored; aliases elsewhere must not disappear during ExcelJS serialization.
+    if (/^xl\/(?:sharedStrings\.xml|worksheets\/sheet\d+\.xml)$/i.test(entry.name)) xml = xml.replace(/(<t\b[^>]*>)[\s\S]*?(<\/t>)/g, "$1$2");
+    const decoded = xml.replace(/&#x([0-9a-f]+);/gi, (_, code) => String.fromCodePoint(parseInt(code, 16))).replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(Number(code)));
+    const text = `${decoded}\n${decoded.replace(/<[^>]*>/g, "")}`;
+    const shortTokens = [...text.matchAll(tokenPattern())].map(match => match[0]).filter(token => !token.startsWith("[["));
+    const altered = findKnownShortTokens(text.replace(tokenPattern(), " "), new Set());
+    if (shortTokens.length || altered.length) throw packageError("UNSUPPORTED_CONTENT", "简短替身出现在不支持还原的 XLSX 区域，已停止处理。", [entry.name]);
   }
   return { zip, entries: entries.length, totalSize, worksheetCount };
 }

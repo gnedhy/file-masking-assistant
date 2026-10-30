@@ -12,14 +12,10 @@ import {
 import { highRiskTextFindings, occurrenceBaseline, occurrenceComparison, protectedOutputName, suspiciousTextFindings } from "./fileSafety.js";
 import { SafeFileError } from "./xlsxEngine.js";
 import { FILE_SIZE_LIMITS } from "./filePreflight.js";
+import { createProtectionIdentity, protectionTokenIdentity, protectionResult, resolveRestoreVault, taskEvidence } from "./taskIdentity.js";
 import { listVaultSummaries, loadVault, saveVault } from "./vaultStore.js";
 
 const MAX_CSV_BYTES = FILE_SIZE_LIMITS.csv;
-
-function taskId() {
-  const bytes = crypto.getRandomValues(new Uint8Array(4));
-  return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("").toUpperCase();
-}
 
 function baseName(filename) {
   return filename.replace(/\.csv$/i, "");
@@ -84,13 +80,14 @@ export async function inspectCsvProtectionFile(file) {
   return { ...analysis, sourceEncoding: document.sourceEncoding, riskFindings: highRiskTextFindings(stringifyCsv(document)) };
 }
 
-export async function createSafeCsv(file, selectedColumns) {
+export async function createSafeCsv(file, selectedColumns, options) {
   if (!selectedColumns.length) throw new SafeFileError("NO_COLUMNS", "请至少选择一列需要替换的内容。");
   const document = await loadCsv(file);
-  const id = taskId();
+  const identity = await createProtectionIdentity(options, stringifyCsv(document));
+  const id = identity.taskId;
   const createdAt = new Date().toISOString();
   const taskName = baseName(file.name);
-  const result = tokenizeCsv(document, selectedColumns, id);
+  const result = tokenizeCsv(document, selectedColumns, protectionTokenIdentity(identity));
   if (!result.replacedCells) throw new SafeFileError("NO_VALUES", "所选列中没有找到可替换值，或文中替换列没有出现已确认实体。", result.warnings);
   if (result.warnings.length) {
     throw new SafeFileError(
@@ -105,10 +102,11 @@ export async function createSafeCsv(file, selectedColumns) {
   }
 
   const buffer = encodeCsv(document);
-  await saveVault({ version: 2, taskId: id, taskName, createdAt, sourceFormat: "csv", occurrenceBaseline: occurrenceBaseline(inspectCsvTokens(document).occurrences), mapping: result.mapping });
+  await saveVault({ version: 2, ...identity, taskName, createdAt, sourceFormat: "csv", occurrenceBaseline: occurrenceBaseline(inspectCsvTokens(document).occurrences), mapping: result.mapping });
   return {
     buffer,
-    outputName: protectedOutputName("csv", id),
+    ...protectionResult(identity, result.mapping),
+    outputName: protectedOutputName("csv", identity.marker || id),
     mimeType: "text/csv;charset=utf-8",
     format: "csv",
     taskId: id,
@@ -120,7 +118,7 @@ export async function createSafeCsv(file, selectedColumns) {
   };
 }
 
-export async function inspectCsvRestoreFile(file) {
+export async function inspectCsvRestoreFile(file, context) {
   const document = await loadCsv(file);
   const inspection = inspectCsvTokens(document);
   if (!inspection.occurrences.length) {
@@ -133,8 +131,8 @@ export async function inspectCsvRestoreFile(file) {
   if (inspection.taskIds.length !== 1) {
     throw new SafeFileError("MIXED_TASKS", "CSV 中混入了多个脱敏任务的代号，已停止还原。", inspection.taskIds.map((id) => `任务指纹 ${id}`));
   }
-  const id = inspection.taskIds[0];
-  const vault = await loadVault(id);
+  const vault = await resolveRestoreVault(inspection, context);
+  const id = vault.taskId;
   if (!vault) throw new SafeFileError("VAULT_NOT_FOUND", `本机找不到任务 ${id} 的映射，已停止还原。`, [`任务指纹 ${id}`]);
   const unresolved = inspection.uniqueTokens.filter((token) => !vault.mapping[token]);
   const altered = inspectCsvAlteredTokens(document, vault.mapping);
@@ -146,16 +144,13 @@ export async function inspectCsvRestoreFile(file) {
   }
   restoreCsvValues(document, vault.mapping);
   assertCsvFormulaSafety(document);
-  return { taskId: id, taskName: vault.taskName, occurrences: inspection.occurrences.length, uniqueTokens: inspection.uniqueTokens.length, occurrenceComparison: occurrenceComparison(vault.occurrenceBaseline, inspection.occurrences) };
+  return { ...taskEvidence(vault), taskId: id, taskName: vault.taskName, occurrences: inspection.occurrences.length, uniqueTokens: inspection.uniqueTokens.length, occurrenceComparison: occurrenceComparison(vault.occurrenceBaseline, inspection.occurrences) };
 }
 
-export async function restoreSafeCsv(file, expectedTaskId) {
+export async function restoreSafeCsv(file, expectedTaskId, context) {
   const document = await loadCsv(file);
   const inspection = inspectCsvTokens(document);
-  if (inspection.taskIds.length !== 1 || inspection.taskIds[0] !== expectedTaskId) {
-    throw new SafeFileError("TASK_CHANGED", "CSV 与刚才检查通过的任务不一致，已停止还原。", inspection.taskIds);
-  }
-  const vault = await loadVault(expectedTaskId);
+  const vault = await resolveRestoreVault(inspection, context, expectedTaskId);
   if (!vault) throw new SafeFileError("VAULT_NOT_FOUND", "本机映射已不存在，无法还原。");
   const comparison = occurrenceComparison(vault.occurrenceBaseline, inspection.occurrences);
   const altered = inspectCsvAlteredTokens(document, vault.mapping);

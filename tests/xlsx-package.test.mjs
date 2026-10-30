@@ -17,6 +17,15 @@ test("XLSX package preflight accepts a standard workbook", async () => {
   assert.equal(result.worksheetCount, 1);
 });
 
+test("short aliases in chart caches, comments or XML attributes fail closed", async () => {
+  for (const [name, value] of [
+    ["xl/charts/chart1.xml", "<c:cache><c:v>产品-K7M4-01</c:v></c:cache>"],
+    ["xl/comments1.xml", "<comments><t>产品-k7m4-01</t></comments>"],
+    ["xl/worksheets/sheet1.xml", '<worksheet><c name="产品-K7M4-01"><t>普通文字</t></c></worksheet>'],
+  ]) await assert.rejects(() => xlsxBytes({ [name]: value }).then(bytes => preflightXlsxPackage(bytes)), { code: "UNSUPPORTED_CONTENT" });
+  await preflightXlsxPackage(await xlsxBytes({ "xl/sharedStrings.xml": "<sst><si><t>产品-K7M4-01</t></si></sst>" }));
+});
+
 test("XLSX package preflight rejects format mismatch, macro and embedded objects", async () => {
   await assert.rejects(async () => preflightXlsxPackage(await xlsxBytes({}, "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml")), (error) => error.code === "FORMAT_MISMATCH");
   await assert.rejects(async () => preflightXlsxPackage(await xlsxBytes({ "xl/vbaProject.bin": new Uint8Array([1]) })), (error) => error.code === "EMBEDDED_OBJECTS");

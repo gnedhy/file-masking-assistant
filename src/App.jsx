@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { readTaskCredential } from "./taskIdentity.js";
+import { CredentialDownload, CredentialInput, PairingConfirmation, TaskIdentityDetails, TokenFormatChoice } from "./ShortTokenControls.jsx";
+import { StorageStatus } from "./StorageStatus.jsx";
+import { OperationDrawer } from "./OperationDrawer.jsx";
+import CentralOperations from "./CentralOperations.jsx";
+import { recordOperation, hasOperationWriteFailure } from "./operationLog.js";
 import { version as appVersion } from "../package.json";
 import {
   ArrowRight,
@@ -22,7 +28,7 @@ import {
   Monitor,
   MagnifyingGlass,
   Moon,
-  Question,
+  ClockCounterClockwise,
   ShieldCheck,
   Sun,
   Trash,
@@ -54,12 +60,13 @@ const THEME_OPTIONS = [
   { value: "dark", label: "深色", icon: Moon },
   { value: "system", label: "系统", icon: Monitor },
 ];
+const UsagePreview = import.meta.env.DEV ? lazy(() => import("./UsagePreview.jsx")) : null;
 
 const WORKSPACE_COPY = {
   protect: {
     eyebrow: "当前任务 · 本机脱敏",
     title: "让文件安全进入 AI 工作流",
-    description: "真实值留在本机，AI 只接触可分析、可还原的任务代号。",
+    description: "已选内容替换为代号；交给 AI 前请复核其余内容。",
   },
   restore: {
     eyebrow: "当前任务 · 本机还原",
@@ -70,12 +77,11 @@ const WORKSPACE_COPY = {
 const VAULT_LABEL = ENTERPRISE_VAULT_ENABLED ? "企业 Vault" : "本机映射";
 const TEXT_SIZE_LIMIT_MB = FILE_SIZE_LIMITS.csv / 1024 / 1024;
 const OFFICE_SIZE_LIMIT_MB = FILE_SIZE_LIMITS.xlsx / 1024 / 1024;
+const LOCAL_PROCESSING_COPY = ENTERPRISE_VAULT_ENABLED ? "文件本机处理，映射保存在企业 Vault" : "文件本机处理，映射加密保存在当前浏览器";
+const formatList = (mode) => (mode === "protect" ? SUPPORTED_PROTECT_FORMATS : SUPPORTED_RESTORE_FORMATS).map(format => format.toUpperCase()).join("、");
 
 function ThemeSwitcher({ value, onChange }) {
-  const activeOption = THEME_OPTIONS.find((option) => option.value === value) ?? THEME_OPTIONS[2];
-  const ActiveIcon = activeOption.icon;
   return (
-    <>
       <div className="theme-switcher" role="group" aria-label="界面颜色模式">
         {THEME_OPTIONS.map(({ value: option, label, icon: Icon }) => (
           <button
@@ -88,19 +94,10 @@ function ThemeSwitcher({ value, onChange }) {
             aria-pressed={value === option}
             onClick={() => onChange(option)}
           >
-            <Icon weight={value === option ? "fill" : "regular"} />
-            <span>{label}</span>
+            <Icon aria-hidden="true" weight={value === option ? "fill" : "regular"} />
           </button>
         ))}
       </div>
-      <label className="theme-select" title={`${activeOption.label}模式，点击切换`}>
-        <ActiveIcon weight="fill" aria-hidden="true" />
-        <span>{activeOption.label}</span>
-        <select aria-label="界面颜色模式" value={value} onChange={(event) => onChange(event.target.value)}>
-          {THEME_OPTIONS.map(({ value: option, label }) => <option key={option} value={option}>{label}模式</option>)}
-        </select>
-      </label>
-    </>
   );
 }
 
@@ -211,11 +208,11 @@ function LocalTaskPanel({ localTasks, disabled, onContinue, onViewAll, viewAllBu
           <div className="local-task-panel__latest">
             <span>最近任务</span>
             <strong title={localTasks.latest.taskName}>{localTasks.latest.taskName}</strong>
-            <small>{formatTaskTime(localTasks.latest.createdAt)} · 任务 {localTasks.latest.taskId}</small>
+            <small>{formatTaskTime(localTasks.latest.createdAt)} · 任务 {localTasks.latest.marker || localTasks.latest.taskId}</small>
             <em><CheckCircle weight="fill" />映射保存在当前浏览器</em>
           </div>
           <button className="local-task-panel__action" type="button" disabled={disabled} onClick={onContinue}>
-            继续还原<ArrowRight weight="bold" />
+            选择待还原文件<ArrowRight weight="bold" />
           </button>
           <button ref={viewAllButtonRef} className="local-task-panel__view" type="button" onClick={onViewAll}>
             查看全部任务
@@ -228,6 +225,7 @@ function LocalTaskPanel({ localTasks, disabled, onContinue, onViewAll, viewAllBu
             : "制作并下载脱敏文件后，对应的还原任务会显示在这里。"}
         </p>
       )}
+      {!hasTasks && <button ref={viewAllButtonRef} className="local-task-panel__view" type="button" disabled={disabled} onClick={onViewAll}>查看存储状态</button>}
     </section>
   );
 }
@@ -236,7 +234,7 @@ function LocalTasksDrawer({ localTasks, currentTaskId, pendingDeleteId, deleting
   const [query, setQuery] = useState("");
   const normalizedQuery = query.trim().toLocaleLowerCase("zh-CN");
   const visibleTasks = normalizedQuery
-    ? localTasks.tasks.filter((task) => `${task.taskName} ${task.taskId}`.toLocaleLowerCase("zh-CN").includes(normalizedQuery))
+    ? localTasks.tasks.filter((task) => `${task.taskName} ${task.taskId} ${task.marker || ""}`.toLocaleLowerCase("zh-CN").includes(normalizedQuery))
     : localTasks.tasks;
 
   return (
@@ -249,8 +247,10 @@ function LocalTasksDrawer({ localTasks, currentTaskId, pendingDeleteId, deleting
         <button ref={closeButtonRef} className="icon-button" type="button" onClick={onClose} aria-label="关闭本机任务"><X /></button>
       </div>
 
+      <div className="drawer-body">
       <p className="local-tasks-drawer__lead"><Database weight="duotone" />这些任务和映射只保存在当前浏览器，用于核对并还原对应的脱敏文件。</p>
       {error && <p className="local-tasks-drawer__error" role="alert"><WarningCircle weight="fill" />{error}</p>}
+      {!ENTERPRISE_VAULT_ENABLED && <StorageStatus />}
 
       {localTasks.tasks.length > 0 && (
         <div className="local-task-search">
@@ -280,14 +280,16 @@ function LocalTasksDrawer({ localTasks, currentTaskId, pendingDeleteId, deleting
               <div className="local-task-row__main">
                 <div className="local-task-row__title">
                   <strong title={task.taskName}>{task.taskName}</strong>
-                  <span><CheckCircle weight="fill" />映射可用</span>
+                  <span><CheckCircle weight="fill" />映射已保存</span>
                 </div>
                 <dl>
-                  <div><dt>任务编号</dt><dd>{task.taskId}</dd></div>
+                  <div><dt>{task.marker ? "任务标记" : "任务编号"}</dt><dd>{task.marker || task.taskId}</dd></div>
                   <div><dt>生成时间</dt><dd>{formatTaskTime(task.createdAt)}</dd></div>
                   <div><dt>映射数量</dt><dd>{task.uniqueValues} 条</dd></div>
                 </dl>
               </div>
+              {task.marker && <TaskIdentityDetails taskId={task.taskId} />}
+              {task.tokenFormat === "short" && <CredentialDownload taskId={task.taskId} />}
               {confirming ? (
                 <div className="local-task-row__confirm" role="alert">
                   <strong>确定删除这项本机映射？</strong>
@@ -306,7 +308,8 @@ function LocalTasksDrawer({ localTasks, currentTaskId, pendingDeleteId, deleting
           );
         })}
       </div> : <p className="local-tasks-drawer__empty">{localTasks.tasks.length ? "没有找到匹配的任务，请换一个文件名或任务编号。" : "当前浏览器已没有可还原的本机任务。"}</p>}
-      <p className="local-tasks-drawer__boundary"><Info weight="duotone" />V1 仅支持手动清理；映射保留期限将在企业策略和到期提醒机制明确后再加入。</p>
+      <p className="local-tasks-drawer__boundary"><Info weight="duotone" />本机任务不自动到期。删除映射后不能撤销；持久保存不提供备份恢复。</p>
+      </div>
     </aside>
   );
 }
@@ -323,33 +326,12 @@ function BoundaryRoute() {
   );
 }
 
-function EmptyState({ mode, inputRef, localTasks, isDraggingFile }) {
+function EmptyState({ mode, inputRef, isDraggingFile }) {
   const copy = MODE_COPY[mode];
-  const restoreReady = mode === "restore" && localTasks.status === "ready" && localTasks.count > 0;
-  const restoreStatusTitle = localTasks.status === "loading"
-    ? "正在读取本机还原任务"
-    : localTasks.status === "error"
-      ? "暂时无法读取本机还原任务"
-      : restoreReady
-        ? `本机有 ${localTasks.count} 个可还原任务`
-        : "本机暂时没有可还原任务";
-  const restoreStatusDetail = localTasks.status === "loading"
-    ? "请稍候"
-    : localTasks.status === "error"
-      ? "仍可选择文件，系统会在还原前再次核对"
-      : restoreReady
-        ? `最近任务：${localTasks.latest.taskName} · ${localTasks.latest.taskId}`
-        : "请先在本机制作并下载脱敏文件";
-  const supportedCopy = mode === "protect" ? " XLSX、CSV、TXT、MD 或 DOCX 文件" : " XLSX、CSV、TXT、MD、DOCX、PPTX 或 HTML 文件";
+  const supportedCopy = ` ${formatList(mode)} 文件`;
 
   return (
     <div className="empty-state" data-dragging={isDraggingFile}>
-      {mode === "restore" && (
-        <span className="restore-readiness" data-state={localTasks.status === "loading" ? "loading" : restoreReady ? "ready" : "warning"}>
-          {restoreReady ? <CheckCircle weight="fill" /> : <Info weight="fill" />}
-          <span><strong>{restoreStatusTitle}</strong><small>{restoreStatusDetail}</small></span>
-        </span>
-      )}
       <span className="empty-state__icon" aria-hidden="true"><UploadSimple weight="regular" /></span>
       <strong className="empty-state__title" aria-live="polite">{isDraggingFile
         ? "松开鼠标，开始读取文件"
@@ -377,7 +359,7 @@ function SelectedFile({ file, onRemove }) {
   );
 }
 
-function ReadyState({ mode, file, analysis, selectedIds, fieldModes = {}, restoreInspection, regenerationNotice, detailsOpen, onRemove, onPrimary, onDetails }) {
+function ReadyState({ mode, file, analysis, selectedIds, fieldModes = {}, restoreInspection, regenerationNotice, detailsOpen, onRemove, onPrimary, onDetails, tokenFormat, onTokenFormat, pairingConfirmed, onPairing }) {
   const selectedCandidates = analysis?.kind === "text" ? analysis.candidates.filter((candidate) => selectedIds.includes(candidate.id)) : [];
   const selectedColumns = (analysis?.columns ?? [])
     .filter((column) => selectedIds.includes(column.id))
@@ -398,6 +380,8 @@ function ReadyState({ mode, file, analysis, selectedIds, fieldModes = {}, restor
   return (
     <div className="ready-state">
       <SelectedFile file={file} onRemove={onRemove} />
+      {mode === "protect" && !ENTERPRISE_VAULT_ENABLED && <TokenFormatChoice value={tokenFormat} onChange={onTokenFormat} />}
+      {mode === "restore" && restoreInspection.tokenFormat === "short" && <PairingConfirmation inspection={restoreInspection} checked={pairingConfirmed} onChange={onPairing} />}
       {regenerationNotice && (
         <div className="task-change-banner" role="status">
           <WarningCircle weight="duotone" aria-hidden="true" />
@@ -416,13 +400,13 @@ function ReadyState({ mode, file, analysis, selectedIds, fieldModes = {}, restor
               ? `可确认的代号会正常还原；${restoreInspection.unresolvedOccurrences.length} 处被改写的代号将原样保留。`
               : hasContentLoss
                 ? `AI 返回内容中有 ${comparison.missing} 处代号未出现；现有完整代号仍可正常还原。`
-              : `${restoreInspection.formatLabel} 文件与本机任务已匹配，可以安全进入还原。`}</small></span>
+              : "任务已匹配，映射可读取。请核对后生成还原文件。"}</small></span>
           </div>
           <dl>
             <div><dt>会检查并还原</dt><dd>{restoreInspection.checkedAreas.join("、") || "文件文字区域"}</dd></div>
             <div><dt>首版暂不检查</dt><dd>{restoreInspection.uncheckedAreas.join("、") || "无"}</dd></div>
           </dl>
-          {changedTokens.length > 0 && <div className="token-change-list" aria-label="代号出现次数变化">{changedTokens.map((item) => <div key={item.token}><strong>{item.semanticLabel || item.token}</strong><span>原始 {item.original} · 返回 {item.returned}</span></div>)}</div>}
+          {changedTokens.length > 0 && <div className="token-change-list" aria-label="代号出现次数变化">{changedTokens.map((item) => <div key={item.token}><strong>{item.token}</strong><span>原始 {item.original} · 返回 {item.returned}</span></div>)}</div>}
           {restoreInspection.warnings?.length > 0 && <p><Info weight="duotone" />{restoreInspection.warnings[0]}</p>}
         </section>
       )}
@@ -430,21 +414,21 @@ function ReadyState({ mode, file, analysis, selectedIds, fieldModes = {}, restor
         <div className="task-change-banner" role="alert">
           <WarningCircle weight="duotone" aria-hidden="true" />
           <span>
-            <strong>请先保留至少一列“整格替换”</strong>
-            <small>“仅替换文中实体”需要用客户、产品或人员等整格字段作为准确依据；否则系统无法判断备注里哪些文字代表真实实体。</small>
+            <strong>请先保留至少一列“整个单元格”</strong>
+            <small>“仅文中已选内容”需要以客户、产品或人员等完整字段作为准确依据，不能自行猜测备注里哪些文字需要替换。</small>
           </span>
         </div>
       )}
       <div className="rule" />
       <button className="evidence-trigger" type="button" onClick={onDetails} aria-expanded={detailsOpen} aria-controls="security-details">
-        <span><ShieldCheck weight="duotone" /><strong>{mode === "protect" ? "确认需要替换的列" : `任务指纹 ${restoreInspection.taskId}`}</strong></span>
+        <span><ShieldCheck weight="duotone" /><strong>{mode === "protect" ? analysis?.kind === "text" ? "确认替换内容" : "确认替换列" : restoreInspection.marker ? `任务标记 ${restoreInspection.marker}` : `任务指纹 ${restoreInspection.taskId}`}</strong></span>
         <span className="evidence-trigger__action">{mode === "protect" ? "查看并调整" : "查看匹配证据"}<CaretRight weight="bold" /></span>
       </button>
-      <button className="primary-button" type="button" onClick={onPrimary} disabled={mode === "protect" && (!(analysis?.kind === "text" ? selectedCandidates.length : selectedColumns.length) || hasOnlyInlineFields)}>
+      <button className="primary-button" type="button" onClick={onPrimary} disabled={mode === "protect" ? (!(analysis?.kind === "text" ? selectedCandidates.length : selectedColumns.length) || hasOnlyInlineFields) : restoreInspection.tokenFormat === "short" && !pairingConfirmed}>
         {MODE_COPY[mode].primary}<ArrowRight weight="bold" />
       </button>
       <div className="trust-line" aria-label="处理边界">
-        <span>外部请求 0 次</span><i aria-hidden="true" /><span>原文件不修改</span><i aria-hidden="true" /><span>映射加密保存在本机</span>
+        <span>{LOCAL_PROCESSING_COPY}</span><i aria-hidden="true" /><span>原文件不修改</span>
       </div>
     </div>
   );
@@ -497,6 +481,7 @@ function WorkbookDownloadLink({ mode, result, requested, secondary = false, onRe
           return;
         }
         window.setTimeout(onRequested, 0);
+        recordOperation(`download_${mode}`, "requested", result);
       }}
     >
       <DownloadSimple weight="duotone" />
@@ -505,9 +490,11 @@ function WorkbookDownloadLink({ mode, result, requested, secondary = false, onRe
   );
 }
 
-function AiHandoff({ taskId }) {
+function AiHandoff({ taskId, marker }) {
   const [copyState, setCopyState] = useState("idle");
-  const instruction = `文件中的 [[字段名称:P001@${taskId}]] 是已脱敏的业务实体代号。请将它作为对应字段的真实对象参与分析。凡输出中引用该对象，必须完整原样保留代号，不要因为它像编码而删除、缩写、拆分、重命名或改写。可以调整内容结构和出现次数，但不要猜测真实身份。`;
+  const instruction = marker
+    ? `文件中的 客户-${marker}-01、产品-${marker}-01、人员-${marker}-01、信息-${marker}-01 等是已脱敏的业务实体替身。请将它们作为对应业务对象参与分析，凡引用必须完整原样保留，不缩写、不修改大小写、连字符或序号。可以调整结构和引用次数，不要猜测真实身份。`
+    : `文件中的 [[字段名称:P001@${taskId}]] 是已脱敏的业务实体代号。请将它作为对应字段的真实对象参与分析。凡输出中引用该对象，必须完整原样保留代号，不要因为它像编码而删除、缩写、拆分、重命名或改写。可以调整内容结构和出现次数，但不要猜测真实身份。`;
   const copyInstruction = async () => {
     try {
       await navigator.clipboard.writeText(instruction);
@@ -520,7 +507,7 @@ function AiHandoff({ taskId }) {
     <div className="ai-handoff" aria-label="脱敏文件交给 AI 后的操作步骤">
       <div className="ai-handoff__head"><strong>接下来，用任意 AI 处理脱敏文件</strong><span>语义代号必须原样保留</span></div>
       <ol>
-        <li data-state="done"><b><Check weight="bold" /></b><span><strong>确认下载</strong><small>在浏览器下载列表中确认文件</small></span></li>
+        <li><b>1</b><span><strong>请确认下载</strong><small>在浏览器下载列表中确认文件</small></span></li>
         <li data-state="active"><b>2</b><span><strong>交给 AI 处理</strong><small>可生成 Excel、CSV、Word 或 PPT，保留代号原样</small></span></li>
         <li><b>3</b><span><strong>带回本机还原</strong><small>完成后导入 AI 处理后的文件</small></span></li>
       </ol>
@@ -534,40 +521,36 @@ function AiHandoff({ taskId }) {
   );
 }
 
-function SuccessState({ mode, result, downloadRequested, detailsOpen, onDetails, onDownloadRequested, onAdjust, onNext, onReset }) {
+function SuccessState({ mode, result, downloadRequested, detailsOpen, onDetails, onDownloadRequested, onCredentialRequested, onAdjust, onNext, onReset }) {
   const protect = mode === "protect";
   const count = protect ? result.replacedCells : result.restoredOccurrences;
   const outputFileName = splitFileName(result.outputName);
   const handoff = protect && downloadRequested;
   const hasContentLoss = !protect && Boolean(result.occurrenceComparison?.missing);
   const valueUnit = result.format === "csv" ? "个字段值" : ["txt", "md", "docx"].includes(result.format) ? "处文字" : "个单元格";
-  const restoreBoundary = ["csv", "txt", "md"].includes(result.format)
-    ? "全部文本内容已检查；未出现的映射不代表异常。"
-    : "图片未扫描，未出现的映射不代表异常。";
   return (
     <div className="success-state" data-handoff={handoff} data-partial={Boolean(result.partialRestore)} data-content-loss={hasContentLoss} role="status" aria-live="polite">
       <span className="success-state__seal" aria-hidden="true">{result.partialRestore || hasContentLoss ? <WarningCircle weight="fill" /> : <Check weight="bold" />}</span>
-      <p className="state-kicker">{handoff ? "脱敏文件已准备好" : "文件已生成"}</p>
       <h2>{protect ? handoff ? "现在可以交给 AI 处理" : "脱敏文件可以下载" : result.partialRestore ? "部分还原文件可以下载" : hasContentLoss ? "还原完成，但 AI 返回内容有缺失" : "还原文件可以下载"}</h2>
-      <p className="state-description">{protect
+      {(protect || result.partialRestore || hasContentLoss) && <p className="state-description">{protect
         ? handoff
           ? "已发起下载。请先确认文件已保存，再交给任意 AI 处理；完成后回到这里导入处理后的文件。"
-          : `已替换 ${count} ${valueUnit}，${result.uniqueValues} 个唯一真实值仅保存在本机。请点击下方按钮保存文件。`
+          : "已选内容已替换为代号。交给 AI 前请复核其余内容，并点击下方按钮下载。"
         : result.partialRestore
-          ? `已还原 ${count} 处代号，另有 ${result.unresolvedOccurrences.length} 处被改写的代号未还原并原样保留。此文件已含真实信息，请勿再次交给外部 AI。`
+          ? `另有 ${result.unresolvedOccurrences.length} 处被改写的代号未还原并原样保留，请下载后复核。`
           : hasContentLoss
             ? `已还原 ${count} 处代号；AI 返回内容中有 ${result.occurrenceComparison.missing} 处代号未出现，已删除内容无法自动恢复。请下载后复核内容完整性。`
-          : `发现并还原 ${count} 处代号，使用 ${result.usedMappings} 条本机映射。${restoreBoundary}`}</p>
+          : ""}</p>}
       <div className="output-file">
         <FileMark size="medium" format={result.format ?? "xlsx"} />
-        <span>
+        <span className="output-file__copy">
           <strong className="output-file__name" title={result.outputName}><span>{outputFileName.base}</span><b>{outputFileName.extension}</b></strong>
-          <small>{downloadRequested ? "已发起下载 · 请在浏览器下载列表确认" : `已生成 · 等待下载 · 任务 ${result.taskId}`}</small>
+          <small>{downloadRequested ? "已发起下载，请在下载列表确认" : "已生成 · 等待下载"}</small>
+          <small>任务 {result.marker || result.taskId}</small>
         </span>
-        {result.partialRestore || hasContentLoss ? <WarningCircle weight="fill" aria-label={result.partialRestore ? "部分还原" : "内容有缺失"} /> : <CheckCircle weight="fill" aria-label="已通过检查" />}
       </div>
       <button className="evidence-trigger evidence-trigger--success" type="button" onClick={onDetails} aria-expanded={detailsOpen}>
-        <span><ShieldCheck weight="duotone" /><span className="evidence-trigger__summary"><strong>{result.partialRestore ? "部分还原已完成" : hasContentLoss ? "还原完成，内容有缺失" : "安全检查已通过"}</strong><small>{protect
+        <span><ShieldCheck weight="duotone" /><span className="evidence-trigger__summary"><strong>{result.partialRestore ? "部分还原已完成" : hasContentLoss ? "还原完成，内容有缺失" : "当前支持范围内的检查通过"}</strong><small>{protect
           ? `本机完成 · 已替换 ${count} ${valueUnit} · ${result.uniqueValues} 条映射已保存`
           : result.partialRestore
             ? `本机完成 · 已还原 ${count} 处 · ${result.unresolvedOccurrences.length} 处未还原并已标记`
@@ -576,7 +559,13 @@ function SuccessState({ mode, result, downloadRequested, detailsOpen, onDetails,
             : `本机完成 · 已还原 ${count} 处 · 使用 ${result.usedMappings} 条本机映射 · 未发现未还原代号`}</small></span></span>
         <span className="evidence-trigger__action">查看验证证据<CaretRight weight="bold" /></span>
       </button>
-      {handoff && <AiHandoff taskId={result.taskId} />}
+      {protect && result.credential && <section className="short-token-panel">
+        <strong>简短替身试验 · {result.marker}</strong>
+        <p>只把脱敏文件交给 AI，凭据留在本机。凭据不包含真实值，也不能替代本机映射。</p>
+        <CredentialDownload result={result.credential} taskId={result.taskId} onRequested={onCredentialRequested} />
+        <details><summary>查看本次替身（{result.aliases.length} 个）</summary><div className="short-alias-list">{result.aliases.map(alias => <code key={alias}>{alias}</code>)}</div></details>
+      </section>}
+      {handoff && <AiHandoff taskId={result.taskId} marker={result.marker} />}
       {protect ? (
         <>
           <div className="action-row">
@@ -597,16 +586,24 @@ function SuccessState({ mode, result, downloadRequested, detailsOpen, onDetails,
           {!downloadRequested && <p className="next-step-hint">下载后，请先交给任意 AI 处理，再回来还原</p>}
         </>
       ) : (
+        <>
+        <p className="restored-sensitive-note"><WarningCircle aria-hidden="true" />包含真实信息，请勿再次交给外部 AI。</p>
         <div className="action-row">
           <WorkbookDownloadLink mode={mode} result={result} requested={downloadRequested} onRequested={onDownloadRequested} />
           <button className="secondary-button" type="button" onClick={onReset}>再还原一个文件</button>
         </div>
+        </>
       )}
     </div>
   );
 }
 
 const ERROR_PRESENTATION = {
+  VAULT_TASK_EXISTS: { title: "任务编号已存在", description: "原映射未改动，本次没有生成可下载文件。", guidance: "请重新生成脱敏文件，系统会分配新任务编号。" },
+  CREDENTIAL_REQUIRED: { title: "请补充配套的还原凭据", description: "已识别简短替身，尚未核验其本机任务。", guidance: "在下方导入还原凭据即可继续核对，不需要重新选择当前文件。" },
+  CREDENTIAL_MISMATCH: { title: "凭据与任务不匹配", description: "凭据、四位标记或本机任务记录未通过核验，已停止还原。", guidance: "请在下方换成正确凭据；也请确认返回文件没有拿错。" },
+  INVALID_CREDENTIAL: { title: "还原凭据无法读取", description: "凭据格式、版本或尺寸不符合要求。", guidance: "请从本机任务重新下载原始 JSON 凭据，不要编辑内容；上限为 16 KiB。" },
+  VAULT_UPGRADE_BLOCKED: { title: "旧页面仍在占用本机存储", description: "尚未完成存储结构升级，已有映射不会被清理。", guidance: "请关闭其他旧版工具页面，再重新选择当前文件。" },
   NO_COLUMNS: {
     title: "还没有选择脱敏字段",
     description: "当前没有可用于生成脱敏文件的已选字段。",
@@ -615,7 +612,7 @@ const ERROR_PRESENTATION = {
   NO_VALUES: {
     title: "所选字段没有可替换内容",
     description: "整格字段中没有可替换值，或文中替换字段里没有出现已经确认的实体。",
-    guidance: "请至少选择一个客户、产品或人员字段使用整格替换，再按需加入反馈、备注等文中替换字段。",
+    guidance: "请至少选择一个客户、产品或人员字段使用“整个单元格”，再按需加入反馈、备注等文中替换字段。",
   },
   UNSUPPORTED_CELLS: {
     title: "所选字段包含暂不支持的单元格",
@@ -650,7 +647,12 @@ const ERROR_PRESENTATION = {
   VAULT_SAVE_FAILED: {
     title: "无法保存本机还原映射",
     description: "浏览器存储不可用或空间不足，因此系统没有生成无法还原的脱敏文件。",
-    guidance: "请释放浏览器存储空间或允许当前站点使用本机存储后重试。",
+    guidance: "请检查浏览器权限和磁盘空间后重试。不要清除本站浏览器数据，以免丢失已有映射。",
+  },
+  VAULT_QUOTA_EXCEEDED: {
+    title: "本机存储空间不足",
+    description: "还原映射未能保存，因此没有生成脱敏文件。已有任务未被自动删除。",
+    guidance: "请释放磁盘空间，或在本机任务中仅删除确认不再需要的任务后重试。不要清除全部浏览器数据。",
   },
   VAULT_STORAGE_FAILED: {
     title: "当前浏览器无法使用本机映射存储",
@@ -682,7 +684,7 @@ const ERROR_PRESENTATION = {
   CSV_FORMULA_INJECTION: { title: "CSV 中包含可能执行的公式", description: "原文件或还原后的内容包含表格软件可能执行的公式型字段，因此没有生成输出文件。", guidance: "请检查问题所在行列，将公式转换为实际结果或明确的普通文本后重新选择文件。工具不会自动改写原值；若风险来自已有映射，请修正源文件并重新创建脱敏任务。" },
   SUSPICIOUS_TEXT: { title: "文件中包含不可见控制字符", description: "这些字符可能隐藏内容或改变代号识别，系统已停止处理。", guidance: "请用纯文本编辑器显示并移除不可见字符后重试。" },
   EXTERNAL_RELATIONSHIPS: { title: "文件包含外部链接或远程连接", description: "为避免文件打开时连接外部资源，系统已停止处理。", guidance: "请在 Office 中断开外部链接并另存为标准文件。" },
-  SENSITIVE_RESIDUALS: { title: "脱敏后仍发现真实内容", description: "已选真实值仍出现在文件的其他位置，因此没有生成脱敏文件。", guidance: "请返回调整选择字段：一般叙述列可选“仅替换文中实体”；单字名称、短数字等不自动猜测替换，请将相关列设为整格替换。若残留位于表头或其他不可选区域，请先整理原文件。" },
+  SENSITIVE_RESIDUALS: { title: "脱敏后仍发现真实内容", description: "已选真实值仍出现在文件的其他位置，因此没有生成脱敏文件。", guidance: "请返回调整选择字段：一般叙述列可选“仅文中已选内容”；单字名称、短数字等不自动猜测替换，请将相关列设为“整个单元格”。若残留位于表头或其他不可选区域，请先整理原文件。" },
   INVALID_OFFICE_PACKAGE: { title: "无法安全读取这个 Office 文件", description: "文件可能已损坏、加密，或不是标准 DOCX/PPTX。", guidance: "请从 Word 或 PowerPoint 重新另存为标准文件后再试。" },
   UNSUPPORTED_DOCX_STRUCTURE: { title: "这个 Word 文件包含首版无法完整脱敏的结构", description: "检测到脚注、尾注、修订、内容控件、域或批注。为避免静默遗漏，系统已停止生成。", guidance: "请接受或拒绝修订，并移除批注、域、脚注/尾注或内容控件后，另存为标准 DOCX 再试。" },
   INVALID_HTML: { title: "无法安全读取这个 HTML 文件", description: "文件不是有效的 UTF-8 静态 HTML，或包含无法识别的二进制内容。", guidance: "请让 AI 导出为 UTF-8 的单文件 HTML 后再试。" },
@@ -817,7 +819,8 @@ function TextCandidateSelection({ analysis, selectedIds, onToggle, onAdd, onRemo
       </div>
       <p className="drawer-note"><Info weight="duotone" />{analysis.format === "docx"
         ? "Word 首版处理正文、普通表格、页眉页脚和文本框；图片文字不扫描，复杂结构会停止生成。"
-        : "Markdown 按纯文本处理，不渲染或执行 HTML、脚本；代码块、链接和 Front Matter 中的已选完整文字也会替换。"}</p>
+        : analysis.format === "md" ? "Markdown 按纯文本处理，不渲染或执行 HTML、脚本；代码块、链接和 Front Matter 中的已选完整文字也会替换。"
+          : "TXT 按纯文本处理，匹配已选完整文字并保留原换行与 BOM；请复核未选内容。"}</p>
     </section>
   );
 }
@@ -837,17 +840,18 @@ function SecurityDrawer({ mode, status, analysis, selectedIds, fieldModes = {}, 
   const detailRows = mode === "restore" && restoreInspection
       ? [["文件格式", restoreInspection.formatLabel], ["匹配任务", restoreInspection.taskName], ["任务指纹", restoreInspection.taskId], ["发现代号", `${restoreInspection.occurrences} 处`], ["使用映射", `${restoreInspection.usedMappings} 条`], ...(restoreInspection.occurrenceComparison ? [["原始 / 返回", `${restoreInspection.occurrenceComparison.original} / ${restoreInspection.occurrenceComparison.returned} 处`], ["缺失 / 新增", `${restoreInspection.occurrenceComparison.missing} / ${restoreInspection.occurrenceComparison.added} 处`]] : [])]
       : result
-        ? [["任务指纹", result.taskId], [mode === "protect" ? "已替换" : "已还原", `${mode === "protect" ? result.replacedCells : result.restoredOccurrences} 处`], ...(mode === "restore" ? [["使用映射", `${result.usedMappings} 条`], ...(result.partialRestore ? [["未还原", `${result.unresolvedOccurrences.length} 处（已原样保留）`]] : [])] : []), ["外部请求", "0 次"], ["输出状态", result.partialRestore ? "部分还原" : "已通过"]]
+        ? [["任务编号", result.taskId], [mode === "protect" ? "已替换" : "已还原", `${mode === "protect" ? result.replacedCells : result.restoredOccurrences} 处`], ...(mode === "restore" ? [["使用映射", `${result.usedMappings} 条`], ...(result.partialRestore ? [["未还原", `${result.unresolvedOccurrences.length} 处（已原样保留）`]] : [])] : []), ["输出状态", result.partialRestore ? "部分还原" : "已通过"]]
         : analysis?.kind === "text"
-          ? [["已选内容", `${textCandidates.length} 项`], ["预计替换", `${textCandidates.reduce((sum, item) => sum + item.count, 0)} 处`], ["映射位置", VAULT_LABEL], ["外部请求", "0 次"]]
-          : [["已选择列", `${selectedColumns.length} 列`], ["处理方式", `${wholeColumnCount} 列整格 · ${inlineColumnCount} 列文中`], ["映射位置", VAULT_LABEL], ["外部请求", "0 次"]];
+          ? [["已选内容", `${textCandidates.length} 项`], ["预计替换", `${textCandidates.reduce((sum, item) => sum + item.count, 0)} 处`], ["映射位置", VAULT_LABEL]]
+          : [["已选择列", `${selectedColumns.length} 列`], ["处理方式", `${wholeColumnCount} 列整格 · ${inlineColumnCount} 列文中`], ["映射位置", VAULT_LABEL]];
 
   return (
     <aside className="security-drawer" id="security-details" ref={drawerRef} role={modal ? "dialog" : undefined} aria-modal={modal || undefined} aria-labelledby="security-details-title">
-      <div className="drawer-head"><h2 id="security-details-title">{error ? "技术详情" : "安全详情"}</h2><button ref={closeButtonRef} className="icon-button" type="button" onClick={onClose} aria-label="关闭详情"><X /></button></div>
+      <div className="drawer-head"><h2 id="security-details-title">{error ? "技术详情" : mode === "protect" && status === "ready" ? analysis?.kind === "text" ? "替换内容" : "替换列" : "检查详情"}</h2><button ref={closeButtonRef} className="icon-button" type="button" onClick={onClose} aria-label="关闭详情"><X /></button></div>
+      <div className="drawer-body">
       <div className={`drawer-summary ${error ? "drawer-summary--warning" : status === "success" ? "" : "drawer-summary--pending"}`}>
         {error ? <WarningCircle weight="fill" /> : status === "success" ? <CheckCircle weight="fill" /> : <Info weight="fill" />}
-        <span><strong>{error ? "安全检查未通过" : status === "success" ? "本机处理已完成" : mode === "protect" ? "请确认替换范围" : "本机任务已匹配"}</strong><small>{error ? "没有生成输出文件" : "真实值不会出现在外部请求中"}</small></span>
+        <span><strong>{error ? "安全检查未通过" : status === "success" ? "本机处理已完成" : mode === "protect" ? "请确认替换范围" : "任务已匹配，映射可读取"}</strong><small>{error ? "没有生成输出文件" : LOCAL_PROCESSING_COPY}</small></span>
       </div>
       {error ? (
         <div className="error-diagnosis">
@@ -905,7 +909,7 @@ function SecurityDrawer({ mode, status, analysis, selectedIds, fieldModes = {}, 
           {changedTokens.length > 0 && (
             <div className="restore-scope__item token-change-evidence">
               <h3>代号出现次数变化</h3>
-              <div>{changedTokens.map((item) => <p key={item.token}><strong>{item.semanticLabel || item.token}</strong><span>原始 {item.original} · 返回 {item.returned}{item.missing ? ` · 缺失 ${item.missing}` : ` · 新增 ${item.added}`}</span></p>)}</div>
+              <div>{changedTokens.map((item) => <p key={item.token}><strong>{item.token}</strong><span>原始 {item.original} · 返回 {item.returned}{item.missing ? ` · 缺失 ${item.missing}` : ` · 新增 ${item.added}`}</span></p>)}</div>
             </div>
           )}
           <p className="drawer-note restore-scope__note"><Info weight="duotone" />{["csv", "txt", "md"].includes(result?.format ?? restoreInspection.format)
@@ -924,27 +928,27 @@ function SecurityDrawer({ mode, status, analysis, selectedIds, fieldModes = {}, 
 
       {mode === "protect" && analysis && analysis.kind !== "text" && status === "ready" && (
         <section className="protection-section" aria-labelledby="protection-title">
-          <div className="protection-section__head"><div><h3 id="protection-title">需要替换的列</h3><p>勾选字段；叙述类字段可以只替换其中已知的客户、产品或人员</p></div></div>
+          <div className="protection-section__head"><div><h3 id="protection-title">需要替换的列</h3><p>勾选需要保护的列；替换方式按列名自动推荐，可手动调整。</p></div></div>
           <div className="column-selection-list">
             {analysis.columns.map((column) => {
               const checked = selectedIds.includes(column.id);
-              const inputId = `column-${column.id.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+              const inputId = `column-${encodeURIComponent(column.id)}`;
               return (
                 <div className="column-selection" key={column.id}>
                   <input id={inputId} type="checkbox" checked={checked} onChange={() => onToggleColumn(column.id)} />
                   <label className="column-selection__copy" htmlFor={inputId}><strong>{spreadsheetColumnLabel(column.columnNumber)} 列 · {column.header}</strong><small>{column.sheetName} · {column.valueCount} 个值{column.samples[0] ? ` · 示例 ${column.samples[0]}` : ""}</small></label>
-                  <select className="column-selection__mode" aria-label={`${column.header}的替换方式`} value={fieldModes[column.id] ?? column.recommendedMode ?? "whole"} disabled={!checked} onChange={(event) => onModeChange(column.id, event.target.value)}>
-                    <option value="whole">整格替换</option>
-                    <option value="inline">仅替换文中实体</option>
-                  </select>
+                  <label className="column-selection__method"><span>替换方式</span><select className="column-selection__mode" aria-label={`${column.header}的替换方式`} value={fieldModes[column.id] ?? column.recommendedMode ?? "whole"} disabled={!checked} onChange={(event) => onModeChange(column.id, event.target.value)}>
+                    <option value="whole">整个单元格</option>
+                    <option value="inline">仅文中已选内容</option>
+                  </select></label>
                   <em>{column.suggested ? "自动建议" : "可自定义"}</em>
                 </div>
               );
             })}
           </div>
-          <p className="drawer-note drawer-note--method"><Info weight="duotone" /><span><strong>整格替换</strong>会隐藏整个单元格；<strong>仅替换文中实体</strong>只替换已在整格字段中确认过的真实值，保留反馈、备注等上下文，不会模糊猜测陌生名称。</span></p>
+          <p className="drawer-note drawer-note--method"><Info weight="duotone" /><span><strong>整个单元格</strong>：整格换成一个代号。<strong>仅文中已选内容</strong>：只替换其他已选整格列中确认的内容，保留句子，不猜测陌生名称。</span></p>
           {selectedColumns.length > 0 && wholeColumnCount === 0 && (
-            <p className="drawer-note drawer-note--warning"><WarningCircle weight="duotone" /><span>当前全部选为“仅替换文中实体”。请至少把一列客户、产品、人员或自定义实体设为“整格替换”，作为文中识别依据。</span></p>
+            <p className="drawer-note drawer-note--warning"><WarningCircle weight="duotone" /><span>当前全部选为“仅文中已选内容”。请至少把一列客户、产品、人员或自定义实体设为“整个单元格”，作为文中识别依据。</span></p>
           )}
           {selectedMetricColumns.length > 0 ? (
             <p className="drawer-note drawer-note--warning">
@@ -959,83 +963,32 @@ function SecurityDrawer({ mode, status, analysis, selectedIds, fieldModes = {}, 
         </section>
       )}
 
-      <div className="task-token-note"><ShieldCheck weight="duotone" /><p><strong>简单理解</strong>真实值只在本机变成带任务标记的代号；AI 可以处理这些代号，但无法从中得知真实身份。</p></div>
+      <div className="task-token-note"><ShieldCheck weight="duotone" /><p><strong>处理边界</strong>已选内容替换为代号；交给 AI 前请复核其余内容。未选内容、上下文和图片仍可能含敏感信息。</p></div>
       <p className="drawer-note"><Info weight="duotone" />当前功能验证版使用浏览器本机加密存储，不等同于正式企业密钥库。请先使用文件副本测试。</p>
+      </div>
     </aside>
   );
 }
 
-function PrinciplePopover({ onClose, triggerRef }) {
-  const panelRef = useRef(null);
-  const closeRef = useRef(null);
-  const compactViewport = window.matchMedia("(max-width: 640px)").matches;
 
-  useEffect(() => {
-    const oldOverflow = document.body.style.overflow;
-    if (compactViewport) document.body.style.overflow = "hidden";
-    window.requestAnimationFrame(() => closeRef.current?.focus());
-
-    const handleKeyDown = (event) => {
-      if (event.key === "Escape") {
-        onClose();
-        return;
-      }
-      if (!compactViewport || event.key !== "Tab") return;
-      const focusable = Array.from(panelRef.current?.querySelectorAll('button:not(:disabled), [href], input:not(:disabled), [tabindex]:not([tabindex="-1"])') ?? [])
-        .filter((element) => !element.hasAttribute("hidden") && element.getClientRects().length > 0);
-      if (!focusable.length) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-    const handlePointerDown = (event) => {
-      if (!compactViewport && !panelRef.current?.contains(event.target) && !triggerRef.current?.contains(event.target)) onClose();
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    window.addEventListener("pointerdown", handlePointerDown);
-    return () => {
-      document.body.style.overflow = oldOverflow;
-      window.removeEventListener("keydown", handleKeyDown);
-      window.removeEventListener("pointerdown", handlePointerDown);
-      triggerRef.current?.focus();
-    };
-  }, []);
-
-  return (
-    <section className="principle-popover" ref={panelRef} role="dialog" aria-modal={compactViewport} aria-labelledby="principle-title">
-      <div className="principle-popover__head">
-        <div>
-          <span className="principle-popover__icon" aria-hidden="true"><Question weight="bold" /></span>
-          <div><p>工作原理</p><h2 id="principle-title">它和一般脱敏工具有什么不同？</h2></div>
-        </div>
-        <button ref={closeRef} className="icon-button" type="button" onClick={onClose} aria-label="关闭原理说明"><X /></button>
-      </div>
-
-      <p className="principle-lead"><strong>常见脱敏主要隐藏真实值；文件脱敏助手还会保留本机映射，让处理后的文件可以核对并还原。</strong></p>
-
-      <div className="principle-compare" role="table" aria-label="与一般脱敏工具的差异">
-        <div className="principle-compare__head" role="row">
-          <span role="columnheader">常见字段脱敏</span><span role="columnheader">文件脱敏助手</span>
-        </div>
-        <div role="row"><span role="cell">把真实值替换成通用代号</span><span role="cell"><strong>语义代号绑定一次具体任务</strong><small>例如 [[客户名称:C001@7F2A9C4D]]，让 AI 理解对象类型并避免跨文件混用</small></span></div>
-        <div role="row"><span role="cell">保存一份字段映射用于查找替换</span><span role="cell"><strong>真实映射加密留在本机</strong><small>外部 AI 只接触代号，不获得真实身份</small></span></div>
-        <div role="row"><span role="cell">找到代号就替换，重点是隐藏原文</span><span role="cell"><strong>还原前先核对任务和完整性</strong><small>任务不匹配或存在未知代号，就停止导出</small></span></div>
-      </div>
-
-      <div className="principle-path" aria-label="数据处理边界">
-        <span><b>1</b>本机识别并替换</span><i aria-hidden="true" /><span><b>2</b>AI 只处理代号</span><i aria-hidden="true" /><span><b>3</b>本机核对并还原</span>
-      </div>
-
-      <p className="principle-boundary"><Info weight="duotone" />当前使用浏览器本机加密存储，尚不等同于正式企业密钥库；脱敏制作支持 XLSX、CSV、TXT、MD、DOCX，还原支持 XLSX、CSV、TXT、MD、DOCX、PPTX 和安全静态 HTML 的已声明文字区域。</p>
-    </section>
-  );
+async function animateDrawerExit(drawer) {
+  if (!drawer || drawer.dataset.closing === "true") return false;
+  drawer.dataset.closing = "true";
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const direction = drawer.classList.contains("local-tasks-drawer") ? -22 : 22;
+  const easing = getComputedStyle(drawer).getPropertyValue("--ease-drawer").trim();
+  const animations = [drawer, drawer.previousElementSibling].filter(Boolean).map(element => {
+    const style = getComputedStyle(element);
+    const from = { opacity: style.opacity, transform: style.transform };
+    // Continue from the visible position if close interrupts the entrance.
+    element.getAnimations().forEach(animation => animation.cancel());
+    return element.animate([from, {
+      opacity: 0,
+      transform: element === drawer && !reduceMotion ? `translateX(${direction}px)` : "none",
+    }], { duration: 200, easing, fill: "forwards" });
+  });
+  await Promise.allSettled(animations.map(animation => animation.finished));
+  return drawer.isConnected;
 }
 
 export function App() {
@@ -1046,7 +999,9 @@ export function App() {
   const localTasksDrawerRef = useRef(null);
   const localTasksCloseButtonRef = useRef(null);
   const localTasksViewButtonRef = useRef(null);
-  const principleButtonRef = useRef(null);
+  const drawerTriggerRef = useRef(null);
+  const auditDrawerRef = useRef(null);
+  const auditCloseButtonRef = useRef(null);
   const [mode, setMode] = useState("protect");
   const [status, setStatus] = useState("empty");
   const [file, setFile] = useState(null);
@@ -1054,8 +1009,15 @@ export function App() {
   const [selectedIds, setSelectedIds] = useState([]);
   const [fieldModes, setFieldModes] = useState({});
   const [restoreInspection, setRestoreInspection] = useState(null);
+  const [tokenFormat, setTokenFormat] = useState("legacy");
+  const [credential, setCredential] = useState(null);
+  const [credentialError, setCredentialError] = useState("");
+  const [pairingConfirmed, setPairingConfirmed] = useState(false);
   const [result, setResult] = useState(null);
+  const operationIdRef = useRef(null);
+  const recordFileOperation = (action, result, metadata = {}) => recordOperation(action, result, { ...metadata, operationId: operationIdRef.current });
   const [downloadRequested, setDownloadRequested] = useState(false);
+  const [credentialRequested, setCredentialRequested] = useState(false);
   const [regenerationNotice, setRegenerationNotice] = useState(null);
   const [error, setError] = useState(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -1063,8 +1025,26 @@ export function App() {
   const [pendingDeleteId, setPendingDeleteId] = useState(null);
   const [deletingTaskId, setDeletingTaskId] = useState(null);
   const [taskManagerError, setTaskManagerError] = useState("");
-  const [principleOpen, setPrincipleOpen] = useState(false);
+  const [auditOpen, setAuditOpen] = useState(false);
+  const [usagePreview, setUsagePreview] = useState(false);
+  const [filenameNotice, setFilenameNotice] = useState(() => { try { return !localStorage.getItem("operation-filenames-notice"); } catch { return true; } });
+  const [auditIncomplete, setAuditIncomplete] = useState(hasOperationWriteFailure);
+  useEffect(() => {
+    const update = () => setAuditIncomplete(hasOperationWriteFailure());
+    window.addEventListener("operation-log-changed", update);
+    return () => window.removeEventListener("operation-log-changed", update);
+  }, []);
   const [localTasks, setLocalTasks] = useState({ status: "loading", count: 0, mappingCount: 0, latest: null, tasks: [] });
+  const taskRefreshSequence = useRef(0);
+  const refreshLocalTasks = useCallback(async () => {
+    const sequence = ++taskRefreshSequence.current;
+    try {
+      const summary = await getLocalTaskStatus();
+      if (sequence === taskRefreshSequence.current) setLocalTasks({ status: "ready", ...summary });
+    } catch {
+      if (sequence === taskRefreshSequence.current) setLocalTasks({ status: "error", count: 0, mappingCount: 0, latest: null, tasks: [] });
+    }
+  }, []);
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const [themePreference, setThemePreference] = useState(() => {
     try {
@@ -1091,28 +1071,39 @@ export function App() {
   }, [themePreference]);
 
   useEffect(() => {
-    let active = true;
-    setLocalTasks((current) => ({ ...current, status: "loading" }));
-    getLocalTaskStatus()
-      .then((summary) => { if (active) setLocalTasks({ status: "ready", ...summary }); })
-      .catch(() => { if (active) setLocalTasks({ status: "error", count: 0, mappingCount: 0, latest: null, tasks: [] }); });
-    return () => { active = false; };
-  }, [mode]);
+    refreshLocalTasks();
+    const visible = () => { if (document.visibilityState === "visible") refreshLocalTasks(); };
+    window.addEventListener("focus", refreshLocalTasks);
+    document.addEventListener("visibilitychange", visible);
+    let channel;
+    if (!ENTERPRISE_VAULT_ENABLED && typeof BroadcastChannel !== "undefined") {
+      try { channel = new BroadcastChannel("file-masking-assistant-v2-vault"); channel.onmessage = event => { if (event.data === "changed") refreshLocalTasks(); }; }
+      catch { /* Focus refresh still works if channels are unavailable. */ }
+    }
+    return () => {
+      taskRefreshSequence.current += 1;
+      window.removeEventListener("focus", refreshLocalTasks);
+      document.removeEventListener("visibilitychange", visible);
+      channel?.close();
+    };
+  }, [refreshLocalTasks]);
 
   useEffect(() => {
-    const overlayOpen = localTasksOpen || detailsOpen;
+    const overlayOpen = localTasksOpen || detailsOpen || auditOpen;
     if (!overlayOpen) return undefined;
     const oldOverflow = document.body.style.overflow;
+    const trigger = drawerTriggerRef.current;
     document.body.style.overflow = "hidden";
-    window.requestAnimationFrame(() => (localTasksOpen ? localTasksCloseButtonRef : closeButtonRef).current?.focus());
+    window.requestAnimationFrame(() => (auditOpen ? auditCloseButtonRef : localTasksOpen ? localTasksCloseButtonRef : closeButtonRef).current?.focus());
     const onKey = (event) => {
       if (event.key === "Escape") {
-        if (localTasksOpen) closeLocalTasks();
-        else setDetailsOpen(false);
+        if (auditOpen) closeAudit();
+        else if (localTasksOpen) closeLocalTasks();
+        else closeDetails();
         return;
       }
       if (event.key !== "Tab") return;
-      const activeDrawer = localTasksOpen ? localTasksDrawerRef.current : drawerRef.current;
+      const activeDrawer = auditOpen ? auditDrawerRef.current : localTasksOpen ? localTasksDrawerRef.current : drawerRef.current;
       const focusable = Array.from(activeDrawer?.querySelectorAll('button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])') ?? [])
         .filter((element) => !element.hasAttribute("hidden") && element.getClientRects().length > 0);
       if (!focusable.length) return;
@@ -1127,21 +1118,43 @@ export function App() {
       }
     };
     window.addEventListener("keydown", onKey);
-    return () => { document.body.style.overflow = oldOverflow; window.removeEventListener("keydown", onKey); };
-  }, [detailsOpen, localTasksOpen]);
+    return () => {
+      document.body.style.overflow = oldOverflow;
+      window.removeEventListener("keydown", onKey);
+      window.requestAnimationFrame(() => {
+        if (trigger?.isConnected) trigger.focus();
+        else document.querySelector(".workbench .evidence-trigger")?.focus();
+      });
+    };
+  }, [detailsOpen, localTasksOpen, auditOpen]);
 
-  const openLocalTasks = () => {
+  const closeAudit = async () => {
+    if (await animateDrawerExit(auditDrawerRef.current)) setAuditOpen(false);
+  };
+
+  const openDetails = event => {
+    drawerTriggerRef.current = event.currentTarget;
+    setDetailsOpen(true);
+  };
+
+  const openLocalTasks = event => {
+    drawerTriggerRef.current = event.currentTarget;
     setDetailsOpen(false);
     setPendingDeleteId(null);
     setTaskManagerError("");
+    refreshLocalTasks();
     setLocalTasksOpen(true);
   };
 
-  const closeLocalTasks = () => {
+  const closeDetails = async () => {
+    if (await animateDrawerExit(drawerRef.current)) setDetailsOpen(false);
+  };
+
+  const closeLocalTasks = async () => {
+    if (!await animateDrawerExit(localTasksDrawerRef.current)) return;
     setLocalTasksOpen(false);
     setPendingDeleteId(null);
     setTaskManagerError("");
-    window.requestAnimationFrame(() => localTasksViewButtonRef.current?.focus());
   };
 
   const deleteLocalTask = async (taskId) => {
@@ -1160,7 +1173,7 @@ export function App() {
   };
 
   const reset = async (nextMode = mode) => {
-    if (mode === "protect" && status === "success" && result && !downloadRequested) {
+    if (mode === "protect" && status === "success" && result && !downloadRequested && !credentialRequested) {
       try {
         await discardLocalTask(result.taskId);
         const summary = await getLocalTaskStatus();
@@ -1172,16 +1185,20 @@ export function App() {
     }
     dragDepthRef.current = 0; setIsDraggingFile(false);
     setMode(nextMode); setStatus("empty"); setFile(null); setAnalysis(null); setSelectedIds([]); setFieldModes({});
+    setTokenFormat("legacy"); setCredential(null); setPairingConfirmed(false);
+    setCredentialError("");
+    setCredentialRequested(false);
     setRestoreInspection(null); setResult(null); setDownloadRequested(false); setRegenerationNotice(null); setError(null); setDetailsOpen(false); setLocalTasksOpen(false);
     return true;
   };
 
   const continueLatestTask = async () => {
-    const switched = await reset("restore");
+    const switched = mode === "restore" && status === "empty" ? true : await changeMode("restore", true);
     if (switched) window.requestAnimationFrame(() => inputRef.current?.click());
   };
 
   const showError = (caught) => {
+    if (caught?.code === "CREDENTIAL_REQUIRED") { setError(null); setCredentialError(""); setStatus("awaiting-credential"); return; }
     const normalized = caught instanceof SafeFileError
       ? caught
       : caught?.code
@@ -1190,14 +1207,23 @@ export function App() {
     setError(normalized); setStatus("error"); setDetailsOpen(false);
   };
 
+  const changeMode = async (nextMode, chooseFile = false) => {
+    if (nextMode === mode && !chooseFile) return false;
+    if ((file || credential || error || result) && !window.confirm("切换后将清空当前页面选择，原文件不变")) return false;
+    return reset(nextMode);
+  };
+
   const inspectFile = async (selected) => {
+    operationIdRef.current = crypto.randomUUID();
+    setPairingConfirmed(false);
+    setCredentialError("");
     dragDepthRef.current = 0; setIsDraggingFile(false);
     const format = fileFormatFromName(selected.name);
+    recordFileOperation(`import_${mode}`, "requested", { inputName: selected.name, format });
     const supportedFormats = mode === "protect" ? SUPPORTED_PROTECT_FORMATS : SUPPORTED_RESTORE_FORMATS;
     if (!supportedFormats.includes(format)) {
-      showError(new SafeFileError("UNSUPPORTED_FILE", mode === "protect"
-        ? "制作脱敏文件支持标准 .xlsx、.csv、.txt、.md 和 .docx 文件。"
-        : "还原处理支持标准 .xlsx、.csv、.txt、.md、.docx、.pptx 和 .html 文件。"));
+      recordFileOperation(`inspect_${mode}`, "failed", { inputName: selected.name });
+      showError(new SafeFileError("UNSUPPORTED_FILE", `此入口支持标准 ${formatList(mode)} 文件。`));
       return;
     }
     setFile(selected); setStatus("inspecting"); setError(null); setDetailsOpen(false); setResult(null); setDownloadRequested(false); setRegenerationNotice(null);
@@ -1208,16 +1234,47 @@ export function App() {
         setSelectedIds(nextAnalysis.kind === "text" ? nextAnalysis.suggestedCandidateIds : nextAnalysis.suggestedColumnIds);
         setFieldModes(nextAnalysis.kind === "text" ? {} : Object.fromEntries(nextAnalysis.columns.map((column) => [column.id, column.recommendedMode ?? "whole"])));
       } else {
-        setRestoreInspection(await inspectRestoreFile(selected));
+        const inspection = await inspectRestoreFile(selected, { credential });
+        setRestoreInspection(inspection);
+        recordFileOperation("inspect_restore", inspection.occurrenceComparison?.missing ? "missing" : "success", { ...inspection, inputName: selected.name });
       }
+      if (mode === "protect") recordFileOperation("inspect_protect", "success", { format, inputName: selected.name });
       setStatus("ready");
-    } catch (caught) { showError(caught); }
+    } catch (caught) {
+      recordFileOperation(`inspect_${mode}`, caught?.code === "CREDENTIAL_REQUIRED" ? "waiting" : "failed", { format, inputName: selected.name });
+      showError(caught);
+    }
   };
 
   const handleFileInput = (event) => {
     const selected = event.target.files?.[0];
     if (selected) inspectFile(selected);
     event.target.value = "";
+  };
+
+  const importCredential = async (selected) => {
+    setPairingConfirmed(false); setRestoreInspection(null); setCredential(null);
+    setCredentialError("");
+    if (file) setStatus("inspecting");
+    let next;
+    try {
+      next = await readTaskCredential(selected);
+      recordFileOperation("import_credential", "success", next);
+    } catch (caught) {
+      recordFileOperation("import_credential", "failed");
+      setCredentialError(caught.message); setError(null); setStatus(file ? "awaiting-credential" : "empty"); return;
+    }
+    try {
+      setCredential(next);
+      if (file) {
+        setStatus("inspecting");
+        const inspection = await inspectRestoreFile(file, { credential: next });
+        setRestoreInspection(inspection);
+        recordFileOperation("inspect_restore", inspection.occurrenceComparison?.missing ? "missing" : "success", { ...inspection, inputName: file.name });
+        setStatus("ready"); setError(null);
+      }
+      else { setStatus("empty"); setError(null); }
+    } catch (caught) { recordFileOperation("inspect_restore", "failed", { format: fileFormatFromName(file?.name ?? ""), inputName: file?.name }); showError(caught); }
   };
 
   const hasDraggedFiles = (event) => Array.from(event.dataTransfer?.types ?? []).includes("Files");
@@ -1250,6 +1307,7 @@ export function App() {
   };
 
   const processFile = async () => {
+    setCredentialRequested(false);
     setStatus("processing"); setError(null); setDetailsOpen(false); setDownloadRequested(false); setRegenerationNotice(null);
     try {
       let output;
@@ -1259,22 +1317,24 @@ export function App() {
           : analysis.columns
             .filter((column) => selectedIds.includes(column.id))
             .map((column) => ({ ...column, processingMode: fieldModes[column.id] ?? column.recommendedMode ?? "whole" }));
-        output = await createSafeFile(file, selection);
+        output = await createSafeFile(file, selection, { tokenFormat });
       } else {
-        output = await restoreSafeFile(file, restoreInspection.taskId);
+        output = await restoreSafeFile(file, restoreInspection.taskId, { credential, pairingConfirmed });
       }
-      setResult(output); setStatus("success");
+      output = { ...output, inputName: file.name, operationId: operationIdRef.current };
+      setResult(mode === "restore" ? { ...output, marker: restoreInspection.marker } : output); setStatus("success");
+      recordFileOperation(mode, output.partialRestore ? "partial" : output.occurrenceComparison?.missing ? "missing" : "success", { ...output, format: fileFormatFromName(file.name) });
       if (mode === "protect") {
         getLocalTaskStatus()
           .then((summary) => setLocalTasks({ status: "ready", ...summary }))
           .catch(() => setLocalTasks({ status: "error", count: 0, mappingCount: 0, latest: null, tasks: [] }));
       }
-    } catch (caught) { showError(caught); }
+    } catch (caught) { recordFileOperation(mode, "failed", { format: fileFormatFromName(file.name), inputName: file.name }); showError(caught); }
   };
 
   const adjustProtection = async () => {
     const previousResult = result;
-    const wasDownloaded = downloadRequested;
+    const wasDownloaded = downloadRequested || credentialRequested;
     if (!wasDownloaded) {
       try {
         await discardLocalTask(previousResult.taskId);
@@ -1301,7 +1361,7 @@ export function App() {
 
   const canAdjustFailedProtectionSelection = mode === "protect"
     && Boolean(file && analysis)
-    && ["NO_COLUMNS", "NO_TEXT_CANDIDATES", "NO_VALUES", "UNSUPPORTED_CELLS", "SENSITIVE_RESIDUALS"].includes(error?.code);
+    && ["NO_COLUMNS", "NO_TEXT_CANDIDATES", "NO_VALUES", "UNSUPPORTED_CELLS", "SENSITIVE_RESIDUALS", "VAULT_TASK_EXISTS"].includes(error?.code);
 
   const toggleProtectionColumn = (id) => {
     setSelectedIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
@@ -1323,27 +1383,30 @@ export function App() {
   };
 
   let mainState;
-  if (status === "empty") mainState = <EmptyState mode={mode} inputRef={inputRef} localTasks={localTasks} isDraggingFile={isDraggingFile} />;
+  if (status === "empty") mainState = <EmptyState mode={mode} inputRef={inputRef} isDraggingFile={isDraggingFile} />;
+  else if (status === "awaiting-credential") mainState = <div className="ready-state"><SelectedFile file={file} onRemove={() => reset(mode)} /><div className="task-change-banner" role="status"><Info /><span><strong>待导入凭据</strong><small>已保留当前文件。请选择配套凭据，核对任务后再还原；尚未生成输出文件。</small></span></div></div>;
   else if (status === "inspecting") mainState = <ProcessingState mode={mode} file={file} />;
-  else if (status === "ready") mainState = <ReadyState mode={mode} file={file} analysis={analysis} selectedIds={selectedIds} fieldModes={fieldModes} restoreInspection={restoreInspection} regenerationNotice={regenerationNotice} detailsOpen={detailsOpen} onRemove={() => reset(mode)} onPrimary={processFile} onDetails={() => setDetailsOpen(true)} />;
+  else if (status === "ready") mainState = <ReadyState mode={mode} file={file} analysis={analysis} selectedIds={selectedIds} fieldModes={fieldModes} restoreInspection={restoreInspection} regenerationNotice={regenerationNotice} detailsOpen={detailsOpen} onRemove={() => reset(mode)} onPrimary={processFile} onDetails={openDetails} tokenFormat={tokenFormat} onTokenFormat={setTokenFormat} pairingConfirmed={pairingConfirmed} onPairing={setPairingConfirmed} />;
   else if (status === "processing") mainState = <ProcessingState mode={mode} file={file} />;
-  else if (status === "success") mainState = <SuccessState mode={mode} result={result} downloadRequested={downloadRequested} detailsOpen={detailsOpen} onDetails={() => setDetailsOpen(true)} onDownloadRequested={() => setDownloadRequested(true)} onAdjust={adjustProtection} onNext={() => reset("restore")} onReset={() => reset(mode)} />;
-  else mainState = <ErrorState mode={mode} error={error} canAdjustFields={canAdjustFailedProtectionSelection} onAdjustFields={adjustFailedProtectionSelection} onReset={() => reset(mode)} onDetails={() => setDetailsOpen(true)} onBackToProtect={() => reset("protect")} />;
+  else if (status === "success") mainState = <SuccessState mode={mode} result={result} downloadRequested={downloadRequested} detailsOpen={detailsOpen} onDetails={openDetails} onDownloadRequested={() => setDownloadRequested(true)} onCredentialRequested={() => setCredentialRequested(true)} onAdjust={adjustProtection} onNext={() => reset("restore")} onReset={() => reset(mode)} />;
+  else mainState = <ErrorState mode={mode} error={error} canAdjustFields={canAdjustFailedProtectionSelection} onAdjustFields={adjustFailedProtectionSelection} onReset={() => reset(mode)} onDetails={openDetails} onBackToProtect={() => reset("protect")} />;
 
   return (
     <div className="app" data-mode={mode}>
-      <header className="app-header">
+      <header className="app-header" inert={detailsOpen || localTasksOpen || auditOpen}>
         <div className="brand"><span className="brand__mark" aria-hidden="true"><ShieldCheck weight="duotone" /></span><div><strong>文件脱敏助手</strong><span>{ENTERPRISE_VAULT_ENABLED ? "文件本机处理，映射同步到企业 Vault。" : "本机脱敏后交给 AI，处理完成再还原。"}</span></div></div>
         <BoundaryRoute />
         <div className="local-status">
           <span className="prototype-chip prototype-chip--quiet">{appVersion} 验证版</span><span><DesktopTower weight="duotone" />{ENTERPRISE_VAULT_ENABLED ? "企业模式" : "本机预览"}</span><i aria-hidden="true" />
           <ThemeSwitcher value={themePreference} onChange={setThemePreference} />
           <i aria-hidden="true" />
-          <button ref={principleButtonRef} className="principle-trigger" type="button" aria-label="原理说明" aria-haspopup="dialog" aria-expanded={principleOpen} onClick={() => setPrincipleOpen((open) => !open)}><Question weight="bold" /><span>原理说明</span></button>
+          <button className="audit-trigger" type="button" title={auditIncomplete ? "操作记录：有记录未能保存" : "操作记录"} aria-label="操作记录" aria-haspopup="dialog" aria-expanded={auditOpen} onClick={event => { drawerTriggerRef.current = event.currentTarget; setAuditOpen(true); }}><ClockCounterClockwise aria-hidden="true" weight="bold" /><span>操作记录</span>{auditIncomplete && <b aria-label="有操作记录未保存">!</b>}</button>
         </div>
       </header>
-      <main className="app-main">
-        <section className="workspace" aria-label="文件处理工作区">
+      {filenameNotice && <div className="filename-notice" role="status" inert={detailsOpen || localTasksOpen || auditOpen}><span>操作记录现会保存文件名，文件名可能含敏感信息；正文和映射不会写入记录。</span><button type="button" className="text-button" onClick={() => { setFilenameNotice(false); try { localStorage.setItem("operation-filenames-notice", "seen"); } catch { /* Notice may reappear when preferences cannot be saved. */ } }}>知道了</button></div>}
+      {usagePreview && <div inert={auditOpen}>{usagePreview === "central" ? <CentralOperations onBack={() => { setUsagePreview(false); requestAnimationFrame(() => document.querySelector(".audit-trigger")?.focus()); }} /> : UsagePreview && <Suspense fallback={<p role="status">正在打开统计预览…</p>}><UsagePreview onBack={() => { setUsagePreview(false); requestAnimationFrame(() => document.querySelector(".audit-trigger")?.focus()); }}/></Suspense>}</div>}
+      <main className="app-main" hidden={usagePreview}>
+        <section className="workspace" aria-label="文件处理工作区" inert={detailsOpen || localTasksOpen || auditOpen}>
           <header className="workspace-intro">
             <p>{WORKSPACE_COPY[mode].eyebrow}</p>
             <h1>{WORKSPACE_COPY[mode].title}</h1>
@@ -1351,25 +1414,25 @@ export function App() {
           </header>
           <aside className="task-rail" aria-label="任务与本机记录">
             <div className="task-switcher" aria-label="选择任务">
-              <TaskChoice active={mode === "protect"} icon={FilePlus} title="制作脱敏文件" subtitle="识别并替换敏感信息" disabled={status === "processing" || status === "inspecting"} onClick={() => reset("protect")} />
-              <TaskChoice active={mode === "restore"} icon={FileArrowDown} title="还原处理文件" subtitle="核对文件并恢复真实内容" disabled={status === "processing" || status === "inspecting"} onClick={() => reset("restore")} />
+              <TaskChoice active={mode === "protect"} icon={FilePlus} title="制作脱敏文件" subtitle="识别并替换敏感信息" disabled={status === "processing" || status === "inspecting"} onClick={() => changeMode("protect")} />
+              <TaskChoice active={mode === "restore"} icon={FileArrowDown} title="还原处理文件" subtitle="核对文件并恢复真实内容" disabled={status === "processing" || status === "inspecting"} onClick={() => changeMode("restore")} />
             </div>
             <LocalTaskPanel localTasks={localTasks} disabled={status === "processing" || status === "inspecting"} onContinue={continueLatestTask} onViewAll={openLocalTasks} viewAllButtonRef={localTasksViewButtonRef} />
           </aside>
-          <section className="workbench" data-dragging={isDraggingFile} onDragEnter={handleDragEnter} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop} aria-label={MODE_COPY[mode].title}>
+          <section className="workbench" data-status={status} data-dragging={isDraggingFile} onDragEnter={handleDragEnter} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop} aria-label={MODE_COPY[mode].title}>
             {mainState}
-            <p className="demo-caption"><Info weight="duotone" />{mode === "protect" ? "脱敏制作支持 XLSX、CSV、TXT、MD、DOCX；文本类上限 10 MB，Office 上限 20 MB。" : "还原支持 XLSX、CSV、TXT、MD、DOCX、PPTX、安全静态 HTML；文本类上限 10 MB，Office 上限 20 MB。"}</p>
+            {mode === "restore" && !ENTERPRISE_VAULT_ENABLED && status !== "success" && <CredentialInput credential={credential} required={status === "awaiting-credential"} error={credentialError} disabled={status === "processing" || status === "inspecting"} onChange={importCredential} />}
           </section>
           <section className="mobile-boundary" aria-label="本机安全处理边界">
-            <div><LockKey weight="duotone" /><strong>真实内容留在本机</strong></div>
-            <p><span>本机识别</span><ArrowRight /><span>AI 只见代号</span><ArrowRight /><span>本机还原</span></p>
+            <div><LockKey weight="duotone" /><strong>交给 AI 前请复核其余内容</strong></div>
+            <p><span>本机替换</span><ArrowRight /><span>复核后交给 AI</span><ArrowRight /><span>本机还原</span></p>
           </section>
-          <input ref={inputRef} className="visually-hidden" type="file" accept={mode === "protect" ? ".xlsx,.csv,.txt,.md,.docx" : ".xlsx,.csv,.txt,.md,.docx,.pptx,.html"} tabIndex={-1} aria-label={mode === "protect" ? "选择待脱敏的 XLSX、CSV、TXT、MD 或 DOCX 文件" : "选择待还原的 XLSX、CSV、TXT、MD、DOCX、PPTX 或 HTML 文件"} onChange={handleFileInput} />
+          <input ref={inputRef} className="visually-hidden" type="file" accept={(mode === "protect" ? SUPPORTED_PROTECT_FORMATS : SUPPORTED_RESTORE_FORMATS).map(format => `.${format}`).join(",")} tabIndex={-1} aria-label={`选择待${mode === "protect" ? "脱敏" : "还原"}的 ${formatList(mode)} 文件`} onChange={handleFileInput} />
         </section>
-        {detailsOpen && <><button className="drawer-scrim" type="button" tabIndex={-1} onClick={() => setDetailsOpen(false)} aria-label="关闭详情" /><SecurityDrawer mode={mode} status={status} analysis={analysis} selectedIds={selectedIds} fieldModes={fieldModes} restoreInspection={restoreInspection} result={result} error={error} modal drawerRef={drawerRef} closeButtonRef={closeButtonRef} onClose={() => setDetailsOpen(false)} onToggleColumn={toggleProtectionColumn} onModeChange={changeProtectionMode} onAddCandidate={addTextCandidate} onRemoveCandidate={removeTextCandidate} onSetSelection={setSelectedIds} /></>}
+        {detailsOpen && <><button className="drawer-scrim" type="button" tabIndex={-1} onClick={closeDetails} aria-label="关闭详情" /><SecurityDrawer mode={mode} status={status} analysis={analysis} selectedIds={selectedIds} fieldModes={fieldModes} restoreInspection={restoreInspection} result={result} error={error} modal drawerRef={drawerRef} closeButtonRef={closeButtonRef} onClose={closeDetails} onToggleColumn={toggleProtectionColumn} onModeChange={changeProtectionMode} onAddCandidate={addTextCandidate} onRemoveCandidate={removeTextCandidate} onSetSelection={setSelectedIds} /></>}
         {localTasksOpen && <><button className="drawer-scrim drawer-scrim--local" type="button" tabIndex={-1} onClick={closeLocalTasks} aria-label="关闭本机任务" /><LocalTasksDrawer localTasks={localTasks} currentTaskId={result?.taskId ?? restoreInspection?.taskId ?? null} pendingDeleteId={pendingDeleteId} deletingTaskId={deletingTaskId} error={taskManagerError} modal drawerRef={localTasksDrawerRef} closeButtonRef={localTasksCloseButtonRef} onClose={closeLocalTasks} onRequestDelete={setPendingDeleteId} onCancelDelete={() => setPendingDeleteId(null)} onConfirmDelete={deleteLocalTask} /></>}
       </main>
-      {principleOpen && <PrinciplePopover triggerRef={principleButtonRef} onClose={() => setPrincipleOpen(false)} />}
+      {auditOpen && <><button className="drawer-scrim" type="button" tabIndex={-1} onClick={closeAudit} aria-label="关闭记录遮罩" /><OperationDrawer drawerRef={auditDrawerRef} closeButtonRef={auditCloseButtonRef} onClose={closeAudit} onPreview={async view => { await closeAudit(); setUsagePreview(view); }} /></>}
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { addManualCandidate, analyzeText, inspectAlteredTextTokens, inspectTextTokens, restoreText, tokenizeText } from "./textCore.js";
 import { SafeFileError } from "./xlsxEngine.js";
 import { FILE_SIZE_LIMITS } from "./filePreflight.js";
+import { createProtectionIdentity, protectionTokenIdentity, protectionResult, resolveRestoreVault, taskEvidence } from "./taskIdentity.js";
 import { listVaultSummaries, loadVault, saveVault } from "./vaultStore.js";
 import { highRiskTextFindings, occurrenceBaseline, occurrenceComparison, protectedOutputName, suspiciousTextFindings } from "./fileSafety.js";
 
@@ -8,10 +9,6 @@ const MAX_TEXT_BYTES = FILE_SIZE_LIMITS.txt;
 
 function baseName(filename) {
   return filename.replace(/\.(?:txt|md)$/i, "");
-}
-
-function createTaskId() {
-  return [...crypto.getRandomValues(new Uint8Array(4))].map((byte) => byte.toString(16).padStart(2, "0")).join("").toUpperCase();
 }
 
 async function loadText(file) {
@@ -50,23 +47,25 @@ export function addManualTextCandidate(analysis, value) {
   return addManualCandidate(analysis, value);
 }
 
-export async function createSafeText(file, selectedCandidates, format) {
+export async function createSafeText(file, selectedCandidates, format, options) {
   if (!selectedCandidates.length) throw new SafeFileError("NO_TEXT_CANDIDATES", "请至少选择一项需要替换的敏感内容。");
   const document = await loadText(file);
-  const taskId = createTaskId();
+  const identity = await createProtectionIdentity(options, document.text);
+  const { taskId } = identity;
   const taskName = baseName(file.name);
-  const result = tokenizeText(document.text, selectedCandidates, taskId);
+  const result = tokenizeText(document.text, selectedCandidates, protectionTokenIdentity(identity));
   if (!result.replacedOccurrences) throw new SafeFileError("NO_VALUES", "没有找到可替换的完整文字。");
-  await saveVault({ version: 2, taskId, taskName, createdAt: new Date().toISOString(), sourceFormat: format, occurrenceBaseline: occurrenceBaseline(inspectTextTokens(result.text).occurrences), mapping: result.mapping });
+  await saveVault({ version: 2, ...identity, taskName, createdAt: new Date().toISOString(), sourceFormat: format, occurrenceBaseline: occurrenceBaseline(inspectTextTokens(result.text).occurrences), mapping: result.mapping });
   return {
-    buffer: encodeText(result.text, document.hadBom), outputName: protectedOutputName(format, taskId),
+    ...protectionResult(identity, result.mapping),
+    buffer: encodeText(result.text, document.hadBom), outputName: protectedOutputName(format, identity.marker || taskId),
     mimeType: "text/plain;charset=utf-8", format, taskId, taskName,
     replacedCells: result.replacedOccurrences, uniqueValues: result.uniqueValues,
     warnings: [], notices: [`保留 ${document.hadBom ? "UTF-8 BOM" : "UTF-8"} 与 ${document.newline} 换行`],
   };
 }
 
-export async function inspectTextRestoreFile(file, format) {
+export async function inspectTextRestoreFile(file, format, context) {
   const document = await loadText(file);
   const inspection = inspectTextTokens(document.text);
   if (!inspection.occurrences.length) {
@@ -75,26 +74,25 @@ export async function inspectTextRestoreFile(file, format) {
     throw new SafeFileError("NO_TOKENS", "文件中没有找到本应用生成的代号。");
   }
   if (inspection.taskIds.length !== 1) throw new SafeFileError("MIXED_TASKS", "文件中混入了多个脱敏任务的代号。", inspection.taskIds);
-  const taskId = inspection.taskIds[0];
-  const vault = await loadVault(taskId);
+  const vault = await resolveRestoreVault(inspection, context);
+  const taskId = vault.taskId;
   if (!vault) throw new SafeFileError("VAULT_NOT_FOUND", `本机找不到任务 ${taskId} 的映射。`);
   const unknown = inspection.uniqueTokens.filter((token) => !vault.mapping[token]);
   const altered = inspectAlteredTextTokens(document.text, vault.mapping);
   if (unknown.length || altered.length) throw new SafeFileError("UNRESOLVED_TOKENS", "文件中存在无法安全还原的代号。", [...unknown, ...altered.map((item) => item.value)]);
   return {
-    format, formatLabel: format === "md" ? "Markdown" : "TXT", taskId, taskName: vault.taskName,
+    ...taskEvidence(vault), format, formatLabel: format === "md" ? "Markdown" : "TXT", taskId, taskName: vault.taskName,
     occurrences: inspection.occurrences.length, usedMappings: inspection.uniqueTokens.length,
     occurrenceComparison: occurrenceComparison(vault.occurrenceBaseline, inspection.occurrences),
     checkedAreas: ["全部纯文本内容"], uncheckedAreas: ["图片、脚本和嵌入对象（纯文本本身不包含）"],
-    warnings: ["未出现的映射不代表异常；Markdown 不会被渲染或执行。"],
+    warnings: [format === "md" ? "未出现的映射不代表异常；Markdown 不会被渲染或执行。" : "未出现的映射不代表异常；TXT 按纯文本处理。"],
   };
 }
 
-export async function restoreSafeText(file, expectedTaskId, format) {
+export async function restoreSafeText(file, expectedTaskId, format, context) {
   const document = await loadText(file);
   const inspection = inspectTextTokens(document.text);
-  if (inspection.taskIds.length !== 1 || inspection.taskIds[0] !== expectedTaskId) throw new SafeFileError("TASK_CHANGED", "文件与刚才检查通过的任务不一致。");
-  const vault = await loadVault(expectedTaskId);
+  const vault = await resolveRestoreVault(inspection, context, expectedTaskId);
   if (!vault) throw new SafeFileError("VAULT_NOT_FOUND", "本机映射已不存在，无法还原。");
   const comparison = occurrenceComparison(vault.occurrenceBaseline, inspection.occurrences);
   const altered = inspectAlteredTextTokens(document.text, vault.mapping);
@@ -109,6 +107,6 @@ export async function restoreSafeText(file, expectedTaskId, format) {
     restoredOccurrences: result.restoredOccurrences, usedMappings: result.inspection.uniqueTokens.length,
     occurrenceComparison: comparison,
     checkedAreas: ["全部纯文本内容"], uncheckedAreas: ["图片、脚本和嵌入对象（纯文本本身不包含）"],
-    warnings: ["保留原 UTF-8 BOM 与换行格式；Markdown 未渲染或执行。"],
+    warnings: [format === "md" ? "保留原 UTF-8 BOM 与换行格式；Markdown 未渲染或执行。" : "保留原 UTF-8 BOM 与换行格式。"],
   };
 }

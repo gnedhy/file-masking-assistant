@@ -66,7 +66,7 @@ test("短实体残留可在详情调整为整格替换并下载实名文件", as
   const errors = [];
   page.on("pageerror", error => errors.push(error.message));
   await page.goto("/");
-  const input = page.locator('input[type="file"]');
+  const input = page.locator('input[type="file"]:not([accept=".json"])');
   await input.setInputFiles({ name: "短名称.csv", mimeType: "text/csv", buffer: Buffer.from("销售人员,备注\n李,负责人：李") });
   await page.getByRole("button", { name: /生成脱敏文件/ }).click();
   await expect(page.getByRole("heading", { name: "脱敏后仍发现真实内容" })).toBeVisible();
@@ -77,7 +77,7 @@ test("短实体残留可在详情调整为整格替换并下载实名文件", as
   await expect(diagnosis.getByText(/仅调整字段时无需重新上传/)).toBeVisible();
   await diagnosis.getByRole("button", { name: "关闭详情" }).click();
   await page.getByRole("button", { name: "调整选择字段" }).click();
-  const drawer = page.getByRole("dialog", { name: "安全详情" });
+  const drawer = page.getByRole("dialog", { name: /替换列|替换内容|检查详情/ });
   await drawer.getByRole("checkbox", { name: /B 列 · 备注/ }).check();
   await drawer.getByRole("combobox", { name: "备注的替换方式" }).selectOption("whole");
   await drawer.getByRole("button", { name: "关闭详情" }).click();

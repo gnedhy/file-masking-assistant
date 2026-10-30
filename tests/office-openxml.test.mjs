@@ -23,6 +23,17 @@ const mapping = {
   [S]: { value: { type: "string", value: "张三" } },
 };
 
+test("short aliases in Office attributes and relationships are unsupported", async () => {
+  const bytes = await packageBytes("pptx", {
+    "ppt/slides/slide1.xml": '<p:sld name="产品-K7M4-01"><a:p><a:r><a:t>客户-K7M4-01</a:t></a:r></a:p></p:sld>',
+    "ppt/_rels/presentation.xml.rels": '<Relationships><Relationship Target="人员-K7M4-01"/></Relationships>',
+  });
+  const { zip } = await loadOfficePackage(bytes, "pptx");
+  const inspection = await inspectOfficePackage(zip, "pptx");
+  assert.equal(inspection.occurrences.length, 1);
+  assert.equal(inspection.unsupportedOccurrences.length, 2);
+});
+
 function contentTypes(format) {
   const type = format === "docx"
     ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"

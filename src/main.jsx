@@ -3,6 +3,9 @@ import { createRoot } from "react-dom/client";
 import "@fontsource-variable/geist";
 import { App } from "./App.jsx";
 import "./styles.css";
+import { startOperationSync } from "./operationSync.js";
+
+startOperationSync();
 
 try {
   const preference = localStorage.getItem("file-mask-theme") || "system";

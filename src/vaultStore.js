@@ -1,10 +1,20 @@
 import { deleteEnterpriseVault, listEnterpriseVaultSummaries, loadEnterpriseVault, saveEnterpriseVault } from "./enterpriseVaultStore.js";
+import { recordOperation } from "./operationLog.js";
 
 const DB_NAME = "file-masking-assistant-v2-vault";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const KEY_ID = "device-aes-key";
 let keyCreationPromise = null;
-export const ENTERPRISE_VAULT_ENABLED = import.meta.env.VITE_VAULT_MODE === "enterprise";
+export const ENTERPRISE_VAULT_ENABLED = import.meta.env?.VITE_VAULT_MODE === "enterprise";
+
+function notifyVaultChange() {
+  if (typeof BroadcastChannel === "undefined") return;
+  try {
+    const channel = new BroadcastChannel(DB_NAME);
+    channel.postMessage("changed");
+    channel.close();
+  } catch { /* Focus refresh remains available without cross-tab notifications. */ }
+}
 
 export class VaultStoreError extends Error {
   constructor(code, message, cause) {
@@ -24,7 +34,7 @@ function requestResult(request) {
 function transactionDone(transaction) {
   return new Promise((resolve, reject) => {
     transaction.oncomplete = () => resolve();
-    transaction.onerror = () => reject(transaction.error);
+    transaction.onerror = event => reject(transaction.error || event.target?.error);
     transaction.onabort = () => reject(transaction.error || new Error("本机存储事务已中止"));
   });
 }
@@ -32,6 +42,7 @@ function transactionDone(transaction) {
 function openDatabase() {
   return new Promise((resolve, reject) => {
     let request;
+    let blocked = false;
     try {
       request = indexedDB.open(DB_NAME, DB_VERSION);
     } catch (error) {
@@ -42,9 +53,15 @@ function openDatabase() {
       const database = request.result;
       if (!database.objectStoreNames.contains("settings")) database.createObjectStore("settings");
       if (!database.objectStoreNames.contains("vaults")) database.createObjectStore("vaults", { keyPath: "taskId" });
+      if (!database.objectStoreNames.contains("markers")) database.createObjectStore("markers", { keyPath: "marker" });
     };
-    request.onsuccess = () => resolve(request.result);
+    request.onsuccess = () => {
+      if (blocked) { request.result.close(); return; }
+      request.result.onversionchange = () => request.result.close();
+      resolve(request.result);
+    };
     request.onerror = () => reject(request.error);
+    request.onblocked = () => { blocked = true; reject(new VaultStoreError("VAULT_UPGRADE_BLOCKED", "其他页面仍占用旧版映射库，请关闭旧版页面后重试。不会删除已有任务。")); };
   });
 }
 
@@ -86,6 +103,7 @@ async function getExistingKey(database) {
 }
 
 export async function saveVault(vault) {
+  if (ENTERPRISE_VAULT_ENABLED && vault.tokenFormat === "short") throw new VaultStoreError("SHORT_LOCAL_ONLY", "简短替身仅用于本机试验。");
   if (ENTERPRISE_VAULT_ENABLED) return saveEnterpriseVault(vault);
   let database;
   try {
@@ -95,21 +113,27 @@ export async function saveVault(vault) {
     const plaintext = new TextEncoder().encode(JSON.stringify(vault));
     const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, plaintext);
     const transaction = database.transaction("vaults", "readwrite");
-    transaction.objectStore("vaults").put({
+    transaction.objectStore("vaults").add({
       taskId: vault.taskId,
       taskName: vault.taskName,
       createdAt: vault.createdAt,
       uniqueValues: Object.keys(vault.mapping).length,
+      tokenFormat: vault.tokenFormat,
+      marker: vault.marker,
       iv,
       ciphertext,
     });
     await transactionDone(transaction);
+    notifyVaultChange();
+    await recordOperation("save_mapping", "success", vault);
   } catch (error) {
-    if (error?.code) throw error;
+    await recordOperation("save_mapping", "failed");
+    if (error instanceof VaultStoreError) throw error;
+    if (error?.name === "ConstraintError") throw new VaultStoreError("VAULT_TASK_EXISTS", "任务编号已存在，原映射未改动。请重新生成脱敏文件。", error);
     const message = error?.name === "QuotaExceededError"
       ? "本机存储空间不足，无法保存还原映射。"
       : "无法保存本机还原映射。";
-    throw new VaultStoreError("VAULT_SAVE_FAILED", message, error);
+    throw new VaultStoreError(error?.name === "QuotaExceededError" ? "VAULT_QUOTA_EXCEEDED" : "VAULT_SAVE_FAILED", message, error);
   } finally {
     database?.close();
   }
@@ -145,8 +169,11 @@ export async function deleteVault(taskId) {
     const transaction = database.transaction("vaults", "readwrite");
     transaction.objectStore("vaults").delete(taskId);
     await transactionDone(transaction);
+    notifyVaultChange();
+    await recordOperation("delete_mapping", "success", { taskId });
   } catch (error) {
-    if (error?.code) throw error;
+    await recordOperation("delete_mapping", "failed", { taskId });
+    if (error instanceof VaultStoreError) throw error;
     throw new VaultStoreError("VAULT_DELETE_FAILED", "无法删除本机映射。", error);
   } finally {
     database?.close();
@@ -159,15 +186,46 @@ export async function listVaultSummaries() {
   try {
     database = await openDatabase();
     const transaction = database.transaction("vaults", "readonly");
-    const records = await requestResult(transaction.objectStore("vaults").getAll());
+    const records = await new Promise((resolve, reject) => {
+      const summaries = [];
+      const request = transaction.objectStore("vaults").openCursor();
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (!cursor) { resolve(summaries); return; }
+        const { taskId, taskName, createdAt, uniqueValues, tokenFormat, marker } = cursor.value;
+        summaries.push({ taskId, taskName, createdAt, uniqueValues, tokenFormat, marker });
+        cursor.continue();
+      };
+    });
     await transactionDone(transaction);
-    return records
-      .map(({ taskId, taskName, createdAt, uniqueValues }) => ({ taskId, taskName, createdAt, uniqueValues }))
-      .sort((left, right) => String(right.createdAt).localeCompare(String(left.createdAt)));
+    return records.sort((left, right) => String(right.createdAt).localeCompare(String(left.createdAt)));
   } catch (error) {
-    if (error?.code) throw error;
+    if (error instanceof VaultStoreError) throw error;
     throw new VaultStoreError("VAULT_READ_FAILED", "无法读取本机任务记录。", error);
   } finally {
     database?.close();
   }
+}
+
+export async function reserveTaskMarker(marker, taskId) {
+  if (ENTERPRISE_VAULT_ENABLED) throw new VaultStoreError("SHORT_LOCAL_ONLY", "简短替身仅用于本机试验。");
+  const database = await openDatabase();
+  try {
+    const transaction = database.transaction("markers", "readwrite");
+    const done = transactionDone(transaction);
+    const request = transaction.objectStore("markers").add({ marker, taskId });
+    let inserted = true;
+    request.onerror = (event) => {
+      if (request.error?.name === "ConstraintError") {
+        event.preventDefault();
+        event.stopPropagation();
+        inserted = false;
+      }
+    };
+    await done;
+    return inserted;
+  } catch (error) {
+    throw new VaultStoreError(error?.name === "QuotaExceededError" ? "VAULT_QUOTA_EXCEEDED" : "VAULT_SAVE_FAILED", "无法占用本机任务标记，未生成文件。", error);
+  } finally { database.close(); }
 }

@@ -1,7 +1,7 @@
 import createDOMPurify from "dompurify";
 import { FILE_SIZE_LIMITS } from "./filePreflight.js";
 import { findKnownShortTokens } from "./xlsxCore.js";
-import { parseEntityToken, tokenPattern } from "./tokenFormat.js";
+import { parseEntityToken, tokenPattern, tokenOccurrence } from "./tokenFormat.js";
 
 export const HTML_LIMITS = { bytes: FILE_SIZE_LIMITS.html, nodes: 50000 };
 
@@ -33,7 +33,7 @@ function serializedValueAsText(entry) {
 
 function scanValue(value, location) {
   return [...String(value).matchAll(tokenPattern())].map((match) => ({
-    token: match[0], shortToken: match[1], taskId: match[2], location,
+    ...tokenOccurrence(match[0]), location,
   }));
 }
 
