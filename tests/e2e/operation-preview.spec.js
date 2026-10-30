@@ -18,7 +18,7 @@ test("记录筛选导出兼容旧数据，统计示例独立且返回保留文�
   await expect(drawer.locator('.record-filename details').first()).toHaveAttribute('open','');
   await expect(drawer.locator('.record-filename details p')).toHaveCount(0);
   await page.screenshot({animations:'disabled',path:path.join(os.tmpdir(),`operation-polish-${info.project.name}.png`)});
-  const pending=page.waitForEvent('download');await drawer.getByRole('link',{name:'导出记录',exact:true}).click();
+  const pending=page.waitForEvent('download');await drawer.getByRole('link',{name:/^导出筛选结果（[0-9]+ 条）$/}).click();
   const csv=await fs.readFile(await (await pending).path(),'utf8');expect(csv).toContain("'=测试");expect(csv).not.toContain('secret');expect(csv).not.toContain('不可记录');
   await drawer.getByLabel('搜索',{exact:true}).fill('不存在');await expect(drawer.getByText('没有符合筛选条件的记录。')).toBeVisible();
   await drawer.getByRole('button',{name:'使用统计 · 设计预览'}).click();

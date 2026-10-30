@@ -2,15 +2,15 @@ import { enqueueOperation } from "./operationSync.js";
 const DB_NAME = "file-masking-assistant-v2-operations";
 export const OPERATION_LIMIT = 500;
 export const OPERATION_LABELS = {
-  import_protect: "导入待脱敏文件", import_restore: "导入待还原文件", export_records: "请求导出记录",
+  import_protect: "导入待脱敏文件", import_restore: "导入待还原文件", export_records: "导出操作记录",
   inspect_protect: "检查待脱敏文件", inspect_restore: "检查待还原文件",
   protect: "生成脱敏文件", restore: "生成还原文件",
   save_mapping: "保存本机还原记录", delete_mapping: "删除本机还原记录",
-  download_protect: "请求下载脱敏文件", download_restore: "请求下载还原文件",
-  import_credential: "读取还原钥匙文件（仅格式检查）", download_credential: "请求下载还原钥匙文件",
+  download_protect: "下载脱敏文件", download_restore: "下载还原文件",
+  import_credential: "导入还原钥匙文件", download_credential: "下载还原钥匙文件",
   backup_export: "导出还原记录备份", backup_import: "导入还原记录备份",
 };
-export const OPERATION_RESULTS = { success: "完成", partial: "部分还原", missing: "内容缺失", warning: "需留意（历史记录）", failed: "未完成", waiting: "待导入还原钥匙文件", requested: "已发起" };
+export const OPERATION_RESULTS = { success: "完成", partial: "部分还原", missing: "内容缺失", warning: "需留意（历史记录）", failed: "失败", waiting: "待导入还原钥匙文件", requested: "已发起" };
 let writeFailed = false;
 export const hasOperationWriteFailure = () => writeFailed;
 

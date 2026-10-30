@@ -3,15 +3,29 @@ import { DownloadSimple } from "@phosphor-icons/react";
 import { OPERATION_LABELS, OPERATION_RESULTS, recordOperation } from "./operationLog.js";
 import { operationsCsv } from "./operationReports.js";
 
-export function RecordFilters({ value, onChange, users }) {
+export const activeFilterCount = (value) => ["from", "to", "action", "result", "query"].filter(key => value[key]).length;
+
+export function RecordFilters({ value, onChange, users, collapsible = false }) {
   const control = (key, next) => onChange({ ...value, [key]: next });
-  return <div className="record-filters">
+  const fields = <>
     <label>开始日期<input type="date" value={value.from || ""} onChange={e => control("from", e.target.value)} /></label>
     <label>结束日期<input type="date" value={value.to || ""} onChange={e => control("to", e.target.value)} /></label>
     {users ? <><label>用户<select aria-label="用户" value={value.user || ""} onChange={e => control("user", e.target.value)}><option value="">全部用户</option>{users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select></label><label>格式<select aria-label="格式" value={value.format || ""} onChange={e => control("format", e.target.value)}><option value="">全部格式</option>{["xlsx", "csv", "txt", "md", "docx", "pptx", "html"].map(f => <option key={f} value={f}>{f.toUpperCase()}</option>)}</select></label></> : <label>操作类型<select aria-label="操作类型" value={value.action || ""} onChange={e => control("action", e.target.value)}><option value="">全部操作</option>{Object.entries(OPERATION_LABELS).map(([k,v]) => <option key={k} value={k}>{v}</option>)}</select></label>}
-    <label>结果<select aria-label="结果" value={value.result || ""} onChange={e => control("result", e.target.value)}><option value="">全部结果</option>{Object.entries(OPERATION_RESULTS).map(([k,v]) => <option key={k} value={k}>{v}</option>)}</select></label>
+    <label>结果<select aria-label="结果" value={value.result || ""} onChange={e => control("result", e.target.value)}><option value="">全部结果</option>{Object.entries(OPERATION_RESULTS).filter(([k]) => k !== "warning").map(([k,v]) => <option key={k} value={k}>{v}</option>)}</select></label>
+  </>;
+  const rangeError = value.from && value.to && value.from > value.to && <p role="alert">开始日期不能晚于结束日期。</p>;
+  if (collapsible) {
+    const count = activeFilterCount({ ...value, query: "" });
+    return <div className="record-filters-compact">
+      <label className="record-search"><span className="visually-hidden">搜索</span><input type="search" placeholder="搜索文件名或任务编号" value={value.query || ""} onChange={e => control("query", e.target.value)} /></label>
+      <details className="record-filters-more"><summary>{count ? `筛选（${count}）` : "筛选"}</summary><div className="record-filters">{fields}</div></details>
+      {rangeError}
+    </div>;
+  }
+  return <div className="record-filters">
+    {fields}
     {!users && <label className="record-search">搜索<input type="search" placeholder="文件名或任务编号" value={value.query || ""} onChange={e => control("query", e.target.value)} /></label>}
-    {value.from && value.to && value.from > value.to && <p role="alert">开始日期不能晚于结束日期。</p>}
+    {rangeError}
   </div>;
 }
 export function RecordFilename({ label, name }) {
@@ -25,7 +39,7 @@ export function RecordList({ records }) {
     <p>{[r.userName, r.format?.toUpperCase(), r.taskId && `任务 ${r.marker || r.taskId}`].filter(Boolean).join(" · ")}</p>
   </li>)}</ol>;
 }
-export function ExportRecords({ records, example = false }) {
+export function ExportRecords({ records, example = false, label = "导出记录" }) {
   const [url, setUrl] = useState("");
   const [notice, setNotice] = useState("");
   useEffect(() => {
@@ -36,5 +50,5 @@ export function ExportRecords({ records, example = false }) {
     if (!url || !records.length) { e.preventDefault(); return; }
     if (!example) recordOperation("export_records", "requested");
     setNotice("已发起记录导出，请在下载列表确认。");
-  }}><DownloadSimple size={18} aria-hidden="true" /><span>{example ? "导出示例记录" : "导出记录"}</span></a><small role="status">{notice}</small></div>;
+  }}><DownloadSimple size={18} aria-hidden="true" /><span>{example ? "导出示例记录" : label}</span></a><small role="status">{notice}</small></div>;
 }

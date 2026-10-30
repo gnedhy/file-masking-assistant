@@ -20,7 +20,7 @@ test('single-connection exports finish concurrently without holding a second con
     const session=await login.json(),cookie=login.headers.get('set-cookie').split(';')[0];
     await Promise.all(Array.from({length:3},async()=>{
       const response=await handler(new Request(origin+'/api/v1/operation-events/export',{method:'POST',headers:{origin,cookie,'content-type':'application/json','x-csrf-token':session.csrf},body:JSON.stringify({query:taskId})}));
-      assert.equal(response.status,200);const csv=await response.text();assert.ok(csv.includes(taskId));assert.ok(!csv.includes('请求导出记录'));
+      assert.equal(response.status,200);const csv=await response.text();assert.ok(csv.includes(taskId));assert.ok(!csv.includes('导出操作记录'));
     }));
   } finally {await repo.pool.query('DELETE FROM operation_events WHERE task_id=$1',[taskId]);await repo.close();if(prior===undefined)delete process.env.NODE_ENV;else process.env.NODE_ENV=prior;}
 });

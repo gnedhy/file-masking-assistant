@@ -36,7 +36,7 @@ export default function UsagePreview({ onBack }) {
       ["使用人数",totals.users,"所选范围内有业务文件操作的用户，同一人只计一次。"],
       ["成功脱敏任务",totals.protected,"按用户与任务编号去重，仅计成功生成脱敏文件的任务。"],
       ["有还原结果的任务",totals.restored,"同一任务多次还原只计一次，包含部分还原与内容缺失。没有还原记录不等于失败。"],
-      ["失败操作",totals.failed,"按未完成的操作计次；部分还原、内容缺失和待导入钥匙文件不计为失败。"]
+      ["失败操作",totals.failed,"按失败的操作计次；部分还原、内容缺失和待导入钥匙文件不计为失败。"]
     ].map(([label,value,note]) => <div key={label}><dt>{label}</dt><dd>{value}</dd><details className="metric-help"><summary aria-label={`${label}统计说明`}>ⓘ <span>统计说明</span></summary><p>{note}</p></details></div>)}</dl>
     <section><h2>按用户汇总</h2><p className="operation-scope">导入仅计实际选文件；下载请求不代表已保存文件或交给 AI。</p><div className="usage-user-grid">{users.filter(u => filtered.some(r => r.userId===u.id)).map(u => { const s=summarizeOperations(filtered.filter(r=>r.userId===u.id)); return <article key={u.id}><h3>{u.name}</h3><p>脱敏任务 {s.protected} · 还原任务 {s.restored}</p><p>导入 {s.imports} 次 · 下载请求 {s.downloads} 次 · 失败 {s.failed} 次</p></article>; })}</div></section>
     <section><div className="usage-heading"><h2>操作明细 · {filtered.length} 条</h2><ExportRecords records={filtered} example /></div>

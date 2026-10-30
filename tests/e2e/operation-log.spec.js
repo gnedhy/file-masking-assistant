@@ -35,7 +35,7 @@ test("操作记录覆盖往返、下载、删除和失败，不留敏感内容",
   await expect.poll(() => page.evaluate(async () => (await (await import("/src/operationLog.js")).listOperations())[0]?.result)).toBe("failed");
   await page.getByRole("button", { name: "操作记录", exact: true }).click();
   const drawer = page.getByRole("dialog", { name: "操作记录", exact: true });
-  await expect(drawer.locator('.operation-list').getByText("未完成", { exact: true })).toBeVisible();
+  await expect(drawer.locator('.operation-list').getByText("失败", { exact: true })).toBeVisible();
   await expect(drawer.locator('.operation-list').getByText("生成还原文件", { exact: true })).toBeVisible();
   await drawer.evaluate(async el => Promise.all(el.getAnimations().map(a => a.finished)));
   await page.screenshot({ path: path.join(os.tmpdir(), `masking-audit-records-${testInfo.project.name}.png`) });
