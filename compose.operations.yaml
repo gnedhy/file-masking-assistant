@@ -1,0 +1,27 @@
+services:
+  operations:
+    build:
+      context: .
+      dockerfile: Dockerfile.operations
+    env_file: .env.operations
+    environment:
+      OPERATIONS_HOST: 0.0.0.0
+      OPERATIONS_DATABASE_URL: postgres://operations:${OPERATIONS_DB_PASSWORD}@postgres:5432/operations
+    ports: ["127.0.0.1:5180:5180"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: operations
+      POSTGRES_USER: operations
+      POSTGRES_PASSWORD: ${OPERATIONS_DB_PASSWORD}
+    volumes: ["operations_data:/var/lib/postgresql"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U operations -d operations"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+volumes:
+  operations_data:
