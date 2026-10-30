@@ -31,14 +31,28 @@ export function RecordFilters({ value, onChange, users, collapsible = false }) {
 export function RecordFilename({ label, name }) {
   return <div className="record-filename"><span>{label}</span>{name ? <details><summary title="点击展开或收起完整文件名">{name}</summary></details> : <span>未记录</span>}</div>;
 }
-export function RecordList({ records }) {
+export function RecordList({ records, compact = false }) {
   return <ol className="operation-list">{records.map(r => <li key={r.id}>
     <div className="operation-list__head"><strong>{OPERATION_LABELS[r.action] || "操作"}</strong><span data-result={r.result}>{OPERATION_RESULTS[r.result] || "未知状态"}</span></div>
-    {!/credential|mapping|export_records/.test(r.action) && <><RecordFilename label="输入" name={r.inputName} />{(r.outputName || /^(protect|restore|download_)/.test(r.action)) && <RecordFilename label="输出" name={r.outputName} />}</>}
+    {!compact && !/credential|mapping|export_records/.test(r.action) && <><RecordFilename label="输入" name={r.inputName} />{(r.outputName || /^(protect|restore|download_)/.test(r.action)) && <RecordFilename label="输出" name={r.outputName} />}</>}
     <time dateTime={r.time}>{new Date(r.time).toLocaleString("zh-CN", { hour12: false })}</time>
-    <p>{[r.userName, r.format?.toUpperCase(), r.taskId && `任务 ${r.marker || r.taskId}`].filter(Boolean).join(" · ")}</p>
+    {!compact && <p>{[r.userName, r.format?.toUpperCase(), r.taskId && `任务 ${r.marker || r.taskId}`].filter(Boolean).join(" · ")}</p>}
   </li>)}</ol>;
 }
+const GROUP_RESULTS = { ...OPERATION_RESULTS, idle: "未生成文件" };
+
+export function OperationGroups({ days }) {
+  return days.map(({ day, label, groups }) => <section className="operation-day" key={day} aria-label={label}>
+    <h3>{label}</h3>
+    <ol className="operation-cards">{groups.map(group => <li key={group.key}>
+      <div className="operation-list__head"><strong>{group.title}</strong><span data-result={group.result}>{GROUP_RESULTS[group.result] || "未知状态"}</span></div>
+      {group.kind !== "other" && <><RecordFilename label="输入" name={group.inputName} />{(group.outputName || group.steps.some(step => ["protect", "restore"].includes(step.action))) && <RecordFilename label="输出" name={group.outputName} />}</>}
+      <p className="operation-cards__meta">{[new Date(group.time).toLocaleTimeString("zh-CN", { hour12: false, hour: "2-digit", minute: "2-digit" }), group.format?.toUpperCase(), group.taskLabel && `任务 ${group.taskLabel}`].filter(Boolean).join(" · ")}</p>
+      {group.steps.length > 1 && <details className="operation-steps"><summary>查看 {group.steps.length} 个步骤</summary><RecordList records={group.steps} compact /></details>}
+    </li>)}</ol>
+  </section>);
+}
+
 export function ExportRecords({ records, example = false, label = "导出记录" }) {
   const [url, setUrl] = useState("");
   const [notice, setNotice] = useState("");
