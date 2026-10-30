@@ -7,7 +7,6 @@ import { ConfirmDialog } from "./ConfirmDialog.jsx";
 import { OperationDrawer } from "./OperationDrawer.jsx";
 import CentralOperations from "./CentralOperations.jsx";
 import { recordOperation, hasOperationWriteFailure } from "./operationLog.js";
-import { version as appVersion } from "../package.json";
 import {
   ArrowRight,
   CaretRight,
@@ -1444,7 +1443,7 @@ export function App() {
         <div className="brand"><span className="brand__mark" aria-hidden="true"><ShieldCheck weight="duotone" /></span><div><strong>文件脱敏助手</strong>{ENTERPRISE_VAULT_ENABLED && <span>文件本机处理，还原记录同步到企业 Vault。</span>}</div></div>
         <BoundaryRoute stage={routeStage} />
         <div className="local-status">
-          <span className="prototype-chip prototype-chip--quiet">v{appVersion}</span>{ENTERPRISE_VAULT_ENABLED && <span><DesktopTower weight="duotone" />企业模式</span>}<i aria-hidden="true" />
+          {ENTERPRISE_VAULT_ENABLED && <><span><DesktopTower weight="duotone" />企业模式</span><i aria-hidden="true" /></>}
           <ThemeSwitcher value={themePreference} onChange={setThemePreference} />
           <i aria-hidden="true" />
           <button className="audit-trigger" type="button" title={auditIncomplete ? "操作记录：有记录未能保存" : "操作记录"} aria-label="操作记录" aria-haspopup="dialog" aria-expanded={auditOpen} onClick={event => { drawerTriggerRef.current = event.currentTarget; setAuditOpen(true); }}><ClockCounterClockwise aria-hidden="true" weight="bold" /><span>操作记录</span>{auditIncomplete && <b aria-label="有操作记录未保存">!</b>}</button>
