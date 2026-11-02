@@ -236,7 +236,7 @@ a {
   gap: 7px;
   padding: 7px 10px;
   border: 1px solid color-mix(in srgb, var(--blue) 24%, var(--line));
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   cursor: pointer;
   font-size: var(--fs-sm);
   font-weight: var(--fw-bold);
@@ -275,7 +275,7 @@ a {
 
 .audit-trigger {
   position: relative;
-  min-height: 44px;
+  min-height: 40px;
 }
 
 .audit-trigger b {
