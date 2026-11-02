@@ -4,7 +4,8 @@ export default defineConfig({
   testDir: "./tests/e2e",
   testIgnore: ["**/central-operations.spec.js", "**/operation-sync.spec.js"],
   // WebKit on Windows can stop delivering animation frames with more parallel pages, which stalls actionability checks.
-  workers: 4,
+  // The hosted CI runner only keeps the suite stable one worker at a time.
+  workers: process.env.CI ? 1 : 4,
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? "github" : "list",
   use: {
