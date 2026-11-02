@@ -55,7 +55,7 @@ export async function preflightXlsxPackage(input, limits = XLSX_LIMITS) {
   return { zip, entries: entries.length, totalSize, worksheetCount };
 }
 
-function mappingText(entry) {
+export function mappingText(entry) {
   const value = entry?.value;
   if (!value) return "";
   if (value.type === "richText") return String(value.text ?? "");

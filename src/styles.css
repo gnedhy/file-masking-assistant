@@ -1617,6 +1617,29 @@ a {
   line-height: 1.6;
 }
 
+.error-issues {
+  width: min(100%, 580px);
+  margin: -3px auto 0;
+  color: var(--amber-ink);
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.error-guidance + .error-issues {
+  margin-top: var(--sp-2);
+}
+
+.error-issues p {
+  margin: 0;
+}
+
+.error-issues ul {
+  margin: var(--sp-1) 0 0;
+  padding-left: 1.2em;
+}
+
 .error-actions {
   align-items: center;
 }

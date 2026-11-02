@@ -430,7 +430,7 @@ export function findCsvSensitiveResiduals(document, mapping) {
     const text = String(value ?? "").replace(tokenPattern(), " ");
     const location = `第 ${rowIndex + 1} 行，第 ${columnIndex + 1} 列`;
     for (const { source } of entityMatches(text, root)) {
-      findings.push({ location, reason: inlineDictionaryEligible(source)
+      findings.push({ location, sheetName: "CSV", row: rowIndex + 1, columnNumber: columnIndex + 1, eligible: inlineDictionaryEligible(source), reason: inlineDictionaryEligible(source)
         ? "已选真实值仍出现在脱敏结果中"
         : "已选短名称或短编码仍出现在此处；不自动猜测替换，请将该列设为整格替换或先整理原文件" });
     }
@@ -439,12 +439,13 @@ export function findCsvSensitiveResiduals(document, mapping) {
 }
 
 export function findCsvFormulaCells(document) {
+  const headers = document.rows[detectHeaderRow(document.rows) - 1] ?? [];
   const findings = [];
   document.rows.forEach((row, rowIndex) => row.forEach((value, columnIndex) => {
     const text = String(value ?? "");
     const trimmed = text.replace(/^[\t\r\n ]+/, "");
     if (!/^[=+\-@]/.test(trimmed) || /^[+\-]\d+(?:[.,]\d+)?%?$/.test(trimmed)) return;
-    findings.push({ location: `第 ${rowIndex + 1} 行，第 ${columnIndex + 1} 列`, value: trimmed.slice(0, 80) });
+    findings.push({ location: `第 ${rowIndex + 1} 行，第 ${columnIndex + 1} 列`, row: rowIndex + 1, header: String(headers[columnIndex] ?? "").trim(), value: trimmed.slice(0, 80) });
   }));
   return findings;
 }

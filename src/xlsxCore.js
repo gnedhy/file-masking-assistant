@@ -356,6 +356,32 @@ export function tokenizeWorkbook(workbook, selectedColumns, taskId) {
   return { mapping, replacedCells, uniqueValues: Object.keys(mapping).length, warnings, notices };
 }
 
+export function findWorkbookResiduals(workbook, values) {
+  const sources = [...new Set(values.filter(Boolean))];
+  const findings = [];
+  workbook.eachSheet((worksheet) => {
+    if (worksheet.name === "__AI安全任务") return;
+    worksheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+      row.eachCell({ includeEmpty: false }, (cell, columnNumber) => {
+        const value = cell.value;
+        const raw = formulaCellValue(value) ? `${value.formula ?? ""} ${value.result ?? ""}` : valueAsText(value);
+        const text = raw.replace(tokenPattern(), " ");
+        const matched = sources.filter((source) => text.includes(source));
+        if (!matched.length) return;
+        findings.push({
+          location: `${worksheet.name}!${cell.address}`,
+          reason: "已选真实值仍出现在此处",
+          sheetName: worksheet.name,
+          row: rowNumber,
+          columnNumber,
+          eligible: matched.every(inlineDictionaryEligible),
+        });
+      });
+    });
+  });
+  return findings;
+}
+
 export function addTaskMarker(workbook, metadata) {
   const previous = workbook.getWorksheet("__AI安全任务");
   if (previous) workbook.removeWorksheet(previous.id);

@@ -5,11 +5,12 @@ import {
   inspectWorkbookTokens,
   removeTaskMarker,
   restoreWorkbookValues,
+  findWorkbookResiduals,
   tokenizeWorkbook,
 } from "./xlsxCore.js";
 import { deleteVault, listVaultSummaries, loadVault, saveVault } from "./vaultStore.js";
 import { createProtectionIdentity, protectionTokenIdentity, protectionResult, resolveRestoreVault, taskEvidence } from "./taskIdentity.js";
-import { assertNoSensitiveValuesInXlsxPackage, preflightXlsxPackage } from "./xlsxPackageCore.js";
+import { assertNoSensitiveValuesInXlsxPackage, mappingText, preflightXlsxPackage } from "./xlsxPackageCore.js";
 import { highRiskTextFindings, occurrenceBaseline, occurrenceComparison, protectedOutputName, restoredOutputName } from "./fileSafety.js";
 
 export class SafeFileError extends Error {
@@ -115,7 +116,13 @@ export async function createSafeWorkbook(file, selectedColumns, options) {
   workbook.calcProperties.fullCalcOnLoad = true;
   workbook.calcProperties.forceFullCalc = true;
   const buffer = await workbook.xlsx.writeBuffer();
-  await assertNoSensitiveValuesInXlsxPackage(buffer, result.mapping);
+  try {
+    await assertNoSensitiveValuesInXlsxPackage(buffer, result.mapping);
+  } catch (error) {
+    if (error.code !== "SENSITIVE_RESIDUALS") throw error;
+    const cells = findWorkbookResiduals(workbook, Object.values(result.mapping).map(mappingText));
+    throw new SafeFileError(error.code, error.message, cells.length ? cells : error.details);
+  }
   const vault = {
     version: 2,
     ...identity,

@@ -59,7 +59,7 @@ async function loadCsv(file) {
 
 function assertCsvFormulaSafety(document) {
   const formulas = findCsvFormulaCells(document);
-  if (formulas.length) throw new SafeFileError("CSV_FORMULA_INJECTION", "CSV 中包含可能被表格软件执行的公式型字段，已停止处理。", formulas.map(item => `${item.location}：公式型字段，请在原文件中明确转换为普通文本`));
+  if (formulas.length) throw new SafeFileError("CSV_FORMULA_INJECTION", "CSV 中包含可能被表格软件执行的公式型字段，已停止处理。", formulas.map(item => ({ ...item, reason: `开头的“${item.value[0]}”可能让表格软件把它当作公式` })));
 }
 
 function encodeCsv(document) {

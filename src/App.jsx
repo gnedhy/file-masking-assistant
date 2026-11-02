@@ -688,7 +688,7 @@ const ERROR_PRESENTATION = {
   TEXT_TOO_LARGE: { title: "文本文件超过安全大小限制", description: "TXT/MD 文件不能超过 10 MB。", guidance: "请拆分文件后重试。" },
   CSV_TOO_LARGE: { title: "CSV 超过当前安全限制", description: "CSV 文件不能超过 10 MB。", guidance: "请按月份、业务单元或数据范围拆分后重试。" },
   CSV_LIMIT_EXCEEDED: { title: "CSV 表格规模超过安全限制", description: "文件的行数、列数或字段总量过大，系统已停止处理。", guidance: "请按月份、业务单元或工作表拆分后重试。" },
-  CSV_FORMULA_INJECTION: { title: "CSV 中包含可能执行的公式", description: "原文件或还原后的内容包含表格软件可能执行的公式型字段，因此没有生成输出文件。", guidance: "请把公式改成实际结果或普通文本后重新选择文件；工具不会自动改写原值。" },
+  CSV_FORMULA_INJECTION: { title: "CSV 里有疑似公式的内容", description: "以 =、+、-、@ 开头的内容，在 Excel 等表格软件里可能被当作公式运行，因此没有生成输出文件。", guidance: "请在原文件中修改这些位置后重新选择文件，例如把 +86-138… 写成 86-138…；工具不会自动改写原值。" },
   SUSPICIOUS_TEXT: { title: "文件中包含不可见控制字符", description: "这些字符可能隐藏内容或改变代号识别，系统已停止处理。", guidance: "请用纯文本编辑器显示并移除不可见字符后重试。" },
   EXTERNAL_RELATIONSHIPS: { title: "文件包含外部链接或远程连接", description: "为避免文件打开时连接外部资源，系统已停止处理。", guidance: "请在 Office 中断开外部链接并另存为标准文件。" },
   SENSITIVE_RESIDUALS: { title: "脱敏后仍发现真实内容", description: "已选真实值仍出现在文件的其他位置，因此没有生成脱敏文件。", guidance: "请返回调整选择：叙述列可选“仅文中已选内容”，或把相关列设为整格替换。" },
@@ -703,12 +703,19 @@ const ERROR_PRESENTATION = {
   UNSUPPORTED_CONTENT: { title: "代号出现在不安全或暂不处理的位置", description: "Office 的图表、SmartArt、批注、嵌入内容，或 HTML 的脚本、样式、链接、事件属性中发现代号，因此已停止输出。", guidance: "请把代号放回普通文字或表格后再试。" },
 };
 
-function ErrorState({ mode, error, canAdjustFields, onAdjustFields, onReset, onDetails, onBackToProtect }) {
+const ISSUE_PREVIEW_LIMIT = 5;
+
+function formulaIssueLabel(issue) {
+  return `${issue.header ? `第 ${issue.row} 行 · ${issue.header}` : issue.location}：${issue.value}`;
+}
+
+function ErrorState({ mode, error, canAdjustFields, residualColumns = [], onAddResidualColumns, onAdjustFields, onReset, onDetails, onBackToProtect }) {
   const copy = ERROR_PRESENTATION[error?.code] ?? {
     title: error?.message || "文件暂时无法处理",
     description: "安全检查没有通过，因此系统没有继续生成输出文件。",
     guidance: "请重新选择文件；如需定位原因，可以查看技术详情。",
   };
+  const formulaIssues = error?.code === "CSV_FORMULA_INJECTION" ? (error.details ?? []).filter((detail) => detail?.value) : [];
   return (
     <div className="error-state" role="alert">
       <span className="error-state__seal" aria-hidden="true"><WarningCircle weight="duotone" /></span>
@@ -716,15 +723,35 @@ function ErrorState({ mode, error, canAdjustFields, onAdjustFields, onReset, onD
       <h2>{copy.title}</h2>
       <p className="state-description">{copy.description}</p>
       <div className="blocked-export"><LockKey weight="duotone" /><span><strong>没有生成输出文件</strong><small>原文件保持不变</small></span></div>
-      <p className="error-guidance">{copy.guidance}</p>
+      {residualColumns.length > 0 ? (
+        <div className="error-issues">
+          <p>这些没有选中的列里还有真实值：</p>
+          <ul>{residualColumns.map((column) => <li key={column.id}>{column.sheetName === "CSV" ? "" : `${column.sheetName} · `}{spreadsheetColumnLabel(column.columnNumber)} 列 · {column.header}</li>)}</ul>
+        </div>
+      ) : <p className="error-guidance">{copy.guidance}</p>}
+      {formulaIssues.length > 0 && (
+        <div className="error-issues">
+          <p>需要修改的位置：</p>
+          <ul>{formulaIssues.slice(0, ISSUE_PREVIEW_LIMIT).map((issue) => <li key={issue.location}>{formulaIssueLabel(issue)}</li>)}</ul>
+          {formulaIssues.length > ISSUE_PREVIEW_LIMIT && <small>还有 {formulaIssues.length - ISSUE_PREVIEW_LIMIT} 处，可在技术详情中查看</small>}
+        </div>
+      )}
       <div className="action-row error-actions">
-        {canAdjustFields && <button className="primary-button primary-button--compact" type="button" onClick={onAdjustFields}>调整选择字段</button>}
+        {residualColumns.length > 0 && <button className="primary-button primary-button--compact" type="button" onClick={onAddResidualColumns}>加入这 {residualColumns.length} 列并重新生成</button>}
+        {canAdjustFields && <button className={residualColumns.length > 0 ? "secondary-button" : "primary-button primary-button--compact"} type="button" onClick={onAdjustFields}>调整选择字段</button>}
         <button className={canAdjustFields ? "secondary-button" : "primary-button primary-button--compact"} type="button" onClick={onReset}>重新选择文件</button>
         {mode === "restore" && <button className="secondary-button" type="button" onClick={onBackToProtect}>返回制作脱敏文件</button>}
         <button className="text-button error-details-button" type="button" onClick={onDetails}>查看技术详情</button>
       </div>
     </div>
   );
+}
+
+function residualColumnsToAdd(error, analysis, selectedIds) {
+  if (error?.code !== "SENSITIVE_RESIDUALS" || !analysis?.columns) return [];
+  const cells = (error.details ?? []).filter((detail) => detail?.eligible);
+  return analysis.columns.filter((column) => !selectedIds.includes(column.id)
+    && cells.some((cell) => cell.sheetName === column.sheetName && cell.columnNumber === column.columnNumber && cell.row > column.headerRow));
 }
 
 function formatIssueDetail(detail) {
@@ -1326,17 +1353,17 @@ export function App() {
     if (dropped) inspectFile(dropped);
   };
 
-  const processFile = async () => {
+  const processFile = async ({ ids = selectedIds, modes = fieldModes } = {}) => {
     setCredentialRequested(false);
     setStatus("processing"); setError(null); setDetailsOpen(false); setDownloadRequested(false); setRegenerationNotice(null);
     try {
       let output;
       if (mode === "protect") {
         const selection = analysis.kind === "text"
-          ? analysis.candidates.filter((candidate) => selectedIds.includes(candidate.id))
+          ? analysis.candidates.filter((candidate) => ids.includes(candidate.id))
           : analysis.columns
-            .filter((column) => selectedIds.includes(column.id))
-            .map((column) => ({ ...column, processingMode: fieldModes[column.id] ?? column.recommendedMode ?? "whole" }));
+            .filter((column) => ids.includes(column.id))
+            .map((column) => ({ ...column, processingMode: modes[column.id] ?? column.recommendedMode ?? "whole" }));
         output = await createSafeFile(file, selection, { tokenFormat });
       } else {
         output = await restoreSafeFile(file, restoreInspection.taskId, { credential, pairingConfirmed });
@@ -1383,6 +1410,16 @@ export function App() {
     && Boolean(file && analysis)
     && ["NO_COLUMNS", "NO_TEXT_CANDIDATES", "NO_VALUES", "UNSUPPORTED_CELLS", "SENSITIVE_RESIDUALS", "VAULT_TASK_EXISTS"].includes(error?.code);
 
+  const residualColumns = mode === "protect" ? residualColumnsToAdd(error, analysis, selectedIds) : [];
+
+  const addResidualColumns = () => {
+    const ids = [...selectedIds, ...residualColumns.map((column) => column.id)];
+    const modes = { ...fieldModes, ...Object.fromEntries(residualColumns.map((column) => [column.id, "inline"])) };
+    setSelectedIds(ids);
+    setFieldModes(modes);
+    processFile({ ids, modes });
+  };
+
   const toggleProtectionColumn = (id) => {
     setSelectedIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
   };
@@ -1409,7 +1446,7 @@ export function App() {
   else if (status === "ready") mainState = <ReadyState mode={mode} file={file} analysis={analysis} selectedIds={selectedIds} fieldModes={fieldModes} restoreInspection={restoreInspection} regenerationNotice={regenerationNotice} detailsOpen={detailsOpen} onRemove={() => reset(mode)} onPrimary={processFile} onDetails={openDetails} tokenFormat={tokenFormat} onTokenFormat={setTokenFormat} pairingConfirmed={pairingConfirmed} onPairing={setPairingConfirmed} />;
   else if (status === "processing") mainState = <ProcessingState mode={mode} file={file} />;
   else if (status === "success") mainState = <SuccessState mode={mode} result={result} downloadRequested={downloadRequested} detailsOpen={detailsOpen} onDetails={openDetails} onDownloadRequested={() => setDownloadRequested(true)} onCredentialRequested={() => setCredentialRequested(true)} onAdjust={adjustProtection} onNext={openRestorePicker} onReset={() => reset(mode)} />;
-  else mainState = <ErrorState mode={mode} error={error} canAdjustFields={canAdjustFailedProtectionSelection} onAdjustFields={adjustFailedProtectionSelection} onReset={() => reset(mode)} onDetails={openDetails} onBackToProtect={() => reset("protect")} />;
+  else mainState = <ErrorState mode={mode} error={error} canAdjustFields={canAdjustFailedProtectionSelection} residualColumns={residualColumns} onAddResidualColumns={addResidualColumns} onAdjustFields={adjustFailedProtectionSelection} onReset={() => reset(mode)} onDetails={openDetails} onBackToProtect={() => reset("protect")} />;
 
   const routeStage = mode === "restore" ? "restore" : status === "success" && downloadRequested ? "ai" : "protect";
 
