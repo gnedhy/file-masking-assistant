@@ -64,7 +64,7 @@ export function BackupControls({ taskCount, onImported }) {
 
   return (
     <section className="backup-controls" aria-label="备份与恢复">
-      <p>还原记录只保存在当前浏览器。换浏览器、换电脑或清除浏览器数据前，请先导出备份。</p>
+      <p>记录只在当前浏览器，换设备或清除数据前请先导出备份。</p>
       <div className="backup-controls__actions">
         <button className="secondary-button" type="button" disabled={busy || !taskCount} onClick={() => setConfirming(true)}><DownloadSimple aria-hidden="true" />导出备份</button>
         <button className="secondary-button" type="button" disabled={busy} onClick={() => inputRef.current?.click()}><UploadSimple aria-hidden="true" />导入备份</button>

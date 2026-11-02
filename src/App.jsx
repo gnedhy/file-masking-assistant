@@ -156,53 +156,19 @@ function formatTaskTime(value) {
   }).format(date);
 }
 
-function LocalTaskPanel({ localTasks, disabled, onContinue, onViewAll, viewAllButtonRef }) {
-  const ready = localTasks.status === "ready";
-  const hasTasks = ready && localTasks.count > 0 && localTasks.latest;
-
+function LocalTaskTrigger({ localTasks, disabled, onOpen, triggerRef }) {
+  const failed = localTasks.status === "error";
+  const count = localTasks.status === "ready" ? localTasks.count : 0;
   return (
-    <section className="local-task-panel" data-has-tasks={Boolean(hasTasks)} aria-labelledby="local-task-title" aria-live="polite">
-      <div className="local-task-panel__head">
-        <span className="local-task-panel__mark" aria-hidden="true"><LockKey weight="duotone" /></span>
-        <div>
-          <h2 id="local-task-title">本机任务</h2>
-          <p>{localTasks.status === "loading"
-            ? "正在读取本机记录"
-            : localTasks.status === "error"
-              ? "暂时无法读取记录"
-              : hasTasks
-                ? `${localTasks.count} 个任务 · 还原记录保存在本机`
-                : "还没有可继续的任务"}</p>
-        </div>
-      </div>
-
-      {hasTasks ? (
-        <>
-          <div className="local-task-panel__latest">
-            <span>最近任务</span>
-            <strong title={localTasks.latest.taskName}>{localTasks.latest.taskName}</strong>
-            <small>{formatTaskTime(localTasks.latest.createdAt)} · 任务 {localTasks.latest.marker || localTasks.latest.taskId}</small>
-          </div>
-          <button className="local-task-panel__action" type="button" disabled={disabled} onClick={onContinue}>
-            选择待还原文件<ArrowRight weight="bold" />
-          </button>
-          <button ref={viewAllButtonRef} className="local-task-panel__view" type="button" onClick={onViewAll}>
-            查看全部任务
-          </button>
-        </>
-      ) : (
-        <p className="local-task-panel__empty">
-          {localTasks.status === "error"
-            ? "你仍可以选择文件；还原前系统会再次核对本机还原记录。"
-            : "制作并下载脱敏文件后，对应的还原任务会显示在这里。"}
-        </p>
-      )}
-      {!hasTasks && <button ref={viewAllButtonRef} className="local-task-panel__view" type="button" disabled={disabled} onClick={onViewAll}>{ENTERPRISE_VAULT_ENABLED ? "查看本机任务" : "导入备份"}</button>}
-    </section>
+    <button ref={triggerRef} className="local-task-trigger" type="button" disabled={disabled && !count} onClick={onOpen} aria-haspopup="dialog" title={failed ? "暂时无法读取记录" : undefined}>
+      <LockKey aria-hidden="true" weight="duotone" /><span>本机任务</span>{count > 0 && <b>{count}</b>}{failed && <b data-warning="true" aria-label="暂时无法读取记录">!</b>}
+    </button>
   );
 }
 
-function LocalTasksDrawer({ localTasks, currentTaskId, pendingDeleteId, deletingTaskId, error, modal, drawerRef, closeButtonRef, onClose, onRequestDelete, onCancelDelete, onConfirmDelete, onBackupImported }) {
+const TASK_SEARCH_MIN_COUNT = 5;
+
+function LocalTasksDrawer({ localTasks, currentTaskId, pendingDeleteId, deletingTaskId, error, modal, drawerRef, closeButtonRef, continueDisabled, onClose, onContinueLatest, onRequestDelete, onCancelDelete, onConfirmDelete, onBackupImported }) {
   const [query, setQuery] = useState("");
   const normalizedQuery = query.trim().toLocaleLowerCase("zh-CN");
   const visibleTasks = normalizedQuery
@@ -221,11 +187,12 @@ function LocalTasksDrawer({ localTasks, currentTaskId, pendingDeleteId, deleting
 
       <div className="drawer-body">
       {error && <p className="local-tasks-drawer__error" role="alert"><WarningCircle weight="fill" />{error}</p>}
-      {!ENTERPRISE_VAULT_ENABLED && <><StorageStatus /><BackupControls taskCount={localTasks.count} onImported={onBackupImported} /></>}
+      {!ENTERPRISE_VAULT_ENABLED && <StorageStatus />}
+      {localTasks.latest && <button className="primary-button local-tasks-continue" type="button" disabled={continueDisabled} onClick={onContinueLatest}>选择待还原文件<ArrowRight weight="bold" aria-hidden="true" /></button>}
 
-      {localTasks.tasks.length > 0 && (
+      {localTasks.tasks.length >= TASK_SEARCH_MIN_COUNT && (
         <div className="local-task-search">
-          <label htmlFor="local-task-search-input">查找任务</label>
+          <label className="visually-hidden" htmlFor="local-task-search-input">查找任务</label>
           <div>
             <MagnifyingGlass weight="bold" aria-hidden="true" />
             <input
@@ -237,7 +204,7 @@ function LocalTasksDrawer({ localTasks, currentTaskId, pendingDeleteId, deleting
               onChange={(event) => setQuery(event.target.value)}
             />
           </div>
-          <small>{normalizedQuery ? `找到 ${visibleTasks.length} 个任务` : `共 ${localTasks.tasks.length} 个任务`}</small>
+          {normalizedQuery && <small>找到 {visibleTasks.length} 个任务</small>}
         </div>
       )}
 
@@ -249,15 +216,8 @@ function LocalTasksDrawer({ localTasks, currentTaskId, pendingDeleteId, deleting
           return (
             <article className="local-task-row" key={task.taskId}>
               <div className="local-task-row__main">
-                <div className="local-task-row__title">
-                  <strong title={task.taskName}>{task.taskName}</strong>
-                  <span><CheckCircle weight="fill" />还原记录已保存</span>
-                </div>
-                <dl>
-                  <div><dt>任务编号</dt><dd>{task.marker || task.taskId}</dd></div>
-                  <div><dt>生成时间</dt><dd>{formatTaskTime(task.createdAt)}</dd></div>
-                  <div><dt>还原记录数量</dt><dd>{task.uniqueValues} 条</dd></div>
-                </dl>
+                <strong title={task.taskName}>{task.taskName}</strong>
+                <p>{task.marker || task.taskId} · {formatTaskTime(task.createdAt)} · {task.uniqueValues} 条</p>
               </div>
               {task.marker && <TaskIdentityDetails taskId={task.taskId} />}
               {task.tokenFormat === "short" && <CredentialDownload taskId={task.taskId} marker={task.marker} />}
@@ -279,8 +239,8 @@ function LocalTasksDrawer({ localTasks, currentTaskId, pendingDeleteId, deleting
           );
         })}
       </div> : <p className="local-tasks-drawer__empty">{localTasks.tasks.length ? "没有找到匹配的任务，请换一个文件名或任务编号。" : "当前浏览器已没有可还原的本机任务。"}</p>}
-      <p className="local-tasks-drawer__boundary"><Info weight="duotone" />本机任务不自动到期。删除还原记录后不能撤销。</p>
       </div>
+      {!ENTERPRISE_VAULT_ENABLED && <BackupControls taskCount={localTasks.count} onImported={onBackupImported} />}
     </aside>
   );
 }
@@ -1005,7 +965,7 @@ async function animateDrawerExit(drawer) {
   if (!drawer || drawer.dataset.closing === "true") return false;
   drawer.dataset.closing = "true";
   const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const direction = drawer.classList.contains("local-tasks-drawer") ? -22 : 22;
+  const direction = 22;
   const easing = getComputedStyle(drawer).getPropertyValue("--ease-drawer").trim();
   const animations = [drawer, drawer.previousElementSibling].filter(Boolean).map(element => {
     const style = getComputedStyle(element);
@@ -1233,6 +1193,8 @@ export function App() {
   };
 
   const continueLatestTask = async () => {
+    // The file picker opens right after this click, so skip the drawer's exit animation.
+    setLocalTasksOpen(false);
     const switched = mode === "restore" && status === "empty" ? true : await changeMode("restore", true);
     if (switched) window.requestAnimationFrame(() => inputRef.current?.click());
   };
@@ -1468,13 +1430,13 @@ export function App() {
             <h1>{WORKSPACE_COPY[mode].title}</h1>
             <span>{WORKSPACE_COPY[mode].description}</span>
           </header>
-          <aside className="task-rail" aria-label="任务与本机记录">
-            <div className="task-switcher" aria-label="选择任务">
+          <div className="task-bar">
+            <div className="task-switcher" role="group" aria-label="选择任务">
               <TaskChoice active={mode === "protect"} icon={FilePlus} title="制作脱敏文件" disabled={status === "processing" || status === "inspecting"} onClick={() => changeMode("protect")} />
               <TaskChoice active={mode === "restore"} icon={FileArrowDown} title="还原处理文件" disabled={status === "processing" || status === "inspecting"} onClick={() => changeMode("restore")} />
             </div>
-            <LocalTaskPanel localTasks={localTasks} disabled={status === "processing" || status === "inspecting"} onContinue={continueLatestTask} onViewAll={openLocalTasks} viewAllButtonRef={localTasksViewButtonRef} />
-          </aside>
+            <LocalTaskTrigger localTasks={localTasks} disabled={status === "processing" || status === "inspecting"} onOpen={openLocalTasks} triggerRef={localTasksViewButtonRef} />
+          </div>
           <section className="workbench" data-status={status} data-dragging={isDraggingFile} onDragEnter={handleDragEnter} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop} aria-label={MODE_COPY[mode].title}>
             {mainState}
             {mode === "restore" && !ENTERPRISE_VAULT_ENABLED && status !== "success" && (status !== "error" || /CREDENTIAL/.test(error?.code ?? "")) && <CredentialInput credential={credential} required={status === "awaiting-credential"} error={credentialError} disabled={status === "processing" || status === "inspecting"} onChange={importCredential} />}
@@ -1483,7 +1445,7 @@ export function App() {
           <input ref={inputRef} className="visually-hidden" type="file" accept={(mode === "protect" ? SUPPORTED_PROTECT_FORMATS : SUPPORTED_RESTORE_FORMATS).map(format => `.${format}`).join(",")} tabIndex={-1} aria-label={`选择待${mode === "protect" ? "脱敏" : "还原"}的 ${formatList(mode)} 文件`} onChange={handleFileInput} />
         </section>
         {detailsOpen && <><button className="drawer-scrim" type="button" tabIndex={-1} onClick={closeDetails} aria-label="关闭详情" /><SecurityDrawer mode={mode} status={status} analysis={analysis} selectedIds={selectedIds} fieldModes={fieldModes} restoreInspection={restoreInspection} result={result} error={error} modal drawerRef={drawerRef} closeButtonRef={closeButtonRef} onClose={closeDetails} onToggleColumn={toggleProtectionColumn} onModeChange={changeProtectionMode} onAddCandidate={addTextCandidate} onRemoveCandidate={removeTextCandidate} onSetSelection={setSelectedIds} /></>}
-        {localTasksOpen && <><button className="drawer-scrim drawer-scrim--local" type="button" tabIndex={-1} onClick={closeLocalTasks} aria-label="关闭本机任务" /><LocalTasksDrawer localTasks={localTasks} currentTaskId={result?.taskId ?? restoreInspection?.taskId ?? null} pendingDeleteId={pendingDeleteId} deletingTaskId={deletingTaskId} error={taskManagerError} modal drawerRef={localTasksDrawerRef} closeButtonRef={localTasksCloseButtonRef} onClose={closeLocalTasks} onRequestDelete={setPendingDeleteId} onCancelDelete={() => setPendingDeleteId(null)} onConfirmDelete={deleteLocalTask} onBackupImported={refreshLocalTasks} /></>}
+        {localTasksOpen && <><button className="drawer-scrim drawer-scrim--local" type="button" tabIndex={-1} onClick={closeLocalTasks} aria-label="关闭本机任务" /><LocalTasksDrawer localTasks={localTasks} continueDisabled={status === "processing" || status === "inspecting"} onContinueLatest={continueLatestTask} currentTaskId={result?.taskId ?? restoreInspection?.taskId ?? null} pendingDeleteId={pendingDeleteId} deletingTaskId={deletingTaskId} error={taskManagerError} modal drawerRef={localTasksDrawerRef} closeButtonRef={localTasksCloseButtonRef} onClose={closeLocalTasks} onRequestDelete={setPendingDeleteId} onCancelDelete={() => setPendingDeleteId(null)} onConfirmDelete={deleteLocalTask} onBackupImported={refreshLocalTasks} /></>}
       </main>
       {auditOpen && <><button className="drawer-scrim" type="button" tabIndex={-1} onClick={closeAudit} aria-label="关闭记录遮罩" /><OperationDrawer drawerRef={auditDrawerRef} closeButtonRef={auditCloseButtonRef} onClose={closeAudit} onPreview={async view => { await closeAudit(); setUsagePreview(view); }} /></>}
       {switchPrompt && <ConfirmDialog title="切换任务？" message="切换后将清空当前页面选择，原文件不变。" confirmLabel="切换并清空" onClose={closeSwitchPrompt} />}

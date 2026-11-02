@@ -11,7 +11,7 @@ test("保存任务时自动申请一次持久保存，界面只保留配额提�
     } });
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "导入备份" }).click();
+  await page.getByRole("button", { name: /^本机任务/ }).click();
   await expect(page.getByText(/本站存储接近配额/)).toBeVisible();
   await expect(page.getByRole("button", { name: "申请持久保存" })).toHaveCount(0);
   await page.evaluate(async () => {
@@ -25,7 +25,7 @@ test("保存任务时自动申请一次持久保存，界面只保留配额提�
 test("不支持存储状态接口时仍能使用任务抽屉", async ({ page }) => {
   await page.addInitScript(() => Object.defineProperty(navigator, "storage", { configurable: true, value: undefined }));
   await page.goto("/");
-  await page.getByRole("button", { name: "导入备份" }).click();
+  await page.getByRole("button", { name: /^本机任务/ }).click();
   const drawer = page.getByRole("dialog", { name: "本机任务", exact: true });
   await expect(drawer.getByRole("region", { name: "备份与恢复" })).toBeVisible();
   await expect(page.getByText(/本站存储接近配额/)).toHaveCount(0);

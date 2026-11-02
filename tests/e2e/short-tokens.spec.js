@@ -165,7 +165,7 @@ test("简短模式界面下载、重新打开、导入凭据和确认还原", as
   await reopened.screenshot({ path: testInfo.outputPath("配对确认.png"), fullPage: true });
   await reopened.getByRole("button", { name: "生成还原文件" }).click();
   await expect(reopened.getByRole("link", { name: "下载还原文件" })).toBeVisible();
-  await reopened.getByRole("button", { name: "查看全部任务" }).click();
+  await reopened.getByRole("button", { name: /^本机任务/ }).click();
   const redownload = reopened.waitForEvent("download");
   await reopened.getByRole("button", { name: "下载还原钥匙文件" }).click();
   expect((await redownload).suggestedFilename()).toMatch(/^还原钥匙_/);

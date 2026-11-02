@@ -114,10 +114,10 @@ test("390px 操作记录可访问且两种模式保持一致布局", async ({ pa
   await page.keyboard.press("Escape");
   await expect(principleDialog).toBeHidden();
 
-  const taskPanel = page.locator(".local-task-panel");
+  const taskPanel = page.locator(".local-task-trigger");
   const workbench = page.locator(".workbench");
   await expect(taskPanel).toBeVisible();
-  await expect(page.getByRole("button", { name: "导入备份" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^本机任务/ })).toBeVisible();
   expect((await taskPanel.boundingBox()).height).toBeLessThan(110);
   await expect(page.getByText("选择待脱敏文件", { exact: true })).toBeVisible();
   const chooseFileBox = await page.getByRole("button", { name: "选择文件" }).boundingBox();
@@ -188,7 +188,7 @@ test("CSV 文件选择、任务抽屉和失败关闭可用", async ({ page }) =>
   await page.getByRole("button", { name: /生成脱敏文件/ }).click();
   await expect(page.getByRole("heading", { name: "脱敏文件可以下载" })).toBeVisible();
 
-  await page.getByRole("button", { name: "查看全部任务" }).click();
+  await page.getByRole("button", { name: /^本机任务/ }).click();
   const taskDialog = page.getByRole("dialog", { name: "本机任务" });
   await expect(taskDialog).toBeVisible();
   await taskDialog.getByRole("button", { name: "关闭本机任务" }).click();

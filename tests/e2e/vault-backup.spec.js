@@ -27,7 +27,7 @@ async function maskFile(page, short) {
 }
 
 async function exportBackup(page) {
-  await page.getByRole("button", { name: "查看全部任务" }).click();
+  await page.getByRole("button", { name: /^本机任务/ }).click();
   const drawer = drawerOf(page);
   await drawer.getByRole("button", { name: "导出备份" }).click();
   const prompt = page.getByRole("alertdialog", { name: "导出备份？" });
@@ -64,7 +64,7 @@ test("备份导出后可在另一浏览器导入并还原，重复导入只跳�
   const other = await browser.newContext({ baseURL: testInfo.project.use.baseURL, acceptDownloads: true });
   const target = await other.newPage();
   await target.goto("/");
-  await target.getByRole("button", { name: "导入备份" }).click();
+  await target.getByRole("button", { name: /^本机任务/ }).click();
   await importBackup(target, backup.name, backup.bytes);
   await expect(drawerOf(target).getByText("已导入 2 个任务。", { exact: true })).toBeVisible();
   expect(await summaries(target)).toHaveLength(2);
@@ -87,7 +87,7 @@ test("备份导出后可在另一浏览器导入并还原，重复导入只跳�
   await target.getByRole("link", { name: "下载还原文件" }).click();
   expect((await readDownload(await restored)).equals(Buffer.from(source))).toBe(true);
 
-  await target.getByRole("button", { name: "查看全部任务" }).click();
+  await target.getByRole("button", { name: /^本机任务/ }).click();
   const before = await summaries(target);
   await importBackup(target, backup.name, backup.bytes);
   await expect(drawerOf(target).getByText("已导入 0 个任务，跳过 2 个（本机已有）。", { exact: true })).toBeVisible();
@@ -103,7 +103,7 @@ test("任务编号被其他任务占用时不导入该任务", async ({ page, br
   const target = await other.newPage();
   await target.goto("/");
   await target.evaluate(async marker => (await import("/src/vaultStore.js")).reserveTaskMarker(marker, crypto.randomUUID()), marker);
-  await target.getByRole("button", { name: "导入备份" }).click();
+  await target.getByRole("button", { name: /^本机任务/ }).click();
   await importBackup(target, backup.name, backup.bytes);
   await expect(drawerOf(target).getByRole("alert")).toHaveText("已导入 1 个任务，1 个任务编号与本机其他任务冲突，未导入。");
   const tasks = await summaries(target);
@@ -114,7 +114,7 @@ test("任务编号被其他任务占用时不导入该任务", async ({ page, br
 
 test("无效备份整体拒绝，本机任务不变", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "导入备份" }).click();
+  await page.getByRole("button", { name: /^本机任务/ }).click();
   const alert = drawerOf(page).getByRole("alert");
   await importBackup(page, "随便.json", Buffer.from("不是 JSON"));
   await expect(alert).toHaveText("无法读取这个文件，请选择本工具导出的备份文件。");

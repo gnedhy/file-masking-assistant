@@ -137,7 +137,7 @@ test("生成撞号时无下载且旧任务可还原，调整后可重新生成",
 
 test("跨标签页通知只含变更标记，任务摘要自动更新", async ({ page, context }) => {
   await page.goto("/");
-  await expect(page.getByRole("button", { name: "导入备份" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^本机任务/ })).toBeVisible();
   await page.evaluate(() => {
     window.testMessages = [];
     window.testChannel = new BroadcastChannel("file-masking-assistant-v2-vault");
@@ -146,10 +146,10 @@ test("跨标签页通知只含变更标记，任务摘要自动更新", async ({
   const other = await context.newPage();
   await other.goto("/");
   await other.evaluate(async () => (await import("/src/vaultStore.js")).saveVault({ taskId: "BBBB2222", taskName: "另页虚构任务", createdAt: new Date().toISOString(), mapping: { a: "不应广播的真实值" } }));
-  await expect(page.locator(".local-task-panel")).toContainText("另页虚构任务");
-  await page.getByRole("button", { name: "查看全部任务" }).click();
+  await expect(page.locator(".local-task-trigger b")).toHaveText("1");
+  await page.getByRole("button", { name: /^本机任务/ }).click();
   const drawer = page.getByRole("dialog", { name: "本机任务", exact: true });
-  await expect(drawer.getByText("还原记录已保存", { exact: true })).toBeVisible();
+  await expect(drawer.getByText("另页虚构任务", { exact: true })).toBeVisible();
   await other.evaluate(async () => (await import("/src/vaultStore.js")).deleteVault("BBBB2222"));
   await expect(drawer.getByText("0 个还原任务 · 0 条还原记录")).toBeVisible();
   expect(await page.evaluate(() => window.testMessages)).toEqual(["changed", "changed"]);
@@ -158,7 +158,7 @@ test("跨标签页通知只含变更标记，任务摘要自动更新", async ({
 test("无广播时打开抽屉与恢复焦点均刷新，不把密钥丢失称为映射可用", async ({ page, context }) => {
   await page.addInitScript(() => Object.defineProperty(window, "BroadcastChannel", { configurable: true, value: undefined }));
   await page.goto("/");
-  await expect(page.getByRole("button", { name: "导入备份" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^本机任务/ })).toBeVisible();
   const other = await context.newPage();
   await other.goto("/");
   await other.evaluate(async () => {
@@ -168,15 +168,14 @@ test("无广播时打开抽屉与恢复焦点均刷新，不把密钥丢失称�
     await new Promise((resolve, reject) => { const tx = db.transaction("settings", "readwrite"); tx.objectStore("settings").delete("device-aes-key"); tx.oncomplete = resolve; tx.onerror = () => reject(tx.error); });
     db.close();
   });
-  await page.getByRole("button", { name: "导入备份" }).click();
+  await page.getByRole("button", { name: /^本机任务/ }).click();
   const drawer = page.getByRole("dialog", { name: "本机任务", exact: true });
   await expect(drawer.getByText("摘要仍在", { exact: true })).toBeVisible();
-  await expect(drawer.getByText("还原记录已保存", { exact: true })).toBeVisible();
   await expect(drawer.getByText("还原记录可用", { exact: true })).toHaveCount(0);
   await drawer.getByRole("button", { name: "关闭本机任务" }).click();
   await other.evaluate(async () => (await import("/src/vaultStore.js")).deleteVault("BBBB2222"));
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
-  await expect(page.locator(".local-task-panel")).toContainText("还没有可继续的任务");
+  await expect(page.locator(".local-task-trigger b")).toHaveCount(0);
 });
 
 test("凭据错误可原地恢复，完整编号可复制，实名结果有回传警告", async ({ page }, testInfo) => {
@@ -208,9 +207,9 @@ test("凭据错误可原地恢复，完整编号可复制，实名结果有回�
   await expect(page.locator(".output-file")).toContainText(fixture.marker);
   await expect(page.getByText("检查通过", { exact: true })).toBeVisible();
   await expect(page.getByText(/外部请求/)).toHaveCount(0);
-  await page.getByRole("button", { name: "查看全部任务" }).click();
+  await page.getByRole("button", { name: /^本机任务/ }).click();
   const drawer = page.getByRole("dialog", { name: "本机任务", exact: true });
-  await expect(drawer.getByText(fixture.marker, { exact: true })).toBeVisible();
+  await expect(drawer.getByText(fixture.marker)).toBeVisible();
   await drawer.getByText("完整任务编号", { exact: true }).click();
   await drawer.getByRole("button", { name: "复制任务编号" }).click();
   await expect(drawer.getByText("任务编号已复制", { exact: true })).toBeVisible();
@@ -218,7 +217,7 @@ test("凭据错误可原地恢复，完整编号可复制，实名结果有回�
   for (const value of ["dark", "light", "system"]) {
     await drawer.getByRole("button", { name: "关闭本机任务" }).click();
     await chooseTheme(page, value);
-    await page.getByRole("button", { name: "查看全部任务" }).click();
+    await page.getByRole("button", { name: /^本机任务/ }).click();
     await expect(drawer).toBeVisible();
     const persistenceButton = drawer.locator(".backup-controls .secondary-button").last();
     if (await persistenceButton.isVisible() && !testInfo.project.name.startsWith("mobile")) await persistenceButton.hover();
@@ -231,4 +230,17 @@ test("凭据错误可原地恢复，完整编号可复制，实名结果有回�
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.screenshot({ path: testInfo.outputPath(`本机任务-${value}.png`), fullPage: true });
   }
+});
+
+test("从抽屉最近任务直接选择待还原文件", async ({ page }) => {
+  await page.goto("/");
+  await page.evaluate(async () => (await import("/src/vaultStore.js")).saveVault({ taskId: "AAAA1111", taskName: "虚构最近任务", createdAt: new Date().toISOString(), mapping: {} }));
+  await page.getByRole("button", { name: /^本机任务/ }).click();
+  const drawer = page.getByRole("dialog", { name: "本机任务", exact: true });
+  await expect(drawer.getByText("虚构最近任务", { exact: true })).toBeVisible();
+  const chooser = page.waitForEvent("filechooser");
+  await drawer.getByRole("button", { name: "选择待还原文件" }).click();
+  await chooser;
+  await expect(drawer).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "还原处理文件" })).toHaveAttribute("aria-pressed", "true");
 });

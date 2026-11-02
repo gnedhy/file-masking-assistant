@@ -9,7 +9,7 @@ test("抽屉关闭保留退出动画，结束后解锁并恢复焦点", async ({
   for (const reducedMotion of ["no-preference", "reduce"]) {
     await page.emulateMedia({ reducedMotion });
     for (const kind of ["tasks", "details"]) {
-      const trigger = page.getByRole("button", { name: kind === "tasks" ? "导入备份" : "确认替换内容 查看并调整", exact: true });
+      const trigger = page.getByRole("button", { name: kind === "tasks" ? /^本机任务/ : "确认替换内容 查看并调整", exact: kind !== "tasks" });
       for (const action of ["button", "scrim", "escape"]) {
         await trigger.click();
         const drawer = page.getByRole("dialog", { name: kind === "tasks" ? "本机任务" : "替换内容", exact: true });
@@ -28,7 +28,7 @@ test("抽屉关闭保留退出动画，结束后解锁并恢复焦点", async ({
         expect(frames).toHaveLength(1);
         expect(frames[0].duration).toBe(200);
         expect(frames[0].end.opacity).toBe("0");
-        expect(frames[0].end.transform).toBe(reducedMotion === "reduce" ? "none" : `translateX(${kind === "tasks" ? -22 : 22}px)`);
+        expect(frames[0].end.transform).toBe(reducedMotion === "reduce" ? "none" : "translateX(22px)");
         await expect(drawer).toHaveAttribute("data-closing", "true");
         await expect(page.locator(".workspace")).toHaveAttribute("inert", "");
         await expect(page.locator("body")).toHaveCSS("overflow", "hidden");
@@ -52,7 +52,7 @@ test("任务与详情抽屉固定标题、独立滚动并适配主题和窄屏",
   for (const theme of ["light", "dark"]) {
     await chooseTheme(page, theme);
     for (const kind of ["tasks", "details"]) {
-      const trigger = page.getByRole("button", { name: kind === "tasks" ? "查看全部任务" : "确认替换内容 查看并调整", exact: true });
+      const trigger = page.getByRole("button", { name: kind === "tasks" ? /^本机任务/ : "确认替换内容 查看并调整", exact: kind !== "tasks" });
       await trigger.click();
       const drawer = page.getByRole("dialog", { name: kind === "tasks" ? "本机任务" : "替换内容", exact: true });
       const head = drawer.locator(".drawer-head");
@@ -73,7 +73,7 @@ test("任务与详情抽屉固定标题、独立滚动并适配主题和窄屏",
         expect(bounds.x).toBe(0);
         expect(bounds.width).toBe(page.viewportSize().width);
       } else {
-        const edge = kind === "tasks" ? bounds.x : page.viewportSize().width - bounds.x - bounds.width;
+        const edge = page.viewportSize().width - bounds.x - bounds.width;
         expect(edge).toBeGreaterThanOrEqual(12);
       }
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
