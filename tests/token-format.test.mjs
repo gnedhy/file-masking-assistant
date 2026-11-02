@@ -1,6 +1,5 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { validateCredential, readTaskCredential } from "../src/taskIdentity.js";
 import { tokenizeCsv, inspectCsvTokens, restoreCsvValues, analyzeCsv, parseCsvText } from "../src/csvCore.js";
 import { inspectAlteredTextTokens } from "../src/textCore.js";
 import {
@@ -70,9 +69,3 @@ test("recognizable altered aliases do not silently pass", () => {
   }
 });
 
-test("credential structure is strict and oversized input is never read", async () => {
-  const valid = { version: 1, taskId: "3c9c8560-f817-41e6-a563-84c839a68bb7", marker: "K7M4", verification: "a".repeat(32) };
-  assert.deepEqual(validateCredential(valid), valid);
-  for (const bad of [{ ...valid, mapping: {} }, { ...valid, marker: "abcd" }, { ...valid, verification: "a".repeat(16) }, { ...valid, version: 0 }, []]) assert.throws(() => validateCredential(bad), { code: "INVALID_CREDENTIAL" });
-  await assert.rejects(readTaskCredential({ size: 16385, arrayBuffer() { assert.fail("must not read"); } }), { code: "INVALID_CREDENTIAL" });
-});

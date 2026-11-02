@@ -4,8 +4,10 @@ import { createServer } from "node:http";
 import path from "node:path";
 import { Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
-import { createVaultHandler } from "./app.mjs";
+import { createAppHandler } from "./handler.mjs";
+import { PgOperationsRepository } from "./operations-repository.mjs";
 import { PgVaultRepository } from "./repository.mjs";
+import { SECURITY_HEADERS } from "./security-headers.mjs";
 import { createWeComAuth } from "./session.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -16,6 +18,8 @@ const repository = new PgVaultRepository({
   keyVersion: process.env.VAULT_KEY_VERSION || "v1",
 });
 await repository.initialize(await readFile(path.join(root, "server/schema.sql"), "utf8"));
+const operationsRepository = new PgOperationsRepository({ connectionString: process.env.DATABASE_URL });
+await operationsRepository.initialize(await readFile(path.join(root, "server/operations-schema.sql"), "utf8"));
 const auth = createWeComAuth({
   corpId: process.env.WECOM_CORP_ID,
   agentId: process.env.WECOM_AGENT_ID,
@@ -23,14 +27,11 @@ const auth = createWeComAuth({
   sessionSecret: await secret("SESSION_SECRET", "/run/secrets/session_secret"),
   publicOrigin: process.env.PUBLIC_ORIGIN,
   cookieSecure: process.env.COOKIE_SECURE !== "false",
+  adminUserIds: String(process.env.ADMIN_USER_IDS ?? "").split(",").map(id => id.trim()).filter(Boolean),
 });
-const handleVault = createVaultHandler({ repository, auth });
+const handle = createAppHandler({ vaultRepository: repository, operationsRepository, auth, origin: process.env.PUBLIC_ORIGIN });
 const clientRoot = path.join(root, "dist/client");
-const securityHeaders = {
-  "content-security-policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
-  "x-content-type-options": "nosniff", "referrer-policy": "no-referrer",
-  "permissions-policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
-};
+const securityHeaders = SECURITY_HEADERS;
 
 const mime = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml", ".woff2": "font/woff2" };
 
@@ -41,7 +42,7 @@ const server = createServer(async (req, res) => {
       body: ["GET", "HEAD"].includes(req.method) ? undefined : Readable.toWeb(req),
       duplex: ["GET", "HEAD"].includes(req.method) ? undefined : "half",
     });
-    const response = await handleVault(request);
+    const response = await handle(request);
     if (response) {
       res.writeHead(response.status, { ...securityHeaders, ...Object.fromEntries(response.headers) });
       if (response.body) Readable.fromWeb(response.body).pipe(res); else res.end();
@@ -59,14 +60,15 @@ const server = createServer(async (req, res) => {
   }
 });
 
-const cleanup = setInterval(() => repository.cleanupExpired().catch(() => {}), 60 * 60_000);
+await operationsRepository.cleanupExpired();
+const cleanup = setInterval(() => operationsRepository.cleanupExpired().catch(() => console.error("Operation retention cleanup failed")), 60 * 60_000);
 cleanup.unref();
 const port = Number(process.env.PORT || 8080);
-server.listen(port, "0.0.0.0", () => console.log(`Enterprise Vault listening on ${port}`));
+server.listen(port, "0.0.0.0", () => console.log(`File masking service listening on ${port}`));
 
 for (const signal of ["SIGINT", "SIGTERM"]) process.on(signal, async () => {
   clearInterval(cleanup);
   server.close();
-  await repository.close();
+  await Promise.all([repository.close(), operationsRepository.close()]);
   process.exit(0);
 });

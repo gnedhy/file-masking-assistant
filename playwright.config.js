@@ -2,7 +2,7 @@ import { defineConfig, devices } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./tests/e2e",
-  testIgnore: ["**/central-operations.spec.js", "**/operation-sync.spec.js"],
+  testIgnore: ["**/central-operations.spec.js"],
   // WebKit on Windows can stop delivering animation frames with more parallel pages, which stalls actionability checks.
   // The hosted CI runner only keeps the suite stable one worker at a time.
   workers: process.env.CI ? 1 : 4,

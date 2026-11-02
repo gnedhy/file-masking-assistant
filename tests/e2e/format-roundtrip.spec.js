@@ -5,7 +5,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 const ASSETS = "tests/output/validation-assets";
-const TOKEN = /\[\[[^\]]*@[A-F0-9]{8}\]\]/;
+// Restored files must contain neither the new short tokens nor the older bracket tokens.
+const TOKEN = /\[\[[^\]]*@[A-F0-9]{8}\]\]|(客户|产品|人员|信息)-[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{4}-\d{2,}/;
 const FULL_WORKBOOK = "tests/fixtures/00_完整销售数据.xlsx";
 const PHONE_CSV = "tests/fixtures/02_中英文混合与特殊符号.csv";
 
@@ -97,10 +98,10 @@ async function download(page, name) {
 }
 
 for (const { format, file, without } of CASES) {
-  for (const short of [false, true]) {
-    test(`${format.toUpperCase()} ${short ? "简短" : "标准"}代号往返：${path.basename(file)}`, async ({ page, browserName }, testInfo) => {
+  {
+    test(`${format.toUpperCase()} 往返：${path.basename(file)}`, async ({ page, browserName }, testInfo) => {
       test.skip(testInfo.project.name === "mobile-chromium", "格式往返不依赖视口");
-      test.skip(browserName !== "chromium" && (short || file !== CASES.find((item) => item.format === format).file), "其他浏览器每种格式只跑一个标准样本");
+      test.skip(browserName !== "chromium" && file !== CASES.find((item) => item.format === format).file, "其他浏览器每种格式只跑一个样本");
       test.setTimeout(120000);
 
       const source = await fs.readFile(file);
@@ -109,15 +110,10 @@ for (const { format, file, without } of CASES) {
       await fileInput(page).setInputFiles({ name: path.basename(file), mimeType: "application/octet-stream", buffer: original });
       const generate = page.getByRole("button", { name: "生成脱敏文件" });
       await expect(generate).toBeVisible({ timeout: 20000 });
-      if (short) {
-        await page.locator(".advanced-options > summary").click();
-        await page.getByRole("radio", { name: /简短代号/ }).check();
-      }
       await generate.click();
       if (file === FULL_WORKBOOK) await page.getByRole("button", { name: /^加入这 \d+ 列并重新生成$/ }).click();
       await expect(page.getByRole("link", { name: "下载脱敏文件" })).toBeVisible({ timeout: 30000 });
 
-      const key = short ? await download(page, "下载还原钥匙文件") : null;
       const masked = await download(page, "下载脱敏文件");
       const values = await page.evaluate(async () => {
         const store = await import("/src/vaultStore.js");
@@ -130,11 +126,7 @@ for (const { format, file, without } of CASES) {
       await page.getByRole("button", { name: /导入 AI 处理后的文件/ }).click();
       await expect(page.getByRole("heading", { name: "把处理结果恢复为实名文件" })).toBeVisible();
       await fileInput(page).setInputFiles({ name: masked.name, mimeType: "application/octet-stream", buffer: masked.buffer });
-      if (short) {
-        await expect(page.getByText("待导入还原钥匙文件", { exact: true })).toBeVisible();
-        await page.getByLabel("选择还原钥匙文件", { exact: true }).setInputFiles({ name: key.name, mimeType: "application/json", buffer: key.buffer });
-        await page.getByRole("checkbox", { name: "我确认此文件与以上任务配套" }).check();
-      }
+      await expect(page.locator(".restore-task-match")).toBeVisible();
       await page.getByRole("button", { name: "生成还原文件" }).click();
       await expect(page.getByRole("link", { name: "下载还原文件" })).toBeVisible({ timeout: 30000 });
       const restored = await download(page, "下载还原文件");
@@ -153,7 +145,7 @@ for (const { format, file } of [
     test.skip(testInfo.project.name === "mobile-chromium", "格式往返不依赖视口");
     const vault = JSON.parse(await fs.readFile(`${ASSETS}/00_测试说明/本机映射_仅测试_A14F2026.json`, "utf8"));
     await page.goto("/");
-    await page.evaluate(async (entry) => (await import("/src/vaultStore.js")).saveVault({ version: 1, createdAt: new Date().toISOString(), ...entry }), vault);
+    await page.evaluate(async (entry) => (await import("/src/vaultStore.js")).saveVault({ version: 2, sourceFormat: "html", createdAt: new Date().toISOString(), ...entry }), vault);
     await page.getByRole("button", { name: /^还原处理文件/ }).click();
     await fileInput(page).setInputFiles(file);
     await page.getByRole("button", { name: "生成还原文件" }).click();

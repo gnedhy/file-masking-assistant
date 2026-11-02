@@ -1,9 +1,6 @@
 import { Fragment, lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
-import { readTaskCredential } from "./taskIdentity.js";
-import { CredentialDownload, CredentialInput, PairingConfirmation, TaskIdentityDetails, TokenFormatChoice } from "./ShortTokenControls.jsx";
-import { StorageStatus } from "./StorageStatus.jsx";
+import { TaskIdentityDetails } from "./ShortTokenControls.jsx";
 import { THEME_OPTIONS, ThemeSwitcher } from "./ThemeSwitcher.jsx";
-import { BackupControls } from "./BackupControls.jsx";
 import { ConfirmDialog } from "./ConfirmDialog.jsx";
 import { OperationDrawer } from "./OperationDrawer.jsx";
 import CentralOperations from "./CentralOperations.jsx";
@@ -51,7 +48,7 @@ import {
   inspectRestoreFile,
   restoreSafeFile,
 } from "./fileEngine.js";
-import { ENTERPRISE_VAULT_ENABLED } from "./vaultStore.js";
+import { getSession, signIn } from "./session.js";
 
 const UsagePreview = import.meta.env.DEV ? lazy(() => import("./UsagePreview.jsx")) : null;
 
@@ -70,10 +67,10 @@ const ROUTE_STEPS = [
   { id: "ai", label: "交给 AI 处理", icon: FileXls },
   { id: "restore", label: "本机还原", icon: ShieldCheck },
 ];
-const VAULT_LABEL = ENTERPRISE_VAULT_ENABLED ? "企业 Vault" : "本机还原记录";
+const VAULT_LABEL = "还原记录";
 const TEXT_SIZE_LIMIT_MB = FILE_SIZE_LIMITS.csv / 1024 / 1024;
 const OFFICE_SIZE_LIMIT_MB = FILE_SIZE_LIMITS.xlsx / 1024 / 1024;
-const LOCAL_PROCESSING_COPY = ENTERPRISE_VAULT_ENABLED ? "文件本机处理，还原记录保存在企业 Vault" : "文件本机处理，还原记录加密保存在当前浏览器";
+const LOCAL_PROCESSING_COPY = "文件在浏览器内处理，还原记录加密保存在公司服务器";
 const formatList = (mode) => (mode === "protect" ? SUPPORTED_PROTECT_FORMATS : SUPPORTED_RESTORE_FORMATS).map(format => format.toUpperCase()).join("、");
 
 const MODE_COPY = {
@@ -161,14 +158,14 @@ function LocalTaskTrigger({ localTasks, disabled, onOpen, triggerRef }) {
   const count = localTasks.status === "ready" ? localTasks.count : 0;
   return (
     <button ref={triggerRef} className="local-task-trigger" type="button" disabled={disabled && !count} onClick={onOpen} aria-haspopup="dialog" title={failed ? "暂时无法读取记录" : undefined}>
-      <LockKey aria-hidden="true" weight="duotone" /><span>本机任务</span>{count > 0 && <b>{count}</b>}{failed && <b data-warning="true" aria-label="暂时无法读取记录">!</b>}
+      <LockKey aria-hidden="true" weight="duotone" /><span>我的任务</span>{count > 0 && <b>{count}</b>}{failed && <b data-warning="true" aria-label="暂时无法读取记录">!</b>}
     </button>
   );
 }
 
 const TASK_SEARCH_MIN_COUNT = 5;
 
-function LocalTasksDrawer({ localTasks, currentTaskId, pendingDeleteId, deletingTaskId, error, modal, drawerRef, closeButtonRef, continueDisabled, onClose, onContinueLatest, onRequestDelete, onCancelDelete, onConfirmDelete, onBackupImported }) {
+function LocalTasksDrawer({ localTasks, currentTaskId, pendingDeleteId, deletingTaskId, error, modal, drawerRef, closeButtonRef, continueDisabled, onClose, onContinueLatest, onRequestDelete, onCancelDelete, onConfirmDelete }) {
   const [query, setQuery] = useState("");
   const normalizedQuery = query.trim().toLocaleLowerCase("zh-CN");
   const visibleTasks = normalizedQuery
@@ -179,15 +176,14 @@ function LocalTasksDrawer({ localTasks, currentTaskId, pendingDeleteId, deleting
     <aside className="local-tasks-drawer" id="local-tasks-drawer" ref={drawerRef} role={modal ? "dialog" : undefined} aria-modal={modal || undefined} aria-labelledby="local-tasks-drawer-title">
       <div className="drawer-head">
         <div>
-          <h2 id="local-tasks-drawer-title">本机任务</h2>
+          <h2 id="local-tasks-drawer-title">我的任务</h2>
           <p>{localTasks.count} 个还原任务 · {localTasks.mappingCount} 条还原记录</p>
         </div>
-        <button ref={closeButtonRef} className="icon-button" type="button" onClick={onClose} aria-label="关闭本机任务"><X /></button>
+        <button ref={closeButtonRef} className="icon-button" type="button" onClick={onClose} aria-label="关闭我的任务"><X /></button>
       </div>
 
       <div className="drawer-body">
       {error && <p className="local-tasks-drawer__error" role="alert"><WarningCircle weight="fill" />{error}</p>}
-      {!ENTERPRISE_VAULT_ENABLED && <StorageStatus />}
       {localTasks.latest && <button className="primary-button local-tasks-continue" type="button" disabled={continueDisabled} onClick={onContinueLatest}>选择待还原文件<ArrowRight weight="bold" aria-hidden="true" /></button>}
 
       {localTasks.tasks.length >= TASK_SEARCH_MIN_COUNT && (
@@ -208,7 +204,7 @@ function LocalTasksDrawer({ localTasks, currentTaskId, pendingDeleteId, deleting
         </div>
       )}
 
-      {visibleTasks.length ? <div className="local-task-list" aria-label="本机还原任务列表">
+      {visibleTasks.length ? <div className="local-task-list" aria-label="还原任务列表">
         {visibleTasks.map((task) => {
           const isCurrent = task.taskId === currentTaskId;
           const confirming = pendingDeleteId === task.taskId;
@@ -220,27 +216,25 @@ function LocalTasksDrawer({ localTasks, currentTaskId, pendingDeleteId, deleting
                 <p>{task.marker || task.taskId} · {formatTaskTime(task.createdAt)} · {task.uniqueValues} 条</p>
               </div>
               {task.marker && <TaskIdentityDetails taskId={task.taskId} />}
-              {task.tokenFormat === "short" && <CredentialDownload taskId={task.taskId} marker={task.marker} />}
               {confirming ? (
                 <div className="local-task-row__confirm" role="alert">
-                  <strong>确定删除这项本机还原记录？</strong>
-                  <p>删除后，对应脱敏文件将无法在此浏览器实名还原。</p>
+                  <strong>确定删除这项还原记录？</strong>
+                  <p>删除后无法恢复，对应的脱敏文件将不能再还原。</p>
                   <div>
                     <button type="button" disabled={deleting} onClick={() => onConfirmDelete(task.taskId)}>{deleting ? "正在删除" : "确认删除"}</button>
                     <button type="button" disabled={deleting} onClick={onCancelDelete}>取消</button>
                   </div>
                 </div>
               ) : (
-                <button className="local-task-row__delete" type="button" disabled={isCurrent || Boolean(deletingTaskId)} title={isCurrent ? "当前任务结束后才能删除" : "删除本机还原记录"} onClick={() => onRequestDelete(task.taskId)}>
+                <button className="local-task-row__delete" type="button" disabled={isCurrent || Boolean(deletingTaskId)} title={isCurrent ? "当前任务结束后才能删除" : "删除还原记录"} onClick={() => onRequestDelete(task.taskId)}>
                   <Trash weight="regular" />{isCurrent ? "当前任务" : "删除"}
                 </button>
               )}
             </article>
           );
         })}
-      </div> : <p className="local-tasks-drawer__empty">{localTasks.tasks.length ? "没有找到匹配的任务，请换一个文件名或任务编号。" : "当前浏览器已没有可还原的本机任务。"}</p>}
+      </div> : <p className="local-tasks-drawer__empty">{localTasks.tasks.length ? "没有找到匹配的任务，请换一个文件名或任务编号。" : "还没有还原任务。"}</p>}
       </div>
-      {!ENTERPRISE_VAULT_ENABLED && <BackupControls taskCount={localTasks.count} onImported={onBackupImported} />}
     </aside>
   );
 }
@@ -295,10 +289,10 @@ function EmptyState({ mode, inputRef, isDraggingFile }) {
         ? "松开鼠标，开始读取文件"
         : <><span className="desktop-copy">{copy.emptyTitle}</span><span className="mobile-copy">{mode === "protect" ? "选择待脱敏文件" : "选择 AI 处理后的文件"}</span></>}</strong>
       <span className="empty-state__note">{isDraggingFile
-        ? <>文件只在当前浏览器中处理，不会自动上传到网络</>
+        ? <>文件在浏览器内处理，不会上传</>
         : <><span>支持{supportedCopy}</span><small className="empty-state__limit">文本类上限 {TEXT_SIZE_LIMIT_MB} MB · Office 上限 {OFFICE_SIZE_LIMIT_MB} MB</small></>}</span>
       {!isDraggingFile && <button className="small-button" type="button" onClick={() => inputRef.current?.click()}>选择文件</button>}
-      {mode === "restore" && <span className="same-device-note"><DesktopTower weight="duotone" />请在生成脱敏文件时使用的同一设备和浏览器中还原</span>}
+      {mode === "restore" && <span className="same-device-note"><DesktopTower weight="duotone" />登录同一企业微信账号即可还原，换电脑也可以</span>}
     </div>
   );
 }
@@ -317,7 +311,7 @@ function SelectedFile({ file, onRemove }) {
   );
 }
 
-function ReadyState({ mode, file, analysis, selectedIds, fieldModes = {}, restoreInspection, regenerationNotice, detailsOpen, onRemove, onPrimary, onDetails, tokenFormat, onTokenFormat, pairingConfirmed, onPairing }) {
+function ReadyState({ mode, file, analysis, selectedIds, fieldModes = {}, restoreInspection, regenerationNotice, detailsOpen, onRemove, onPrimary, onDetails }) {
   const selectedCandidates = analysis?.kind === "text" ? analysis.candidates.filter((candidate) => selectedIds.includes(candidate.id)) : [];
   const selectedColumns = (analysis?.columns ?? [])
     .filter((column) => selectedIds.includes(column.id))
@@ -333,12 +327,12 @@ function ReadyState({ mode, file, analysis, selectedIds, fieldModes = {}, restor
     ? analysis?.kind === "text"
       ? `已选择 ${selectedCandidates.length} 项敏感内容，共出现 ${selectedCandidates.reduce((sum, item) => sum + item.count, 0)} 处`
       : `已选择 ${selectedColumns.length} 列，将检查 ${valueCount} ${valueUnit}`
-    : `已识别 ${restoreInspection.formatLabel} · 发现 ${restoreInspection.occurrences} 处代号 · 使用 ${restoreInspection.usedMappings} 条本机还原记录`;
+    : `已识别 ${restoreInspection.formatLabel} · 发现 ${restoreInspection.occurrences} 处代号 · 使用 ${restoreInspection.usedMappings} 条还原记录`;
 
   return (
     <div className="ready-state">
       <SelectedFile file={file} onRemove={onRemove} />
-      {mode === "restore" && restoreInspection.tokenFormat === "short" && <PairingConfirmation inspection={restoreInspection} checked={pairingConfirmed} onChange={onPairing} />}
+      {mode === "restore" && restoreInspection.taskName && <p className="restore-task-match">匹配任务：<strong>{restoreInspection.taskName}</strong> · {formatTaskTime(restoreInspection.createdAt)}</p>}
       {regenerationNotice && (
         <div className="task-change-banner" role="status">
           <WarningCircle weight="duotone" aria-hidden="true" />
@@ -384,13 +378,7 @@ function ReadyState({ mode, file, analysis, selectedIds, fieldModes = {}, restor
         <span><ShieldCheck weight="duotone" /><strong>{mode === "protect" ? analysis?.kind === "text" ? "确认替换内容" : "确认替换列" : `任务编号 ${restoreInspection.marker || restoreInspection.taskId}`}</strong></span>
         <span className="evidence-trigger__action">{mode === "protect" ? "查看并调整" : "查看检查详情"}<CaretRight weight="bold" /></span>
       </button>
-      {mode === "protect" && !ENTERPRISE_VAULT_ENABLED && (
-        <details className="advanced-options" open={tokenFormat === "short" || undefined}>
-          <summary>高级选项<small>{tokenFormat === "short" ? "简短代号（试验）" : "标准代号"}</small></summary>
-          <TokenFormatChoice value={tokenFormat} onChange={onTokenFormat} />
-        </details>
-      )}
-      <button className="primary-button" type="button" onClick={onPrimary} disabled={mode === "protect" ? (!(analysis?.kind === "text" ? selectedCandidates.length : selectedColumns.length) || hasOnlyInlineFields) : restoreInspection.tokenFormat === "short" && !pairingConfirmed}>
+      <button className="primary-button" type="button" onClick={onPrimary} disabled={mode === "protect" ? (!(analysis?.kind === "text" ? selectedCandidates.length : selectedColumns.length) || hasOnlyInlineFields) : false}>
         {MODE_COPY[mode].primary}<ArrowRight weight="bold" />
       </button>
       <div className="trust-line" aria-label="处理边界">
@@ -404,16 +392,16 @@ function ProcessingState({ mode, file, phase = "generate" }) {
   const format = fileFormatFromName(file.name) || "xlsx";
   const inspecting = phase === "inspect";
   const steps = inspecting
-    ? ["读取文件结构", mode === "protect" ? "识别敏感内容" : "识别文件中的代号", mode === "protect" ? "准备替换范围" : "核对本机任务"]
+    ? ["读取文件结构", mode === "protect" ? "识别敏感内容" : "识别文件中的代号", mode === "protect" ? "准备替换范围" : "核对任务"]
     : mode === "protect"
     ? [format === "csv" ? "读取 CSV 表格结构" : ["txt", "md"].includes(format) ? "读取纯文本内容" : format === "docx" ? "复制 Word 文档结构" : "复制工作簿结构", ["txt", "md", "docx"].includes(format) ? "替换已确认内容" : "替换已确认列", "加密保存还原记录并检查残留"]
-    : ["读取本机加密还原记录", "恢复匹配的真实值", "检查残留代号并准备导出"];
+    : ["读取加密还原记录", "恢复匹配的真实值", "检查残留代号并准备导出"];
   return (
     <div className="processing-state" aria-live="polite">
       <FileMark size="medium" format={format} />
       <p className="state-kicker">{inspecting ? "本机检查中" : "本机处理中"}</p>
       <h2>{inspecting ? "正在检查文件" : mode === "protect" ? "正在生成脱敏文件" : "正在生成还原文件"}</h2>
-      <p className="state-description">正在处理 {file.name}。文件内容不会发送到网络。</p>
+      <p className="state-description">正在处理 {file.name}。{mode === "protect" ? "文件不会上传，只有加密后的还原记录保存到公司服务器。" : "文件不会上传。"}</p>
       <div className="progress-track progress-track--indeterminate" aria-hidden="true"><span /></div>
       <ol className="process-steps">
         {steps.map((step, index) => <li key={step} data-state={index === 0 ? "active" : "waiting"}><span>{index + 1}</span>{step}</li>)}
@@ -485,12 +473,12 @@ function AiHandoff({ taskId, marker }) {
         <span>粘贴给 AI，帮助它把代号当作客户、产品或人员继续处理。</span>
       </div>
       {copyState === "manual" && <label className="ai-handoff__manual"><span>自动复制失败，请手动复制：</span><textarea readOnly value={instruction} onFocus={(event) => event.currentTarget.select()} /></label>}
-      <p><DesktopTower weight="duotone" />可以稍后回来，但请使用当前设备和浏览器。</p>
+      <p><DesktopTower weight="duotone" />可以稍后回来，换电脑也能还原。</p>
     </div>
   );
 }
 
-function SuccessState({ mode, result, downloadRequested, detailsOpen, onDetails, onDownloadRequested, onCredentialRequested, onAdjust, onNext, onReset }) {
+function SuccessState({ mode, result, downloadRequested, detailsOpen, onDetails, onDownloadRequested, onAdjust, onNext, onReset }) {
   const protect = mode === "protect";
   const count = protect ? result.replacedCells : result.restoredOccurrences;
   const outputFileName = splitFileName(result.outputName);
@@ -524,15 +512,9 @@ function SuccessState({ mode, result, downloadRequested, detailsOpen, onDetails,
             ? `本机完成 · 已还原 ${count} 处 · ${result.unresolvedOccurrences.length} 处未还原并已标记`
             : hasContentLoss
               ? `本机完成 · 已还原 ${count} 处 · ${result.occurrenceComparison.missing} 处代号未返回`
-            : `本机完成 · 已还原 ${count} 处 · 使用 ${result.usedMappings} 条本机还原记录 · 未发现未还原代号`}</small></span></span>
+            : `本机完成 · 已还原 ${count} 处 · 使用 ${result.usedMappings} 条还原记录 · 未发现未还原代号`}</small></span></span>
         <span className="evidence-trigger__action">查看检查详情<CaretRight weight="bold" /></span>
       </button>
-      {protect && result.credential && <section className="short-token-panel">
-        <strong>简短代号（试验）· 任务编号 {result.marker}</strong>
-        <p>只把脱敏文件交给 AI，还原钥匙文件留在本机。</p>
-        <CredentialDownload result={result.credential} taskId={result.taskId} marker={result.marker} onRequested={onCredentialRequested} />
-        <details><summary>查看本次代号（{result.aliases.length} 个）</summary><div className="short-alias-list">{result.aliases.map(alias => <code key={alias}>{alias}</code>)}</div></details>
-      </section>}
       {handoff && <AiHandoff taskId={result.taskId} marker={result.marker} />}
       {protect ? (
         <>
@@ -567,10 +549,6 @@ function SuccessState({ mode, result, downloadRequested, detailsOpen, onDetails,
 
 const ERROR_PRESENTATION = {
   VAULT_TASK_EXISTS: { title: "任务编号已存在", description: "原还原记录未改动，本次没有生成可下载文件。", guidance: "请重新生成脱敏文件，系统会分配新任务编号。" },
-  CREDENTIAL_REQUIRED: { title: "请补充配套的还原钥匙文件", description: "已识别简短代号，尚未核验其本机任务。", guidance: "在下方导入还原钥匙文件即可继续核对，不需要重新选择当前文件。" },
-  CREDENTIAL_MISMATCH: { title: "还原钥匙文件与任务不匹配", description: "还原钥匙文件、任务编号或本机任务记录未通过核验，已停止还原。", guidance: "请在下方换成正确的还原钥匙文件；也请确认返回文件没有拿错。" },
-  INVALID_CREDENTIAL: { title: "还原钥匙文件无法读取", description: "还原钥匙文件格式、版本或尺寸不符合要求。", guidance: "请从本机任务重新下载原始还原钥匙文件，不要编辑内容；上限为 16 KiB。" },
-  VAULT_UPGRADE_BLOCKED: { title: "旧页面仍在占用本机存储", description: "尚未完成存储结构升级，已有还原记录不会被清理。", guidance: "请关闭其他旧版工具页面，再重新选择当前文件。" },
   NO_COLUMNS: {
     title: "还没有选择脱敏字段",
     description: "当前没有可用于生成脱敏文件的已选字段。",
@@ -592,43 +570,38 @@ const ERROR_PRESENTATION = {
     guidance: "请选择 AI 处理后的脱敏文件；代号被改写时需重新制作。",
   },
   VAULT_NOT_FOUND: {
-    title: "本机缺少这个文件的还原记录",
-    description: "文件中的任务编号存在，但当前设备或浏览器没有对应的还原记录。",
-    guidance: "请回到生成脱敏文件时使用的同一设备和浏览器，或重新制作脱敏文件。",
+    title: "找不到这个文件的还原记录",
+    description: "文件中的任务编号不在你的任务里。记录可能已被删除，或文件是其他同事生成的。",
+    guidance: "请确认文件是你自己生成的；记录删除后无法恢复，需要用原文件重新制作。",
   },
   NO_TEXT_CANDIDATES: {
     title: "还没有选择敏感内容",
     description: "当前没有可用于生成脱敏文件的已选文字。",
     guidance: "返回候选列表，勾选自动识别的内容，或手动添加文件中的完整文字。",
   },
-  VAULT_KEY_MISSING: {
-    title: "本机还原记录的密钥已丢失",
-    description: "任务记录仍在，但当前浏览器已没有解密它所需的本机密钥，因此无法恢复真实内容。",
-    guidance: "无法找回。请用原文件重新制作，并保留本站浏览器数据。",
-  },
-  VAULT_DECRYPT_FAILED: {
-    title: "本机还原记录已经损坏",
-    description: "当前浏览器无法解密这条还原记录，系统已停止还原，避免生成错误实名文件。",
-    guidance: "请使用原始文件重新制作脱敏任务；损坏的还原记录不能安全继续使用。",
-  },
   VAULT_SAVE_FAILED: {
-    title: "无法保存本机还原记录",
-    description: "浏览器存储不可用或空间不足，因此系统没有生成无法还原的脱敏文件。",
-    guidance: "请检查浏览器权限和磁盘空间后重试，不要清除本站数据。",
+    title: "还原记录没有保存成功",
+    description: "公司服务器没有保存成功，因此没有生成无法还原的脱敏文件。",
+    guidance: "请稍后重试；持续失败请联系管理员。",
   },
-  VAULT_QUOTA_EXCEEDED: {
-    title: "本机存储空间不足",
-    description: "还原记录未能保存，因此没有生成脱敏文件。已有任务未被自动删除。",
-    guidance: "请释放磁盘空间，或删除不再需要的本机任务后重试。",
+  VAULT_SERVICE_UNAVAILABLE: {
+    title: "暂时连不上公司服务器",
+    description: "脱敏和还原都需要读取或保存还原记录，服务器不可用时已停止处理。",
+    guidance: "请检查网络后重试；持续失败请联系管理员。",
   },
-  VAULT_STORAGE_FAILED: {
-    title: "当前浏览器无法使用本机还原记录存储",
-    description: "系统无法打开保存还原任务所需的本机存储。",
-    guidance: "请检查隐私模式、浏览器存储权限或可用空间后重试。",
+  VAULT_SERVICE_FAILED: {
+    title: "公司服务器暂时不可用",
+    description: "服务器没有完成请求，系统已停止处理，原文件不受影响。",
+    guidance: "请稍后重试；持续失败请联系管理员。",
+  },
+  AUTH_REQUIRED: {
+    title: "登录已过期",
+    description: "需要重新确认身份才能读取或保存还原记录。",
+    guidance: "请刷新页面重新进入应用，再选择文件。",
   },
   MIXED_TASKS: {
     title: "文件中混入了不同任务的代号",
-    description: "系统无法确认每个代号应该使用哪一份本机还原记录，因此已停止还原。",
+    description: "系统无法确认每个代号应该使用哪一份还原记录，因此已停止还原。",
     guidance: "请使用同一次任务生成的处理文件，不要合并来自不同脱敏文件的内容。",
   },
   UNRESOLVED_TOKENS: {
@@ -659,7 +632,7 @@ const ERROR_PRESENTATION = {
   EMBEDDED_OBJECTS: { title: "文件包含暂不处理的嵌入内容", description: "检测到宏、OLE、ActiveX 或嵌入包，系统已停止输出。", guidance: "请移除嵌入对象并另存为标准 DOCX/PPTX 后再试。" },
   FILE_TOO_LARGE: { title: "文件超过当前安全限制", description: "Office 文件不能超过 20 MB，HTML 不能超过 10 MB。", guidance: "请拆分文件或压缩图片后重试。" },
   PACKAGE_TOO_LARGE: { title: "文件内部结构超过安全限制", description: "解包总量或内部文件项过多，系统已停止处理。", guidance: "请精简文件后重试。" },
-  ALTERED_TOKENS: { title: "有些代号已被改写或截断", description: "系统只还原完整且能由本机还原记录确认的代号。", guidance: "请让 AI 保留完整代号，或重新生成处理文件。" },
+  ALTERED_TOKENS: { title: "有些代号已被改写或截断", description: "系统只还原完整且能由还原记录确认的代号。", guidance: "请让 AI 保留完整代号，或重新生成处理文件。" },
   UNSUPPORTED_CONTENT: { title: "代号出现在不安全或暂不处理的位置", description: "Office 的图表、SmartArt、批注、嵌入内容，或 HTML 的脚本、样式、链接、事件属性中发现代号，因此已停止输出。", guidance: "请把代号放回普通文字或表格后再试。" },
 };
 
@@ -841,7 +814,7 @@ function SecurityDrawer({ mode, status, analysis, selectedIds, fieldModes = {}, 
       <div className="drawer-body">
       {!(mode === "protect" && status === "ready") && <div className={`drawer-summary ${error ? "drawer-summary--warning" : status === "success" ? "" : "drawer-summary--pending"}`}>
         {error ? <WarningCircle weight="fill" /> : status === "success" ? <CheckCircle weight="fill" /> : <Info weight="fill" />}
-        <span><strong>{error ? "安全检查未通过" : status === "success" ? "本机处理已完成" : mode === "protect" ? "请确认替换范围" : "任务已匹配，还原记录可读取"}</strong><small>{error ? "没有生成输出文件" : LOCAL_PROCESSING_COPY}</small></span>
+        <span><strong>{error ? "安全检查未通过" : status === "success" ? "处理已完成" : mode === "protect" ? "请确认替换范围" : "任务已匹配，还原记录可读取"}</strong><small>{error ? "没有生成输出文件" : LOCAL_PROCESSING_COPY}</small></span>
       </div>}
       {error ? (
         <div className="error-diagnosis">
@@ -954,7 +927,7 @@ function SecurityDrawer({ mode, status, analysis, selectedIds, fieldModes = {}, 
       )}
 
       <div className="task-token-note"><ShieldCheck weight="duotone" /><p><strong>处理边界</strong>未选内容、上下文和图片仍可能含敏感信息。</p></div>
-      <p className="drawer-note"><Info weight="duotone" />还原记录加密保存在本浏览器，建议先用文件副本试用。</p>
+      <p className="drawer-note"><Info weight="duotone" />还原记录加密保存在公司服务器，可在“我的任务”中删除。</p>
       </div>
     </aside>
   );
@@ -999,15 +972,10 @@ export function App() {
   const [selectedIds, setSelectedIds] = useState([]);
   const [fieldModes, setFieldModes] = useState({});
   const [restoreInspection, setRestoreInspection] = useState(null);
-  const [tokenFormat, setTokenFormat] = useState("legacy");
-  const [credential, setCredential] = useState(null);
-  const [credentialError, setCredentialError] = useState("");
-  const [pairingConfirmed, setPairingConfirmed] = useState(false);
   const [result, setResult] = useState(null);
   const operationIdRef = useRef(null);
   const recordFileOperation = (action, result, metadata = {}) => recordOperation(action, result, { ...metadata, operationId: operationIdRef.current });
   const [downloadRequested, setDownloadRequested] = useState(false);
-  const [credentialRequested, setCredentialRequested] = useState(false);
   const [regenerationNotice, setRegenerationNotice] = useState(null);
   const [error, setError] = useState(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -1062,20 +1030,20 @@ export function App() {
   }, [themePreference]);
 
   useEffect(() => {
+    getSession().catch(error => { if (error.code === "AUTH_REQUIRED") signIn(); });
+  }, []);
+
+  useEffect(() => {
     refreshLocalTasks();
     const visible = () => { if (document.visibilityState === "visible") refreshLocalTasks(); };
     window.addEventListener("focus", refreshLocalTasks);
     document.addEventListener("visibilitychange", visible);
-    let channel;
-    if (!ENTERPRISE_VAULT_ENABLED && typeof BroadcastChannel !== "undefined") {
-      try { channel = new BroadcastChannel("file-masking-assistant-v2-vault"); channel.onmessage = event => { if (event.data === "changed") refreshLocalTasks(); }; }
-      catch { /* Focus refresh still works if channels are unavailable. */ }
-    }
+    window.addEventListener("vault-changed", refreshLocalTasks);
     return () => {
       taskRefreshSequence.current += 1;
       window.removeEventListener("focus", refreshLocalTasks);
       document.removeEventListener("visibilitychange", visible);
-      channel?.close();
+      window.removeEventListener("vault-changed", refreshLocalTasks);
     };
   }, [refreshLocalTasks]);
 
@@ -1161,28 +1129,25 @@ export function App() {
       setLocalTasks({ status: "ready", ...summary });
       setPendingDeleteId(null);
     } catch {
-      setTaskManagerError("无法删除这项本机还原记录，请稍后重试。原还原记录仍然保留。");
+      setTaskManagerError("无法删除这项还原记录，请稍后重试。原还原记录仍然保留。");
     } finally {
       setDeletingTaskId(null);
     }
   };
 
   const reset = async (nextMode = mode) => {
-    if (mode === "protect" && status === "success" && result && !downloadRequested && !credentialRequested) {
+    if (mode === "protect" && status === "success" && result && !downloadRequested) {
       try {
         await discardLocalTask(result.taskId);
         const summary = await getLocalTaskStatus();
         setLocalTasks({ status: "ready", ...summary });
       } catch {
-        showError(new SafeFileError("VAULT_DELETE_FAILED", "无法清理尚未下载的本机任务，请重试后再切换。"));
+        showError(new SafeFileError("VAULT_DELETE_FAILED", "无法清理尚未下载的任务，请重试后再切换。"));
         return false;
       }
     }
     dragDepthRef.current = 0; setIsDraggingFile(false);
     setMode(nextMode); setStatus("empty"); setFile(null); setAnalysis(null); setSelectedIds([]); setFieldModes({});
-    setTokenFormat("legacy"); setCredential(null); setPairingConfirmed(false);
-    setCredentialError("");
-    setCredentialRequested(false);
     setRestoreInspection(null); setResult(null); setDownloadRequested(false); setRegenerationNotice(null); setError(null); setDetailsOpen(false); setLocalTasksOpen(false);
     return true;
   };
@@ -1200,7 +1165,6 @@ export function App() {
   };
 
   const showError = (caught) => {
-    if (caught?.code === "CREDENTIAL_REQUIRED") { setError(null); setCredentialError(""); setStatus("awaiting-credential"); return; }
     const normalized = caught instanceof SafeFileError
       ? caught
       : caught?.code
@@ -1218,14 +1182,12 @@ export function App() {
 
   const changeMode = async (nextMode, chooseFile = false) => {
     if (nextMode === mode && !chooseFile) return false;
-    if ((file || credential || error || result) && !(await askSwitch())) return false;
+    if ((file || error || result) && !(await askSwitch())) return false;
     return reset(nextMode);
   };
 
   const inspectFile = async (selected) => {
     operationIdRef.current = crypto.randomUUID();
-    setPairingConfirmed(false);
-    setCredentialError("");
     dragDepthRef.current = 0; setIsDraggingFile(false);
     const format = fileFormatFromName(selected.name);
     recordFileOperation(`import_${mode}`, "requested", { inputName: selected.name, format });
@@ -1243,14 +1205,14 @@ export function App() {
         setSelectedIds(nextAnalysis.kind === "text" ? nextAnalysis.suggestedCandidateIds : nextAnalysis.suggestedColumnIds);
         setFieldModes(nextAnalysis.kind === "text" ? {} : Object.fromEntries(nextAnalysis.columns.map((column) => [column.id, column.recommendedMode ?? "whole"])));
       } else {
-        const inspection = await inspectRestoreFile(selected, { credential });
+        const inspection = await inspectRestoreFile(selected);
         setRestoreInspection(inspection);
         recordFileOperation("inspect_restore", inspection.occurrenceComparison?.missing ? "missing" : "success", { ...inspection, inputName: selected.name });
       }
       if (mode === "protect") recordFileOperation("inspect_protect", "success", { format, inputName: selected.name });
       setStatus("ready");
     } catch (caught) {
-      recordFileOperation(`inspect_${mode}`, caught?.code === "CREDENTIAL_REQUIRED" ? "waiting" : "failed", { format, inputName: selected.name });
+      recordFileOperation(`inspect_${mode}`, "failed", { format, inputName: selected.name });
       showError(caught);
     }
   };
@@ -1261,30 +1223,6 @@ export function App() {
     event.target.value = "";
   };
 
-  const importCredential = async (selected) => {
-    setPairingConfirmed(false); setRestoreInspection(null); setCredential(null);
-    setCredentialError("");
-    if (file) setStatus("inspecting");
-    let next;
-    try {
-      next = await readTaskCredential(selected);
-      recordFileOperation("import_credential", "success", next);
-    } catch (caught) {
-      recordFileOperation("import_credential", "failed");
-      setCredentialError(caught.message); setError(null); setStatus(file ? "awaiting-credential" : "empty"); return;
-    }
-    try {
-      setCredential(next);
-      if (file) {
-        setStatus("inspecting");
-        const inspection = await inspectRestoreFile(file, { credential: next });
-        setRestoreInspection(inspection);
-        recordFileOperation("inspect_restore", inspection.occurrenceComparison?.missing ? "missing" : "success", { ...inspection, inputName: file.name });
-        setStatus("ready"); setError(null);
-      }
-      else { setStatus("empty"); setError(null); }
-    } catch (caught) { recordFileOperation("inspect_restore", "failed", { format: fileFormatFromName(file?.name ?? ""), inputName: file?.name }); showError(caught); }
-  };
 
   const hasDraggedFiles = (event) => Array.from(event.dataTransfer?.types ?? []).includes("Files");
   const handleDragEnter = (event) => {
@@ -1316,7 +1254,6 @@ export function App() {
   };
 
   const processFile = async ({ ids = selectedIds, modes = fieldModes } = {}) => {
-    setCredentialRequested(false);
     setStatus("processing"); setError(null); setDetailsOpen(false); setDownloadRequested(false); setRegenerationNotice(null);
     try {
       let output;
@@ -1326,9 +1263,9 @@ export function App() {
           : analysis.columns
             .filter((column) => ids.includes(column.id))
             .map((column) => ({ ...column, processingMode: modes[column.id] ?? column.recommendedMode ?? "whole" }));
-        output = await createSafeFile(file, selection, { tokenFormat });
+        output = await createSafeFile(file, selection);
       } else {
-        output = await restoreSafeFile(file, restoreInspection.taskId, { credential, pairingConfirmed });
+        output = await restoreSafeFile(file, restoreInspection.taskId);
       }
       output = { ...output, inputName: file.name, operationId: operationIdRef.current, ...(mode === "restore" ? { marker: restoreInspection.marker } : {}) };
       setResult(output); setStatus("success");
@@ -1343,14 +1280,14 @@ export function App() {
 
   const adjustProtection = async () => {
     const previousResult = result;
-    const wasDownloaded = downloadRequested || credentialRequested;
+    const wasDownloaded = downloadRequested;
     if (!wasDownloaded) {
       try {
         await discardLocalTask(previousResult.taskId);
         const summary = await getLocalTaskStatus();
         setLocalTasks({ status: "ready", ...summary });
       } catch {
-        showError(new SafeFileError("VAULT_DELETE_FAILED", "无法清理尚未下载的本机任务，请重试后再调整字段。"));
+        showError(new SafeFileError("VAULT_DELETE_FAILED", "无法清理尚未下载的任务，请重试后再调整字段。"));
         return;
       }
     }
@@ -1403,11 +1340,10 @@ export function App() {
 
   let mainState;
   if (status === "empty") mainState = <EmptyState mode={mode} inputRef={inputRef} isDraggingFile={isDraggingFile} />;
-  else if (status === "awaiting-credential") mainState = <div className="ready-state"><SelectedFile file={file} onRemove={() => reset(mode)} /><div className="task-change-banner" role="status"><Info /><span><strong>待导入还原钥匙文件</strong><small>请选择这个文件配套的还原钥匙文件。</small></span></div></div>;
   else if (status === "inspecting") mainState = <ProcessingState mode={mode} file={file} phase="inspect" />;
-  else if (status === "ready") mainState = <ReadyState mode={mode} file={file} analysis={analysis} selectedIds={selectedIds} fieldModes={fieldModes} restoreInspection={restoreInspection} regenerationNotice={regenerationNotice} detailsOpen={detailsOpen} onRemove={() => reset(mode)} onPrimary={processFile} onDetails={openDetails} tokenFormat={tokenFormat} onTokenFormat={setTokenFormat} pairingConfirmed={pairingConfirmed} onPairing={setPairingConfirmed} />;
+  else if (status === "ready") mainState = <ReadyState mode={mode} file={file} analysis={analysis} selectedIds={selectedIds} fieldModes={fieldModes} restoreInspection={restoreInspection} regenerationNotice={regenerationNotice} detailsOpen={detailsOpen} onRemove={() => reset(mode)} onPrimary={processFile} onDetails={openDetails} />;
   else if (status === "processing") mainState = <ProcessingState mode={mode} file={file} />;
-  else if (status === "success") mainState = <SuccessState mode={mode} result={result} downloadRequested={downloadRequested} detailsOpen={detailsOpen} onDetails={openDetails} onDownloadRequested={() => setDownloadRequested(true)} onCredentialRequested={() => setCredentialRequested(true)} onAdjust={adjustProtection} onNext={openRestorePicker} onReset={() => reset(mode)} />;
+  else if (status === "success") mainState = <SuccessState mode={mode} result={result} downloadRequested={downloadRequested} detailsOpen={detailsOpen} onDetails={openDetails} onDownloadRequested={() => setDownloadRequested(true)} onAdjust={adjustProtection} onNext={openRestorePicker} onReset={() => reset(mode)} />;
   else mainState = <ErrorState mode={mode} error={error} canAdjustFields={canAdjustFailedProtectionSelection} residualColumns={residualColumns} onAddResidualColumns={addResidualColumns} onAdjustFields={adjustFailedProtectionSelection} onReset={() => reset(mode)} onDetails={openDetails} onBackToProtect={() => reset("protect")} />;
 
   const routeStage = mode === "restore" ? "restore" : status === "success" && downloadRequested ? "ai" : "protect";
@@ -1415,10 +1351,9 @@ export function App() {
   return (
     <div className="app" data-mode={mode}>
       <header className="app-header" inert={detailsOpen || localTasksOpen || auditOpen || switchPrompt}>
-        <div className="brand"><span className="brand__mark" aria-hidden="true"><ShieldCheck weight="duotone" /></span><div><strong>文件脱敏助手</strong>{ENTERPRISE_VAULT_ENABLED && <span>文件本机处理，还原记录同步到企业 Vault。</span>}</div></div>
+        <div className="brand"><span className="brand__mark" aria-hidden="true"><ShieldCheck weight="duotone" /></span><div><strong>文件脱敏助手</strong></div></div>
         <BoundaryRoute stage={routeStage} />
         <div className="local-status">
-          {ENTERPRISE_VAULT_ENABLED && <><span><DesktopTower weight="duotone" />企业模式</span><i aria-hidden="true" /></>}
           <ThemeSwitcher value={themePreference} onChange={setThemePreference} />
           <button className="audit-trigger" type="button" title={auditIncomplete ? "操作记录：有记录未能保存" : "操作记录"} aria-label="操作记录" aria-haspopup="dialog" aria-expanded={auditOpen} onClick={event => { drawerTriggerRef.current = event.currentTarget; setAuditOpen(true); }}><ClockCounterClockwise aria-hidden="true" weight="bold" /><span>操作记录</span>{auditIncomplete && <b aria-label="有操作记录未保存">!</b>}</button>
         </div>
@@ -1439,13 +1374,12 @@ export function App() {
           </div>
           <section className="workbench" data-status={status} data-dragging={isDraggingFile} onDragEnter={handleDragEnter} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop} aria-label={MODE_COPY[mode].title}>
             {mainState}
-            {mode === "restore" && !ENTERPRISE_VAULT_ENABLED && status !== "success" && (status !== "error" || /CREDENTIAL/.test(error?.code ?? "")) && <CredentialInput credential={credential} required={status === "awaiting-credential"} error={credentialError} disabled={status === "processing" || status === "inspecting"} onChange={importCredential} />}
           </section>
           <MobileProgress stage={routeStage} />
           <input ref={inputRef} className="visually-hidden" type="file" accept={(mode === "protect" ? SUPPORTED_PROTECT_FORMATS : SUPPORTED_RESTORE_FORMATS).map(format => `.${format}`).join(",")} tabIndex={-1} aria-label={`选择待${mode === "protect" ? "脱敏" : "还原"}的 ${formatList(mode)} 文件`} onChange={handleFileInput} />
         </section>
         {detailsOpen && <><button className="drawer-scrim" type="button" tabIndex={-1} onClick={closeDetails} aria-label="关闭详情" /><SecurityDrawer mode={mode} status={status} analysis={analysis} selectedIds={selectedIds} fieldModes={fieldModes} restoreInspection={restoreInspection} result={result} error={error} modal drawerRef={drawerRef} closeButtonRef={closeButtonRef} onClose={closeDetails} onToggleColumn={toggleProtectionColumn} onModeChange={changeProtectionMode} onAddCandidate={addTextCandidate} onRemoveCandidate={removeTextCandidate} onSetSelection={setSelectedIds} /></>}
-        {localTasksOpen && <><button className="drawer-scrim drawer-scrim--local" type="button" tabIndex={-1} onClick={closeLocalTasks} aria-label="关闭本机任务" /><LocalTasksDrawer localTasks={localTasks} continueDisabled={status === "processing" || status === "inspecting"} onContinueLatest={continueLatestTask} currentTaskId={result?.taskId ?? restoreInspection?.taskId ?? null} pendingDeleteId={pendingDeleteId} deletingTaskId={deletingTaskId} error={taskManagerError} modal drawerRef={localTasksDrawerRef} closeButtonRef={localTasksCloseButtonRef} onClose={closeLocalTasks} onRequestDelete={setPendingDeleteId} onCancelDelete={() => setPendingDeleteId(null)} onConfirmDelete={deleteLocalTask} onBackupImported={refreshLocalTasks} /></>}
+        {localTasksOpen && <><button className="drawer-scrim drawer-scrim--local" type="button" tabIndex={-1} onClick={closeLocalTasks} aria-label="关闭我的任务" /><LocalTasksDrawer localTasks={localTasks} continueDisabled={status === "processing" || status === "inspecting"} onContinueLatest={continueLatestTask} currentTaskId={result?.taskId ?? restoreInspection?.taskId ?? null} pendingDeleteId={pendingDeleteId} deletingTaskId={deletingTaskId} error={taskManagerError} modal drawerRef={localTasksDrawerRef} closeButtonRef={localTasksCloseButtonRef} onClose={closeLocalTasks} onRequestDelete={setPendingDeleteId} onCancelDelete={() => setPendingDeleteId(null)} onConfirmDelete={deleteLocalTask} /></>}
       </main>
       {auditOpen && <><button className="drawer-scrim" type="button" tabIndex={-1} onClick={closeAudit} aria-label="关闭记录遮罩" /><OperationDrawer drawerRef={auditDrawerRef} closeButtonRef={auditCloseButtonRef} onClose={closeAudit} onPreview={async view => { await closeAudit(); setUsagePreview(view); }} /></>}
       {switchPrompt && <ConfirmDialog title="切换任务？" message="切换后将清空当前页面选择，原文件不变。" confirmLabel="切换并清空" onClose={closeSwitchPrompt} />}

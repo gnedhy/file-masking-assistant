@@ -1,9 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { randomUUID,createHmac } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { validateEvent,buildFilter,PgOperationsRepository } from '../server/operations-repository.mjs';
-import { createOperationsHandler,TEST_USERS } from '../server/operations-app.mjs';
+import { createOperationsHandler } from '../server/operations-app.mjs';
+const TEST_USERS={admin:{userId:'test-admin',userName:'测试管理员',isAdmin:true},alice:{userId:'test-alice',userName:'测试员工甲',isAdmin:false},bob:{userId:'test-bob',userName:'测试员工乙',isAdmin:false}};
+// The shared WeCom session is stubbed here: a cookie names the test user and carries a fixed CSRF token.
+const auth={authenticate:request=>{const user=/session=([a-z]+)/.exec(request.headers.get('cookie')||'')?.[1];return TEST_USERS[user]?{...TEST_USERS[user],csrf:'csrf-'+user}:null;}};
 const event=()=>({version:1,eventId:randomUUID(),operationId:randomUUID(),time:new Date().toISOString(),action:'protect',result:'success',taskId:'ABC12345',format:'txt',inputName:'=测试.txt',outputName:'脱敏.txt'});
 
 test('single-connection exports finish concurrently without holding a second connection',{skip:!process.env.OPERATIONS_TEST_DATABASE_URL},async()=>{
@@ -11,18 +14,16 @@ test('single-connection exports finish concurrently without holding a second con
   if(!new URL(url).pathname.endsWith('_test'))throw new Error('Test database required');
   const repo=new PgOperationsRepository({connectionString:url});repo.pool.options.max=1;
   await repo.initialize(await readFile(new URL('../server/operations-schema.sql',import.meta.url),'utf8'));
-  const prior=process.env.NODE_ENV;process.env.NODE_ENV='test';
-  const origin='http://127.0.0.1:4175',secret='x'.repeat(32),taskId=randomUUID();
-  const handler=createOperationsHandler({repository:repo,origin,sessionSecret:secret,testMode:true,testSecret:secret});
+  const origin='http://127.0.0.1:4175',taskId=randomUUID();
+  const handler=createOperationsHandler({repository:repo,origin,auth});
   try {
     await repo.append(TEST_USERS.alice,{...event(),taskId});
-    const login=await handler(new Request(origin+'/__test/session',{method:'POST',headers:{origin,'content-type':'application/json','x-test-secret':secret},body:JSON.stringify({user:'alice'})}));
-    const session=await login.json(),cookie=login.headers.get('set-cookie').split(';')[0];
+    const session={csrf:'csrf-alice'},cookie='session=alice';
     await Promise.all(Array.from({length:3},async()=>{
       const response=await handler(new Request(origin+'/api/v1/operation-events/export',{method:'POST',headers:{origin,cookie,'content-type':'application/json','x-csrf-token':session.csrf},body:JSON.stringify({query:taskId})}));
       assert.equal(response.status,200);const csv=await response.text();assert.ok(csv.includes(taskId));assert.ok(!csv.includes('导出操作记录'));
     }));
-  } finally {await repo.pool.query('DELETE FROM operation_events WHERE task_id=$1',[taskId]);await repo.close();if(prior===undefined)delete process.env.NODE_ENV;else process.env.NODE_ENV=prior;}
+  } finally {await repo.pool.query('DELETE FROM operation_events WHERE task_id=$1',[taskId]);await repo.close();}
 });
 test('event whitelist, task formats, timestamps and basename protection',()=>{
   assert.equal(validateEvent({...event(),inputName:'C:\\secret\\测试.txt'}).inputName,'测试.txt');
@@ -35,35 +36,30 @@ test('filters always scope ordinary users and parameterize literal search',()=>{
   assert.ok(f.sql.includes('owner_user_id = $1'));assert.ok(!f.sql.includes('OR TRUE'));assert.equal(f.values[0],'test-alice');assert.ok(f.sql.includes('Asia/Shanghai'));
   for(const bad of [{from:'2026-02-31'},{to:'9999-99-99'},{page:0},{format:'exe'},{result:'ok'},{userId:'forged'},null])assert.throws(()=>buildFilter(TEST_USERS.admin,bad));
 });
-test('HTTP test sessions, CSRF, disabled Vault, limits and unauthorized requests',async()=>{
-  const previous=process.env.NODE_ENV;process.env.NODE_ENV='test';
+test('shared sessions, CSRF, origin checks, limits and route hand-off',async()=>{
   const calls=[];const repo={ready:async()=>{},append:async(s,e)=>{validateEvent(e);calls.push(s);return'accepted';},list:async(s,f)=>{buildFilter(s,f);return{records:[],total:0,page:1,pageSize:10};},async *exportRows(){yield [{...event(),userName:'测试甲'}];}};
-  const origin='http://127.0.0.1:4175';const secret='x'.repeat(32);const handler=createOperationsHandler({repository:repo,origin,sessionSecret:secret,testMode:true,testSecret:secret});
+  const origin='http://127.0.0.1:4175';const handler=createOperationsHandler({repository:repo,origin,auth});
   const request=(path,method='GET',body,headers={})=>handler(new Request(origin+path,{method,headers:{origin,'content-type':'application/json',...headers},...(body?{body:JSON.stringify(body)}:{})}));
-  try{
-    assert.equal((await request('/api/v1/session')).status,401);
-    assert.equal((await request('/api/v1/vault-tasks')).status,404);
-    assert.equal((await request('/__test/session','POST',{user:'alice'})).status,403);
-    const login=await request('/__test/session','POST',{user:'alice'},{'x-test-secret':secret});assert.equal(login.status,200);
-    const session=await login.json();const cookie=login.headers.get('set-cookie').split(';')[0];assert.ok(login.headers.get('set-cookie').includes('HttpOnly'));
-    const headers={cookie,'x-csrf-token':session.csrf};
-    assert.equal((await request('/api/v1/session','GET',null,{cookie:cookie+'tampered'})).status,401);
-    const expired=Buffer.from(JSON.stringify({subject:'admin',csrf:'forged',exp:Date.now()-1})).toString('base64url');
-    const signature=createHmac('sha256',secret).update(expired).digest('base64url');
-    assert.equal((await request('/api/v1/session','GET',null,{cookie:`ops_session=${expired}.${signature}`})).status,401);
-    assert.equal((await request('/api/v1/operation-events/batch','POST',{events:[event()]},{cookie})).status,403);
-    assert.equal((await request('/api/v1/operation-events?user=test-bob','GET',null,headers)).status,403);
-    assert.equal((await request('/api/v1/operation-events/batch','POST',{events:[event()]},headers)).status,200);
-    assert.equal(calls[0].userId,'test-alice');
-    assert.equal((await request('/api/v1/session','GET',null,{cookie,origin:'https://evil.test'})).status,403);
-    assert.equal((await request('/api/v1/operation-events?userId=forged','GET',null,headers)).status,400);
-    assert.equal((await request('/api/v1/operation-events?to=9999-99-99','GET',null,headers)).status,400);
-    const exported=await request('/api/v1/operation-events/export','POST',{format:'txt'},headers);
-    assert.equal(exported.status,200);const csv=await exported.text();assert.ok(csv.includes('筛选范围'));assert.ok(csv.includes('test-alice'));assert.ok(csv.includes("'=测试.txt"));
-    const bad=await request('/api/v1/operation-events/batch','POST',{events:[{...event(),mapping:'private'}]},headers);assert.equal((await bad.json()).results[0].status,'rejected');
-    assert.equal((await request('/api/v1/operation-events/batch','POST',{events:Array.from({length:101},event)},headers)).status,400);
-    const disabled=createOperationsHandler({repository:repo,origin,sessionSecret:secret});assert.equal((await disabled(new Request(origin+'/__test/session'))).status,404);
-  }finally{if(previous===undefined)delete process.env.NODE_ENV;else process.env.NODE_ENV=previous;}
+  const cookie='session=alice';const headers={cookie,'x-csrf-token':'csrf-alice'};
+  assert.equal((await request('/api/v1/operation-events')).status,401);
+  assert.equal(await request('/api/v1/vault-tasks','GET',null,headers),null);
+  assert.equal(await request('/api/v1/session','GET',null,headers),null);
+  assert.equal(await request('/auth/wecom/callback'),null);
+  assert.equal(await request('/__test/session','POST',{user:'alice'}),null);
+  assert.equal((await request('/api/v1/operation-events','GET',null,{cookie:'session=mallory'})).status,401);
+  assert.equal((await request('/api/v1/operation-events/batch','POST',{events:[event()]},{cookie})).status,403);
+  assert.equal((await request('/api/v1/operation-events?user=test-bob','GET',null,headers)).status,403);
+  assert.equal((await request('/api/v1/operation-events/batch','POST',{events:[event()]},headers)).status,200);
+  assert.equal(calls[0].userId,'test-alice');
+  assert.equal((await request('/api/v1/operation-events','GET',null,{...headers,origin:'https://evil.test'})).status,403);
+  assert.equal((await request('/api/v1/operation-events','GET',null,{...headers,'sec-fetch-site':'cross-site'})).status,403);
+  assert.equal((await request('/api/v1/operation-events?userId=forged','GET',null,headers)).status,400);
+  assert.equal((await request('/api/v1/operation-events?to=9999-99-99','GET',null,headers)).status,400);
+  const exported=await request('/api/v1/operation-events/export','POST',{format:'txt'},headers);
+  assert.equal(exported.status,200);const csv=await exported.text();assert.ok(csv.includes('筛选范围'));assert.ok(csv.includes('test-alice'));assert.ok(csv.includes("'=测试.txt"));
+  const bad=await request('/api/v1/operation-events/batch','POST',{events:[{...event(),mapping:'private'}]},headers);assert.equal((await bad.json()).results[0].status,'rejected');
+  assert.equal((await request('/api/v1/operation-events/batch','POST',{events:Array.from({length:101},event)},headers)).status,400);
+  assert.equal((await request('/healthz')).status,200);
 });
 
 test('PostgreSQL isolation, duplicate conflict, pagination, statistics and export',{skip:!process.env.OPERATIONS_TEST_DATABASE_URL},async()=>{

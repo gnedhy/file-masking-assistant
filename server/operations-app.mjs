@@ -1,10 +1,9 @@
-import { createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
+import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { OPERATION_LABELS, OPERATION_RESULTS } from '../src/operationLog.js';
 import { buildFilter } from './operations-repository.mjs';
 
 const json=(data,status=200,headers={})=>new Response(JSON.stringify(data),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store',...headers}});
 const equal=(a,b)=>typeof a==='string'&&typeof b==='string'&&Buffer.byteLength(a)===Buffer.byteLength(b)&&timingSafeEqual(Buffer.from(a),Buffer.from(b));
-export const TEST_USERS = {admin:{userId:'test-admin',userName:'测试管理员',isAdmin:true},alice:{userId:'test-alice',userName:'测试员工甲',isAdmin:false},bob:{userId:'test-bob',userName:'测试员工乙',isAdmin:false}};
 async function readJson(request) {
   if (!(request.headers.get('content-type') || '').startsWith('application/json')) throw Object.assign(new Error('JSON_REQUIRED'),{status:415});
   const reader=request.body?.getReader(); let size=0; const parts=[];
@@ -14,18 +13,8 @@ async function readJson(request) {
 }
 const csvCell=value=>{let s=String(value??'');if(/^[\s\uFEFF]*[=+@-]/u.test(s)||/^[\t\r\n]/.test(s))s="'"+s;return '"'+s.replaceAll('"','""')+'"';};
 const csvLine=row=>row.map(csvCell).join(',')+'\r\n';
-export function createOperationsHandler({repository,origin,sessionSecret,testMode=false,testSecret}) {
-  if(!origin||typeof sessionSecret!=='string'||Buffer.byteLength(sessionSecret)<32) throw new Error('Operations origin and 32-byte session secret required');
-  if(testMode&&(!testSecret||Buffer.byteLength(testSecret)<32||process.env.NODE_ENV!=='test')) throw new Error('Test identity requires NODE_ENV=test and 32-byte secret');
-  if(testMode&&!['127.0.0.1','localhost','[::1]'].includes(new URL(origin).hostname))throw new Error('Test identity requires a loopback origin');
-  const secure=new URL(origin).protocol==='https:';
-  const sign=s=>createHmac('sha256',sessionSecret).update(s).digest('base64url');
-  const authenticate=request=>{
-    const cookie=String(request.headers.get('cookie')||'').split(';').map(s=>s.trim()).find(s=>s.startsWith('ops_session='))?.slice(12);
-    if(!cookie)return null;
-    const [value,sig,...rest]=cookie.split('.'); if(rest.length||!equal(sign(value),sig))return null;
-    try { const s=JSON.parse(Buffer.from(value,'base64url').toString()); return s.exp>Date.now()&&TEST_USERS[s.subject]&&testMode?{...TEST_USERS[s.subject],csrf:s.csrf,operations:true}:null; } catch{return null;}
-  };
+export function createOperationsHandler({repository,origin,auth}) {
+  if(!origin||!auth)throw new Error('Operations origin and auth required');
   const rates=new Map();
   const limit=key=>{const now=Date.now();let r=rates.get(key);if(!r||r.until<now)r={n:0,until:now+60000};r.n++;rates.set(key,r);if(rates.size>10000)for(const[k,v]of rates)if(v.until<now)rates.delete(k);if(r.n>120)throw Object.assign(new Error('RATE_LIMITED'),{status:429});};
   return async request=>{
@@ -33,23 +22,13 @@ export function createOperationsHandler({repository,origin,sessionSecret,testMod
     try {
       if(path==='/healthz')return json({status:'ok'});
       if(path==='/readyz'){try{await repository.ready();return json({status:'ready'});}catch{return json({code:'DATABASE_UNAVAILABLE'},503);}}
+      if(!path.startsWith('/api/'))return null;
       if(request.headers.get('origin')&&request.headers.get('origin')!==origin)return json({code:'ORIGIN_DENIED'},403);
       if(request.headers.get('sec-fetch-site')==='cross-site')return json({code:'ORIGIN_DENIED'},403);
-      if(path==='/__test/session') {
-        if(!testMode)return json({code:'NOT_FOUND'},404);
-        if(request.method!=='POST'||request.headers.get('origin')!==origin||!equal(request.headers.get('x-test-secret'),testSecret))return json({code:'FORBIDDEN'},403);
-        limit('test-login'); const body=await readJson(request);
-        if(!body||Object.keys(body).some(k=>k!=='user')||typeof body.user!=='string'||!Object.hasOwn(TEST_USERS,body.user))return json({code:'INVALID_USER'},400);
-        const csrf=randomBytes(24).toString('base64url');const value=Buffer.from(JSON.stringify({subject:body.user,csrf,exp:Date.now()+3600000})).toString('base64url');
-        return json({...TEST_USERS[body.user],csrf,operations:true},200,{'set-cookie':`ops_session=${value}.${sign(value)}; Path=/; HttpOnly; SameSite=Strict; Max-Age=3600${secure?'; Secure':''}`});
-      }
-      if(!path.startsWith('/api/'))return null;
-      // No Vault route is registered in the operation-only service.
-      if(!['/api/v1/session','/api/v1/operation-events/batch','/api/v1/operation-events','/api/v1/operation-statistics','/api/v1/operation-events/export'].includes(path))return json({code:'NOT_FOUND'},404);
-      const session=authenticate(request); if(!session)return json({code:'AUTH_REQUIRED',message:'身份已过期，记录仍保留在本机待同步。'},401);
+      if(!['/api/v1/operation-events/batch','/api/v1/operation-events','/api/v1/operation-statistics','/api/v1/operation-events/export'].includes(path))return null;
+      const session=auth.authenticate(request); if(!session)return json({code:'AUTH_REQUIRED',message:'身份已过期，请重新进入应用。'},401);
       limit(session.userId);
       if(request.method!=='GET'&&(request.headers.get('origin')!==origin||!equal(request.headers.get('x-csrf-token'),session.csrf)))return json({code:'CSRF_DENIED'},403);
-      if(path==='/api/v1/session'&&request.method==='GET')return json(session);
       if(path==='/api/v1/operation-events/batch'&&request.method==='POST'){
         const body=await readJson(request);if(!body||Object.keys(body).some(k=>k!=='events')||!Array.isArray(body.events)||!body.events.length||body.events.length>100)throw new Error('INVALID_BATCH');
         const results=[];

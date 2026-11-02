@@ -4,17 +4,16 @@ import path from "node:path";
 import JSZip from "jszip";
 import { chooseTheme } from "./theme-helper.js";
 
-test("中文多工作表的字段标签独立关联，替换方式与代号格式说明明确", async ({ page }) => {
+const SHORT_TOKEN = /(客户|产品|人员|信息)-[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{4}-\d{2,}/;
+
+test("中文多工作表的字段标签独立关联，替换方式说明明确，不再提供代号格式选择", async ({ page }) => {
   const { default: ExcelJS } = await import("exceljs");
   const workbook = new ExcelJS.Workbook();
   workbook.addWorksheet("部门维度").addRows([["部门"], ["虚构部门"]]);
   workbook.addWorksheet("公司维度").addRows([["公司名称"], ["虚构公司"]]);
   await page.goto("/");
   await page.locator('input[type="file"]:not([accept=".json"])').setInputFiles({ name: "虚构多表.xlsx", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", buffer: Buffer.from(await workbook.xlsx.writeBuffer()) });
-  await expect(page.locator(".advanced-options > summary")).toContainText("标准代号");
-  await page.locator(".advanced-options > summary").click();
-  await expect(page.getByRole("group", { name: "代号格式", exact: true })).toBeVisible();
-  await expect(page.getByRole("radio", { name: "标准代号（默认）", exact: true })).toBeChecked();
+  await expect(page.getByText("代号格式")).toHaveCount(0);
   await page.getByRole("button", { name: /确认替换列/ }).click();
   const drawer = page.getByRole("dialog", { name: "替换列", exact: true });
   await expect(drawer.getByText("勾选需要保护的列；替换方式按列名自动推荐，可手动调整。")).toBeVisible();
@@ -117,7 +116,7 @@ test("390px 操作记录可访问且两种模式保持一致布局", async ({ pa
   const taskPanel = page.locator(".local-task-trigger");
   const workbench = page.locator(".workbench");
   await expect(taskPanel).toBeVisible();
-  await expect(page.getByRole("button", { name: /^本机任务/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^我的任务/ })).toBeVisible();
   expect((await taskPanel.boundingBox()).height).toBeLessThan(110);
   await expect(page.getByText("选择待脱敏文件", { exact: true })).toBeVisible();
   const chooseFileBox = await page.getByRole("button", { name: "选择文件" }).boundingBox();
@@ -126,11 +125,12 @@ test("390px 操作记录可访问且两种模式保持一致布局", async ({ pa
   await page.evaluate(async () => {
     const store = await import("/src/vaultStore.js");
     await store.saveVault({
-      version: 1,
-      taskId: "MOBILE01",
+      version: 2,
+      taskId: "A0B1C2D3",
       taskName: "移动端续接任务",
+      sourceFormat: "txt",
       createdAt: new Date().toISOString(),
-      mapping: { "[[C001@MOBILE01]]": { value: { type: "string", value: "测试客户" } } },
+      mapping: { "[[C001@A0B1C2D3]]": { value: { type: "string", value: "测试客户" } } },
     });
   });
   await page.reload();
@@ -157,23 +157,6 @@ test("390px 操作记录可访问且两种模式保持一致布局", async ({ pa
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
-test("两个浏览器标签页首次并发创建任务不会覆盖加密密钥", async ({ browser }) => {
-  const context = await browser.newContext();
-  const [pageA, pageB] = await Promise.all([context.newPage(), context.newPage()]);
-  await Promise.all([pageA.goto("/"), pageB.goto("/")]);
-  const save = (page, taskId) => page.evaluate(async (id) => {
-    const store = await import("/src/vaultStore.js");
-    await store.saveVault({ version: 2, taskId: id, taskName: id, createdAt: new Date().toISOString(), sourceFormat: "txt", mapping: { [`[[C001@${id}]]`]: id } });
-  }, taskId);
-  await Promise.all([save(pageA, "AAAA0001"), save(pageB, "BBBB0002")]);
-  const loaded = await pageA.evaluate(async () => {
-    const store = await import("/src/vaultStore.js");
-    return Promise.all([store.loadVault("AAAA0001"), store.loadVault("BBBB0002")]);
-  });
-  expect(loaded.map((item) => item.taskId)).toEqual(["AAAA0001", "BBBB0002"]);
-  await context.close();
-});
-
 test("CSV 文件选择、任务抽屉和失败关闭可用", async ({ page }) => {
   await page.goto("/");
   const input = page.locator('input[type="file"]:not([accept=".json"])');
@@ -188,10 +171,10 @@ test("CSV 文件选择、任务抽屉和失败关闭可用", async ({ page }) =>
   await page.getByRole("button", { name: /生成脱敏文件/ }).click();
   await expect(page.getByRole("heading", { name: "脱敏文件可以下载" })).toBeVisible();
 
-  await page.getByRole("button", { name: /^本机任务/ }).click();
-  const taskDialog = page.getByRole("dialog", { name: "本机任务" });
+  await page.getByRole("button", { name: /^我的任务/ }).click();
+  const taskDialog = page.getByRole("dialog", { name: "我的任务" });
   await expect(taskDialog).toBeVisible();
-  await taskDialog.getByRole("button", { name: "关闭本机任务" }).click();
+  await taskDialog.getByRole("button", { name: "关闭我的任务" }).click();
 
   await page.getByRole("button", { name: "换一个文件" }).click();
   await expect(page.getByRole("heading", { name: "让文件安全进入 AI 工作流" })).toBeVisible();
@@ -234,89 +217,13 @@ test("超限文件在读取前停止并显示拆分建议", async ({ page }) => 
   await expect(page.getByText("请按月份、业务单元或数据范围拆分后重试。")).toBeVisible();
 });
 
-test("并发任务共用同一密钥，密钥丢失后失败关闭", async ({ page }) => {
+test("连不上公司服务器时不生成脱敏文件", async ({ page }) => {
   await page.goto("/");
-  const result = await page.evaluate(async () => {
-    const store = await import("/src/vaultStore.js");
-    const vault = (taskId) => ({
-      version: 1,
-      taskId,
-      taskName: `任务 ${taskId}`,
-      createdAt: new Date().toISOString(),
-      mapping: { [`[[C001@${taskId}]]`]: { value: { type: "string", value: taskId } } },
-    });
-    await Promise.all([store.saveVault(vault("AAAA0001")), store.saveVault(vault("BBBB0002"))]);
-    const loaded = await Promise.all([store.loadVault("AAAA0001"), store.loadVault("BBBB0002")]);
-    const database = await new Promise((resolve, reject) => {
-      const request = indexedDB.open("file-masking-assistant-v2-vault");
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
-    });
-    await new Promise((resolve, reject) => {
-      const transaction = database.transaction("settings", "readwrite");
-      transaction.objectStore("settings").delete("device-aes-key");
-      transaction.oncomplete = resolve;
-      transaction.onerror = () => reject(transaction.error);
-    });
-    database.close();
-    let missingKeyCode;
-    try { await store.loadVault("AAAA0001"); } catch (error) { missingKeyCode = error.code; }
-    return { loaded: loaded.map((item) => item.taskId), missingKeyCode };
-  });
-
-  expect(result.loaded).toEqual(["AAAA0001", "BBBB0002"]);
-  expect(result.missingKeyCode).toBe("VAULT_KEY_MISSING");
-});
-
-test("损坏密文不会生成错误映射", async ({ page }) => {
-  await page.goto("/");
-  const code = await page.evaluate(async () => {
-    const store = await import("/src/vaultStore.js");
-    await store.saveVault({
-      version: 1,
-      taskId: "BROKEN01",
-      taskName: "损坏测试",
-      createdAt: new Date().toISOString(),
-      mapping: { "[[C001@BROKEN01]]": { value: { type: "string", value: "真实名称" } } },
-    });
-    const database = await new Promise((resolve, reject) => {
-      const request = indexedDB.open("file-masking-assistant-v2-vault");
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
-    });
-    const record = await new Promise((resolve, reject) => {
-      const transaction = database.transaction("vaults", "readonly");
-      const request = transaction.objectStore("vaults").get("BROKEN01");
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
-    });
-    record.ciphertext = new Uint8Array([1, 2, 3]);
-    await new Promise((resolve, reject) => {
-      const transaction = database.transaction("vaults", "readwrite");
-      transaction.objectStore("vaults").put(record);
-      transaction.oncomplete = resolve;
-      transaction.onerror = () => reject(transaction.error);
-    });
-    database.close();
-    try { await store.loadVault("BROKEN01"); } catch (error) { return error.code; }
-    return null;
-  });
-
-  expect(code).toBe("VAULT_DECRYPT_FAILED");
-});
-
-test("本机存储不可用时不生成脱敏文件", async ({ page }) => {
-  await page.addInitScript(() => {
-    Object.defineProperty(window, "indexedDB", {
-      configurable: true,
-      value: { open() { throw new DOMException("blocked", "InvalidStateError"); } },
-    });
-  });
-  await page.goto("/");
+  await page.route("**/api/v1/vault-markers", route => route.abort());
   await page.locator('input[type="file"]:not([accept=".json"])').setInputFiles(path.resolve("tests/fixtures/01_标准销售数据_UTF8.csv"));
   await expect(page.getByText("确认替换列")).toBeVisible();
   await page.getByRole("button", { name: /生成脱敏文件/ }).click();
-  await expect(page.getByRole("heading", { name: "当前浏览器无法使用本机还原记录存储" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "暂时连不上公司服务器" })).toBeVisible();
   await expect(page.getByText("没有生成输出文件")).toBeVisible();
 });
 
@@ -326,7 +233,7 @@ test("HTML 同时含完整与改写代号时停止输出", async ({ page }) => {
   await page.goto("/");
   await page.evaluate(async (entry) => {
     const store = await import("/src/vaultStore.js");
-    await store.saveVault({ version: 1, createdAt: new Date().toISOString(), ...entry });
+    await store.saveVault({ version: 2, sourceFormat: "html", createdAt: new Date().toISOString(), ...entry });
   }, vault);
 
   await page.getByRole("button", { name: "还原处理文件" }).click();
@@ -360,7 +267,7 @@ test("Markdown 可确认候选、复制通用 AI 说明并完成脱敏还原", a
   await page.getByRole("link", { name: "下载脱敏文件" }).click();
   const safeDownload = await safeDownloadPromise;
   const safeBytes = await fs.readFile(await safeDownload.path());
-  expect(safeBytes.toString("utf8")).toContain("[[客户名称:C001@");
+  expect(safeBytes.toString("utf8")).toMatch(SHORT_TOKEN);
   await page.getByRole("button", { name: "复制 AI 处理说明" }).click();
   await expect(page.getByText("处理说明已复制")).toBeVisible();
   const instruction = await page.evaluate(() => localStorage.getItem("testClipboard"));
@@ -384,7 +291,7 @@ test("Markdown 可确认候选、复制通用 AI 说明并完成脱敏还原", a
   const restoredText = (await fs.readFile(await restoredDownload.path())).toString("utf8");
   expect(restoredText).toContain("浙江ABC染整有限公司");
   expect(restoredText).toContain("Atlas-9");
-  expect(restoredText).not.toContain("[[");
+  expect(restoredText).not.toMatch(SHORT_TOKEN);
 });
 
 test("DOCX 可确认候选并完成原格式脱敏还原", async ({ page }) => {
@@ -417,7 +324,7 @@ test("DOCX 可确认候选并完成原格式脱敏还原", async ({ page }) => {
   const xml = await restoredZip.file("word/document.xml").async("string");
   expect(xml).toContain("浙江ABC染整有限公司");
   expect(xml).toContain("ECO/Soft-X2.0");
-  expect(xml).not.toContain("[[");
+  expect(xml).not.toMatch(SHORT_TOKEN);
 });
 
 test("AI 删除已知代号时提醒缺失但允许还原其余内容", async ({ page }) => {
@@ -429,7 +336,7 @@ test("AI 删除已知代号时提醒缺失但允许还原其余内容", async ({
   await page.getByRole("link", { name: "下载脱敏文件" }).click();
   const safeDownload = await safeDownloadPromise;
   const safeText = (await fs.readFile(await safeDownload.path())).toString("utf8");
-  const firstToken = safeText.match(/\[\[[^\]]+\]\]/)?.[0];
+  const firstToken = safeText.match(SHORT_TOKEN)?.[0];
   expect(firstToken).toBeTruthy();
   const aiText = safeText.replace(firstToken, "");
 
@@ -471,5 +378,5 @@ test("真实值本身是 C001 时仍可完整还原", async ({ page }) => {
   await page.getByRole("link", { name: "下载还原文件" }).click();
   const restored = (await fs.readFile(await (await restoredDownloadPromise).path())).toString("utf8");
   expect(restored).toContain("C001");
-  expect(restored).not.toContain("[[");
+  expect(restored).not.toMatch(SHORT_TOKEN);
 });

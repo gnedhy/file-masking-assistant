@@ -36,6 +36,7 @@ function cookie(name, value, { maxAge, secure }) {
 
 export function createWeComAuth(config) {
   let tokenCache = null;
+  const adminUserIds = new Set(config.adminUserIds ?? []);
 
   async function accessToken() {
     if (tokenCache?.expiresAt > Date.now() + 60_000) return tokenCache.value;
@@ -84,7 +85,9 @@ export function createWeComAuth(config) {
     },
 
     authenticate(request) {
-      return verifySignedValue(cookies(request).vault_session, config.sessionSecret);
+      const session = verifySignedValue(cookies(request).vault_session, config.sessionSecret);
+      // Read the admin list on every request so a removal takes effect without a new login.
+      return session && { ...session, userName: session.userId, isAdmin: adminUserIds.has(session.userId) };
     },
   };
 }

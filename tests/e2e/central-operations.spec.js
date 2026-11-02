@@ -28,11 +28,12 @@ test("集中记录：真实数据库、本人权限、管理员统计、导出�
   await expect.poll(async()=>page.evaluate(async()=>(await import('/src/operationSync.js')).getOperationSyncState().pending)).toBe(0);
   await page.getByRole('button',{name:'操作记录',exact:true}).click();
   const drawer=page.getByRole('dialog',{name:'操作记录',exact:true});
-  await expect(drawer.getByText('我的记录 · 已识别测试身份')).toBeVisible();
+  await expect(drawer.getByText('测试员工甲 · 只记录操作和文件名')).toBeVisible();
   await drawer.getByLabel('搜索',{exact:true}).fill(prefix);
   await expect(drawer.locator('.operation-list li').first()).toBeVisible();
   expect((await context.request.get('/api/v1/operation-events?user=test-bob')).status()).toBe(403);
-  expect((await context.request.get('/api/v1/vault-tasks')).status()).toBe(404);
+  // Records and restore data share one service and one session now.
+  expect((await context.request.get('/api/v1/vault-tasks')).status()).toBe(200);
   await drawer.getByRole('button',{name:'关闭操作记录'}).click();
   await login('admin');
   await page.evaluate(async()=>{await (await import('/src/operationSync.js')).retryOperationSync();});

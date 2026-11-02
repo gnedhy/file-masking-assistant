@@ -9,10 +9,10 @@ test("抽屉关闭保留退出动画，结束后解锁并恢复焦点", async ({
   for (const reducedMotion of ["no-preference", "reduce"]) {
     await page.emulateMedia({ reducedMotion });
     for (const kind of ["tasks", "details"]) {
-      const trigger = page.getByRole("button", { name: kind === "tasks" ? /^本机任务/ : "确认替换内容 查看并调整", exact: kind !== "tasks" });
+      const trigger = page.getByRole("button", { name: kind === "tasks" ? /^我的任务/ : "确认替换内容 查看并调整", exact: kind !== "tasks" });
       for (const action of ["button", "scrim", "escape"]) {
         await trigger.click();
-        const drawer = page.getByRole("dialog", { name: kind === "tasks" ? "本机任务" : "替换内容", exact: true });
+        const drawer = page.getByRole("dialog", { name: kind === "tasks" ? "我的任务" : "替换内容", exact: true });
         const frames = await drawer.evaluate((element, action) => {
           const close = () => {
             if (action === "escape") window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
@@ -46,15 +46,15 @@ test("任务与详情抽屉固定标题、独立滚动并适配主题和窄屏",
   await page.goto("/");
   await page.evaluate(async () => {
     const { saveVault } = await import("/src/vaultStore.js");
-    for (let i = 0; i < 8; i++) await saveVault({ taskId: `AAAA000${i}`, taskName: `虚构滚动验证任务${i}`, createdAt: new Date().toISOString(), mapping: { a: "虚构内容" } });
+    for (let i = 10; i < 26; i++) await saveVault({ version: 2, taskId: `AAAA00${i}`, taskName: `虚构滚动验证任务${i}`, sourceFormat: "txt", createdAt: new Date().toISOString(), mapping: { [`[[C001@AAAA00${i}]]`]: "虚构内容" } });
   });
   await page.locator('input[type="file"]:not([accept=".json"])').setInputFiles({ name: "虚构抽屉验证.txt", mimeType: "text/plain", buffer: Buffer.from("客户名称：虚构测试公司\n产品名称：DEMO-01") });
   for (const theme of ["light", "dark"]) {
     await chooseTheme(page, theme);
     for (const kind of ["tasks", "details"]) {
-      const trigger = page.getByRole("button", { name: kind === "tasks" ? /^本机任务/ : "确认替换内容 查看并调整", exact: kind !== "tasks" });
+      const trigger = page.getByRole("button", { name: kind === "tasks" ? /^我的任务/ : "确认替换内容 查看并调整", exact: kind !== "tasks" });
       await trigger.click();
-      const drawer = page.getByRole("dialog", { name: kind === "tasks" ? "本机任务" : "替换内容", exact: true });
+      const drawer = page.getByRole("dialog", { name: kind === "tasks" ? "我的任务" : "替换内容", exact: true });
       const head = drawer.locator(".drawer-head");
       const body = drawer.locator(".drawer-body");
       await expect(drawer).toBeVisible();

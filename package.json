@@ -4,17 +4,14 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "node scripts/dev-server.mjs",
     "operations:db": "node scripts/operations-local.mjs start",
     "operations:stop": "node scripts/operations-local.mjs stop",
     "operations:backup": "node scripts/operations-local.mjs backup",
     "operations:restore-check": "node scripts/operations-local.mjs restore-check",
     "test:operations": "node scripts/test-operations.mjs",
-    "start": "npm run build && npm run preview",
-    "build": "vite build && node scripts/prepare-sites-build.mjs",
-    "preview": "vite preview",
-    "start:enterprise": "node server/index.mjs",
-    "test": "npm run test:unit && npm run test:validation && npm run build && npm run test:sites",
+    "build": "vite build",
+    "test": "npm run test:unit && npm run test:validation && npm run build",
     "test:unit": "node --test tests/operation-reports.test.mjs tests/token-format.test.mjs tests/xlsx-core.test.mjs tests/xlsx-package.test.mjs tests/csv-core.test.mjs tests/text-core.test.mjs tests/multi-fixture-roundtrip.test.mjs tests/office-openxml.test.mjs tests/html-core.test.mjs tests/file-preflight.test.mjs tests/file-safety.test.mjs tests/enterprise-vault.test.mjs",
     "test:e2e": "playwright test",
     "generate:validation": "node scripts/generate-validation-assets.mjs tests/output/validation-assets",
@@ -25,9 +22,9 @@
     "test:xlsx-package": "node --test tests/xlsx-package.test.mjs",
     "test:csv": "node --test tests/csv-core.test.mjs",
     "test:fixtures": "node --test tests/multi-fixture-roundtrip.test.mjs",
-    "test:sites": "node --test tests/sites-worker.test.mjs",
     "test:office": "node --test tests/office-openxml.test.mjs",
-    "test:html": "node --test tests/html-core.test.mjs"
+    "test:html": "node --test tests/html-core.test.mjs",
+    "start": "node server/index.mjs"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.3.0",

@@ -1,8 +1,9 @@
-const enabled = import.meta.env?.VITE_OPERATIONS_ENABLED === "true";
+import { clearSession, getSession } from "./session.js";
+
 const DB_NAME = "file-masking-assistant-v2-operation-outbox";
 const LIMIT = 5000;
 const BYTE_LIMIT = 10 * 1024 * 1024;
-let state = { enabled, session: null, pending: 0, rejected: 0, otherPending: 0, lastConfirmed: null, incomplete: false, error: "" };
+let state = { session: null, pending: 0, rejected: 0, otherPending: 0, lastConfirmed: null, incomplete: false, error: "" };
 let started = false, running = false, timer, failures = 0;
 export const getOperationSyncState = () => ({ ...state });
 const publish = change => {
@@ -73,17 +74,17 @@ function schedule(delay = 0) {
 }
 
 async function session() {
-  const response = await fetch("/api/v1/session", { credentials: "same-origin", cache: "no-store", signal: AbortSignal.timeout(10000) });
-  if (response.status === 401) { publish({ session: null, error: "尚未登录或会话已过期；文件仍可本机处理，待同步记录保留。" }); return false; }
-  if (!response.ok) throw new Error("SERVICE_UNAVAILABLE");
-  const next = await response.json();
-  if (!next.operations || typeof next.userId !== "string" || !next.userId || typeof next.csrf !== "string" || !next.csrf) throw new Error("INVALID_SESSION");
-  publish({ ...(state.incomplete ? {} : { error: "" }), session: { userId: next.userId, userName: next.userName, isAdmin: next.isAdmin === true, csrf: next.csrf } });
-  return true;
+  try {
+    publish({ ...(state.incomplete ? {} : { error: "" }), session: await getSession({ refresh: true }) });
+    return true;
+  } catch (error) {
+    if (error.code !== "AUTH_REQUIRED") throw error;
+    publish({ session: null, error: "登录已过期，记录会在重新进入后发送。" });
+    return false;
+  }
 }
 
 async function flush() {
-  if (!enabled) return;
   if (running) { schedule(100); return; }
   running = true;
   clearTimeout(timer);
@@ -97,7 +98,7 @@ async function flush() {
       headers: { "content-type": "application/json", "x-csrf-token": state.session.csrf },
       body: JSON.stringify({ events: batch.map(row => row.event) }),
     });
-    if (response.status === 401 || response.status === 403) { publish({ session: null, error: "会话需要重新验证；待同步记录保留。" }); await refresh(); return; }
+    if (response.status === 401 || response.status === 403) { clearSession(); publish({ session: null, error: "会话需要重新验证；待发送记录保留。" }); await refresh(); return; }
     if (!response.ok) {
       if (response.status >= 400 && response.status < 500 && response.status !== 429) {
         await transact("readwrite", events => batch.forEach(row => {
@@ -133,14 +134,14 @@ async function flush() {
     await refresh();
     if (state.pending) schedule(100);
   } catch {
-    publish({ error: "记录暂未同步；可继续处理文件，恢复连接后将重试。" });
+    publish({ error: "记录暂未发送；恢复连接后将重试。" });
     await refresh().catch(() => publish({ error: "无法读取待同步记录，集中记录可能不完整；文件处理不受影响。" }));
     schedule(Math.min(60000, 1000 * 2 ** Math.min(failures++, 6)));
   } finally { running = false; }
 }
 
 export async function enqueueOperation(record) {
-  if (!enabled || !state.session) return false;
+  if (!state.session && !await session().catch(() => false)) return false;
   const event = { version: 1, eventId: crypto.randomUUID(), operationId: record.operationId || crypto.randomUUID() };
   for (const key of ["time", "action", "result", "taskId", "marker", "format", "inputName", "outputName"]) if (record[key] !== undefined) event[key] = record[key];
   const row = { eventId: event.eventId, owner: state.session.userId, status: "pending", event };
@@ -165,9 +166,9 @@ export async function enqueueOperation(record) {
   }
 }
 
-export function retryOperationSync() { if (enabled) { failures = 0; schedule(); } }
+export function retryOperationSync() { failures = 0; schedule(); }
 export function startOperationSync() {
-  if (!enabled || started) return;
+  if (started) return;
   started = true;
   window.addEventListener("online", retryOperationSync);
   window.addEventListener("focus", retryOperationSync);

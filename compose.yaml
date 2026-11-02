@@ -12,7 +12,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    ports: ["8080:8080"]
+    # Put HTTPS in front (Nginx, Caddy or the company gateway); only expose 8080 to that proxy.
+    ports: ["127.0.0.1:8080:8080"]
   postgres:
     image: postgres:17-alpine
     restart: unless-stopped

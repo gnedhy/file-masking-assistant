@@ -16,9 +16,8 @@ export function useOperationSync() {
 
 export function SyncStatus() {
   const state = useOperationSync();
-  if (!state.enabled) return null;
   return <div className="sync-status" role="status">
-    <strong>{state.session ? "集中操作记录" : "仅本机记录 · 尚未识别身份"}</strong>
+    <strong>{state.session ? "操作记录" : "尚未确认身份"}</strong>
     <p>待同步 {state.pending || 0} 条{state.rejected ? ` · 被拒绝 ${state.rejected} 条` : ""}。统计暂不包含未同步记录。</p>
     {state.otherPending > 0 && <p>另有 {state.otherPending} 条属于其他身份的记录，需原身份重新进入后同步。</p>}
     {state.lastConfirmed && <small>最近确认：{new Date(state.lastConfirmed).toLocaleString("zh-CN")}</small>}

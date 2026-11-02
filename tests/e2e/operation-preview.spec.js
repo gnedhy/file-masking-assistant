@@ -3,25 +3,12 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { chooseTheme } from "./theme-helper.js";
-test("记录筛选导出兼容旧数据，统计示例独立且返回保留文件",async({page},info)=>{
+test("统计示例独立显示且返回后保留文件",async({page},info)=>{
   await page.goto('/');
-  await page.locator('input[type=file]:not([accept=".json"])').setInputFiles({name:'待处理测试.txt',mimeType:'text/plain',buffer:Buffer.from('客户名称：虚构测试企业')});
+  await page.locator('input[type=file]').setInputFiles({name:'待处理测试.txt',mimeType:'text/plain',buffer:Buffer.from('客户名称：虚构测试企业')});
   await expect(page.getByRole('button',{name:'生成脱敏文件',exact:true})).toBeVisible();
-  await page.evaluate(async()=>{const {recordOperation}=await import('/src/operationLog.js');await recordOperation('protect','success',{taskId:'ABCD1234'});await recordOperation('protect','success',{taskId:'ABCD1235',format:'txt',inputName:'C:\\secret\\=测试,"长文件名".txt',outputName:'脱敏结果.txt',mapping:'不可记录'});});
   await page.getByRole('button',{name:'操作记录',exact:true}).click();
   const drawer=page.getByRole('dialog',{name:'操作记录',exact:true});
-  await drawer.getByLabel('搜索',{exact:true}).fill('ABCD1234');
-  await expect(drawer.getByText('符合条件 1 项')).toBeVisible();
-  await expect(drawer.getByText('未记录',{exact:true})).toHaveCount(2);
-  await drawer.getByLabel('搜索',{exact:true}).fill('ABCD1235');
-  const filename=drawer.locator('.record-filename summary').first();
-  await filename.click();
-  await expect(drawer.locator('.record-filename details').first()).toHaveAttribute('open','');
-  await expect(drawer.locator('.record-filename details p')).toHaveCount(0);
-  await page.screenshot({animations:'disabled',path:path.join(os.tmpdir(),`operation-polish-${info.project.name}.png`)});
-  const pending=page.waitForEvent('download');await drawer.getByRole('link',{name:/^导出筛选结果（[0-9]+ 条明细）$/}).click();
-  const csv=await fs.readFile(await (await pending).path(),'utf8');expect(csv).toContain("'=测试");expect(csv).not.toContain('secret');expect(csv).not.toContain('不可记录');
-  await drawer.getByLabel('搜索',{exact:true}).fill('不存在');await expect(drawer.getByText('没有符合筛选条件的记录。')).toBeVisible();
   await drawer.getByRole('button',{name:'使用统计 · 设计预览'}).click();
   const preview=page.getByRole('region',{name:'使用统计设计预览'});
   await expect(preview).toBeVisible();
@@ -62,7 +49,7 @@ test("记录筛选导出兼容旧数据，统计示例独立且返回保留文�
   await expect(preview.locator('.usage-trend__column')).toHaveCount(30);
   for(const theme of ['light','dark','system']){await chooseTheme(page,theme);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await page.screenshot({animations:"disabled",path:path.join(os.tmpdir(),`usage-preview-${info.project.name}-${theme}.png`)});}
   const exportExample=page.waitForEvent('download');await preview.getByRole('link',{name:'导出示例记录'}).click();const example=await exportExample;expect(example.suggestedFilename()).toContain('示例');expect(await fs.readFile(await example.path(),'utf8')).toContain('虚构示例');
-  expect(await page.evaluate(async()=> (await (await import('/src/operationLog.js')).listOperations()).some(r=>r.userId?.startsWith('example')))).toBe(false);
+  expect(await page.evaluate(async()=> (await (await fetch('/api/v1/operation-events')).json()).records.some(r=>r.userId?.startsWith('example')))).toBe(false);
   await preview.getByRole('button',{name:'返回文件处理'}).click();
   await expect(page.locator('.app-main')).toBeVisible();
   await expect(page.getByRole('button',{name:'生成脱敏文件',exact:true})).toBeVisible();
