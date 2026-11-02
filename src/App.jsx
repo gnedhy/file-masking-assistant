@@ -1,5 +1,5 @@
 import { Fragment, lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
-import { TaskIdentityDetails } from "./ShortTokenControls.jsx";
+import { TaskDetails } from "./TaskDetails.jsx";
 import { THEME_OPTIONS, ThemeSwitcher } from "./ThemeSwitcher.jsx";
 import { ConfirmDialog } from "./ConfirmDialog.jsx";
 import { OperationDrawer } from "./OperationDrawer.jsx";
@@ -153,13 +153,48 @@ function formatTaskTime(value) {
   }).format(date);
 }
 
-function LocalTaskTrigger({ localTasks, disabled, onOpen, triggerRef }) {
-  const failed = localTasks.status === "error";
-  const count = localTasks.status === "ready" ? localTasks.count : 0;
+function LocalTaskPanel({ localTasks, disabled, onContinue, onViewAll, viewAllButtonRef }) {
+  const ready = localTasks.status === "ready";
+  const hasTasks = ready && localTasks.count > 0 && localTasks.latest;
+
   return (
-    <button ref={triggerRef} className="local-task-trigger" type="button" disabled={disabled && !count} onClick={onOpen} aria-haspopup="dialog" title={failed ? "暂时无法读取记录" : undefined}>
-      <LockKey aria-hidden="true" weight="duotone" /><span>我的任务</span>{count > 0 && <b>{count}</b>}{failed && <b data-warning="true" aria-label="暂时无法读取记录">!</b>}
-    </button>
+    <section className="local-task-panel" data-has-tasks={Boolean(hasTasks)} aria-labelledby="local-task-title" aria-live="polite">
+      <div className="local-task-panel__head">
+        <span className="local-task-panel__mark" aria-hidden="true"><LockKey weight="duotone" /></span>
+        <div>
+          <h2 id="local-task-title">我的任务</h2>
+          <p>{localTasks.status === "loading"
+            ? "正在读取任务"
+            : localTasks.status === "error"
+              ? "暂时无法读取任务"
+              : hasTasks
+                ? `${localTasks.count} 个任务 · 还原记录保存在公司服务器`
+                : "还没有可继续的任务"}</p>
+        </div>
+      </div>
+
+      {hasTasks ? (
+        <>
+          <div className="local-task-panel__latest">
+            <span>最近任务</span>
+            <strong title={localTasks.latest.taskName}>{localTasks.latest.taskName}</strong>
+            <small>{formatTaskTime(localTasks.latest.createdAt)} · 任务 {localTasks.latest.marker || localTasks.latest.taskId}</small>
+          </div>
+          <button className="local-task-panel__action" type="button" disabled={disabled} onClick={onContinue}>
+            选择待还原文件<ArrowRight weight="bold" />
+          </button>
+          <button ref={viewAllButtonRef} className="local-task-panel__view" type="button" onClick={onViewAll}>
+            查看全部任务
+          </button>
+        </>
+      ) : (
+        <p className="local-task-panel__empty">
+          {localTasks.status === "error"
+            ? "你仍可以选择文件；还原前系统会再次核对还原记录。"
+            : "制作并下载脱敏文件后，对应的还原任务会显示在这里。"}
+        </p>
+      )}
+    </section>
   );
 }
 
@@ -215,7 +250,7 @@ function LocalTasksDrawer({ localTasks, currentTaskId, pendingDeleteId, deleting
                 <strong title={task.taskName}>{task.taskName}</strong>
                 <p>{task.marker || task.taskId} · {formatTaskTime(task.createdAt)} · {task.uniqueValues} 条</p>
               </div>
-              {task.marker && <TaskIdentityDetails taskId={task.taskId} />}
+              <TaskDetails task={task} />
               {confirming ? (
                 <div className="local-task-row__confirm" role="alert">
                   <strong>确定删除这项还原记录？</strong>
@@ -938,7 +973,7 @@ async function animateDrawerExit(drawer) {
   if (!drawer || drawer.dataset.closing === "true") return false;
   drawer.dataset.closing = "true";
   const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const direction = 22;
+  const direction = drawer.classList.contains("local-tasks-drawer") ? -22 : 22;
   const easing = getComputedStyle(drawer).getPropertyValue("--ease-drawer").trim();
   const animations = [drawer, drawer.previousElementSibling].filter(Boolean).map(element => {
     const style = getComputedStyle(element);
@@ -1365,13 +1400,13 @@ export function App() {
             <h1>{WORKSPACE_COPY[mode].title}</h1>
             <span>{WORKSPACE_COPY[mode].description}</span>
           </header>
-          <div className="task-bar">
-            <div className="task-switcher" role="group" aria-label="选择任务">
+          <aside className="task-rail" aria-label="任务与还原记录">
+            <div className="task-switcher" aria-label="选择任务">
               <TaskChoice active={mode === "protect"} icon={FilePlus} title="制作脱敏文件" disabled={status === "processing" || status === "inspecting"} onClick={() => changeMode("protect")} />
               <TaskChoice active={mode === "restore"} icon={FileArrowDown} title="还原处理文件" disabled={status === "processing" || status === "inspecting"} onClick={() => changeMode("restore")} />
             </div>
-            <LocalTaskTrigger localTasks={localTasks} disabled={status === "processing" || status === "inspecting"} onOpen={openLocalTasks} triggerRef={localTasksViewButtonRef} />
-          </div>
+            <LocalTaskPanel localTasks={localTasks} disabled={status === "processing" || status === "inspecting"} onContinue={continueLatestTask} onViewAll={openLocalTasks} viewAllButtonRef={localTasksViewButtonRef} />
+          </aside>
           <section className="workbench" data-status={status} data-dragging={isDraggingFile} onDragEnter={handleDragEnter} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop} aria-label={MODE_COPY[mode].title}>
             {mainState}
           </section>

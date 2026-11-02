@@ -44,9 +44,9 @@ test("操作记录覆盖往返、下载、删除和失败，不留敏感内容",
   await expect.poll(async () => (await serverRecords(page)).some(r => r.inputName === "不支持.pdf" && r.result === "failed")).toBe(true);
   await page.getByRole("button", { name: "操作记录", exact: true }).click();
   const drawer = page.getByRole("dialog", { name: "操作记录", exact: true });
-  await expect(drawer.locator(".operation-list li").first()).toBeVisible();
+  await expect(drawer.locator(".operation-tasks > li").first()).toBeVisible();
   // Newest first: the rejected PDF import is on the first page (records in the same second may share the top spot).
-  await expect(drawer.locator(".operation-list")).toContainText("不支持.pdf", { timeout: 15000 });
+  await expect(drawer.locator(".operation-tasks")).toContainText("不支持.pdf", { timeout: 15000 });
   await drawer.evaluate(async el => Promise.all(el.getAnimations().map(a => a.finished)));
   await page.screenshot({ path: path.join(os.tmpdir(), `masking-audit-records-${testInfo.project.name}.png`) });
 });

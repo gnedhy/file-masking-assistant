@@ -75,6 +75,8 @@ test('PostgreSQL isolation, duplicate conflict, pagination, statistics and expor
     await assert.rejects(()=>repo.list(alice,{user:bob.userId}),/FORBIDDEN/);
     assert.equal((await repo.list(admin,{user:bob.userId})).total,1);
     const stats=await repo.statistics(alice);assert.equal(stats.totals.protected,1);assert.equal(stats.totals.downloads,11);
+    const grouped=await repo.listTasks(alice);assert.equal(grouped.total,1);assert.equal(grouped.tasks[0].events.length,12);assert.equal(grouped.tasks[0].protect,'done');
+    await assert.rejects(()=>repo.listTasks(alice,{user:bob.userId}),/FORBIDDEN/);assert.equal((await repo.listTasks(admin,{user:bob.userId})).total,1);
     let count=0;for await(const batch of repo.exportRows(alice))count+=batch.length;assert.equal(count,12);
     const same=event();const concurrent=await Promise.all([repo.append(alice,same),repo.append(alice,same)]);assert.deepEqual(concurrent.sort(),['accepted','duplicate']);
     const cursor=repo.exportRows(alice);await cursor.next();await cursor.return();await repo.ready();

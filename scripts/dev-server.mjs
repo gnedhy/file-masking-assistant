@@ -9,6 +9,7 @@ import { createServer as createViteServer } from "vite";
 import { createAppHandler } from "../server/handler.mjs";
 import { PgOperationsRepository, validateEvent } from "../server/operations-repository.mjs";
 import { PgVaultRepository } from "../server/repository.mjs";
+import { summarizeTask, taskKeyResolver } from "../src/operationTasks.js";
 
 export const TEST_USERS = {
   admin: { userId: "test-admin", userName: "测试管理员", isAdmin: true },
@@ -68,6 +69,18 @@ export class MemoryOperationsRepository {
   async list(session, filters = {}) {
     const page = Number(filters.page || 1), rows = this.visible(session, filters);
     return { records: rows.slice((page - 1) * 10, page * 10), total: rows.length, page, pageSize: 10 };
+  }
+  async listTasks(session, filters = {}) {
+    const page = Number(filters.page || 1), keyOf = taskKeyResolver(this.rows), groups = new Map();
+    const hits = new Set(this.visible(session, filters).map(keyOf));
+    for (const row of [...this.rows].sort((a, b) => a.time.localeCompare(b.time))) {
+      const key = keyOf(row);
+      if (!hits.has(key)) continue;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(row);
+    }
+    const tasks = [...groups].map(([key, events]) => summarizeTask(key, events)).sort((a, b) => b.lastTime.localeCompare(a.lastTime));
+    return { tasks: tasks.slice((page - 1) * 10, page * 10), total: tasks.length, page, pageSize: 10 };
   }
   async statistics(session, filters = {}) {
     const totals = rows => ({ users: new Set(rows.map(r => r.userId)).size, protected: rows.filter(r => r.action === "protect" && r.result === "success").length, restored: rows.filter(r => r.action === "restore" && r.result !== "failed").length, failed: rows.filter(r => r.result === "failed").length, imports: rows.filter(r => r.action.startsWith("import_")).length, downloads: rows.filter(r => r.action.startsWith("download_")).length });

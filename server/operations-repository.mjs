@@ -1,5 +1,6 @@
 import pg from 'pg';
 import { OPERATION_LABELS, OPERATION_RESULTS } from '../src/operationLog.js';
+import { summarizeTask } from '../src/operationTasks.js';
 
 const uuid = /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i;
 const fields = ['eventId','operationId','version','time','action','result','taskId','marker','format','inputName','outputName'];
@@ -77,6 +78,18 @@ export class PgOperationsRepository {
     const {rows:[{total}]}=await this.pool.query(`SELECT count(*)::int AS total FROM operation_events WHERE ${f.sql}`,f.values);
     const {rows}=await this.pool.query(`SELECT ${columns} FROM operation_events WHERE ${f.sql} ORDER BY occurred_at DESC,event_id DESC LIMIT 10 OFFSET $${f.values.length+1}`,[...f.values,(f.page-1)*10]);
     return {records:rows,total,page:f.page,pageSize:10};
+  }
+  // One row per task: steps of the same operation join the task it produced; pages count tasks, not steps.
+  async listTasks(session,filters={}) {
+    const f=buildFilter(session,filters);
+    const base=`WITH base AS (SELECT *, coalesce(task_id, max(task_id) OVER (PARTITION BY owner_user_id, operation_id), operation_id::text) AS task_key FROM operation_events WHERE occurred_at >= now() - interval '180 days'),
+      hit AS (SELECT owner_user_id, task_key, max(occurred_at) AS last_at FROM base WHERE ${f.sql} GROUP BY owner_user_id, task_key)`;
+    const {rows:[{total}]}=await this.pool.query(`${base} SELECT count(*)::int AS total FROM hit`,f.values);
+    const {rows}=await this.pool.query(`${base}, page AS (SELECT * FROM hit ORDER BY last_at DESC, task_key DESC LIMIT 10 OFFSET $${f.values.length+1})
+      SELECT ${columns}, base.task_key AS "taskKey" FROM base JOIN page USING (owner_user_id, task_key) ORDER BY page.last_at DESC, base.task_key, base.occurred_at, base.event_id`,[...f.values,(f.page-1)*10]);
+    const groups=new Map();
+    for(const row of rows){const key=`${row.userId}:${row.taskKey}`;delete row.taskKey;row.time=row.time.toISOString?.()??row.time;if(!groups.has(key))groups.set(key,[]);groups.get(key).push(row);}
+    return {tasks:[...groups].map(([key,events])=>summarizeTask(key,events)),total,page:f.page,pageSize:10};
   }
   async statistics(session,filters={}) {
     const f=buildFilter(session,filters);

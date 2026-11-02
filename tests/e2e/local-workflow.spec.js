@@ -86,21 +86,21 @@ test("同编号并发只能新增一次，重复保存不覆盖原记录", async
 
 test("其他标签页的变化在回到页面和打开抽屉时刷新", async ({ page, context }) => {
   await page.goto("/");
-  await expect(page.getByRole("button", { name: /^我的任务/ })).toBeVisible();
+  await expect(page.locator(".local-task-panel")).toContainText("还没有可继续的任务");
   const other = await context.newPage();
   await other.goto("/");
   await other.evaluate(async task => (await import("/src/vaultStore.js")).saveVault(task), legacyTask("BBBB2222", "另页虚构任务"));
-  await page.getByRole("button", { name: /^我的任务/ }).click();
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await page.getByRole("button", { name: "查看全部任务" }).click();
   const drawer = page.getByRole("dialog", { name: "我的任务", exact: true });
   await expect(drawer.getByText("另页虚构任务", { exact: true })).toBeVisible();
   await drawer.getByRole("button", { name: "关闭我的任务" }).click();
   await other.evaluate(async () => (await import("/src/vaultStore.js")).deleteVault("BBBB2222"));
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
-  await expect(page.locator(".local-task-trigger b")).toHaveCount(0);
+  await expect(page.locator(".local-task-panel")).toContainText("还没有可继续的任务");
 });
 
-test("还原页显示匹配任务，完整编号可复制，实名结果有回传警告", async ({ page }, testInfo) => {
-  await page.addInitScript(() => Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async text => localStorage.setItem("testCopiedId", text) } }));
+test("还原页显示匹配任务，任务详情显示使用情况，实名结果有回传警告", async ({ page }, testInfo) => {
   await page.goto("/");
   const fixture = await page.evaluate(async () => {
     const api = await import("/src/fileEngine.js");
@@ -116,17 +116,16 @@ test("还原页显示匹配任务，完整编号可复制，实名结果有回�
   await expect(page.getByText("包含真实信息，请勿再次交给外部 AI。", { exact: true })).toBeVisible();
   await expect(page.locator(".output-file")).toContainText(fixture.marker);
   await expect(page.getByText("检查通过", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: /^我的任务/ }).click();
+  await page.getByRole("button", { name: "查看全部任务" }).click();
   const drawer = page.getByRole("dialog", { name: "我的任务", exact: true });
-  await expect(drawer.getByText(fixture.marker)).toBeVisible();
-  await drawer.getByText("完整任务编号", { exact: true }).click();
-  await drawer.getByRole("button", { name: "复制任务编号" }).click();
-  await expect(drawer.getByText("任务编号已复制", { exact: true })).toBeVisible();
-  expect(await page.evaluate(() => localStorage.getItem("testCopiedId"))).toBe(fixture.taskId);
+  await expect(drawer.getByText(fixture.marker).first()).toBeVisible();
+  await drawer.getByText("任务详情", { exact: true }).click();
+  await expect(drawer.locator(".task-details dl")).toContainText("TXT · 生成于");
+  await expect(drawer.locator(".task-details dl")).toContainText(/还原 1 次，最近/);
   for (const value of ["dark", "light", "system"]) {
     await drawer.getByRole("button", { name: "关闭我的任务" }).click();
     await chooseTheme(page, value);
-    await page.getByRole("button", { name: /^我的任务/ }).click();
+    await page.getByRole("button", { name: "查看全部任务" }).click();
     await expect(drawer).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.screenshot({ path: testInfo.outputPath(`我的任务-${value}.png`), fullPage: true });
@@ -136,7 +135,7 @@ test("还原页显示匹配任务，完整编号可复制，实名结果有回�
 test("从抽屉最近任务直接选择待还原文件", async ({ page }) => {
   await page.goto("/");
   await page.evaluate(async task => (await import("/src/vaultStore.js")).saveVault(task), legacyTask("AAAA1111", "虚构最近任务"));
-  await page.getByRole("button", { name: /^我的任务/ }).click();
+  await page.getByRole("button", { name: "查看全部任务" }).click();
   const drawer = page.getByRole("dialog", { name: "我的任务", exact: true });
   await expect(drawer.getByText("虚构最近任务", { exact: true })).toBeVisible();
   const chooser = page.waitForEvent("filechooser");

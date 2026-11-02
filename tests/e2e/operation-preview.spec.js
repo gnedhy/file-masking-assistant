@@ -9,7 +9,7 @@ test("统计示例独立显示且返回后保留文件",async({page},info)=>{
   await expect(page.getByRole('button',{name:'生成脱敏文件',exact:true})).toBeVisible();
   await page.getByRole('button',{name:'操作记录',exact:true}).click();
   const drawer=page.getByRole('dialog',{name:'操作记录',exact:true});
-  await drawer.getByRole('button',{name:'使用统计 · 设计预览'}).click();
+  await drawer.getByRole('button',{name:'统计预览'}).click();
   const preview=page.getByRole('region',{name:'使用统计设计预览'});
   await expect(preview).toBeVisible();
   await expect(page.locator('.app-main')).toBeHidden();

@@ -5,11 +5,13 @@ import { chooseTheme } from "./theme-helper.js";
 
 test("抽屉关闭保留退出动画，结束后解锁并恢复焦点", async ({ page }) => {
   await page.goto("/");
+  await page.evaluate(async () => (await import("/src/vaultStore.js")).saveVault({ version: 2, taskId: "AAAA0042", taskName: "虚构动效任务", sourceFormat: "txt", createdAt: new Date().toISOString(), mapping: { "[[C001@AAAA0042]]": "虚构内容" } }));
+  await page.reload();
   await page.locator('input[type="file"]:not([accept=".json"])').setInputFiles({ name: "虚构动效验证.txt", mimeType: "text/plain", buffer: Buffer.from("客户名称：虚构测试公司") });
   for (const reducedMotion of ["no-preference", "reduce"]) {
     await page.emulateMedia({ reducedMotion });
     for (const kind of ["tasks", "details"]) {
-      const trigger = page.getByRole("button", { name: kind === "tasks" ? /^我的任务/ : "确认替换内容 查看并调整", exact: kind !== "tasks" });
+      const trigger = page.getByRole("button", { name: kind === "tasks" ? "查看全部任务" : "确认替换内容 查看并调整", exact: true });
       for (const action of ["button", "scrim", "escape"]) {
         await trigger.click();
         const drawer = page.getByRole("dialog", { name: kind === "tasks" ? "我的任务" : "替换内容", exact: true });
@@ -28,7 +30,7 @@ test("抽屉关闭保留退出动画，结束后解锁并恢复焦点", async ({
         expect(frames).toHaveLength(1);
         expect(frames[0].duration).toBe(200);
         expect(frames[0].end.opacity).toBe("0");
-        expect(frames[0].end.transform).toBe(reducedMotion === "reduce" ? "none" : "translateX(22px)");
+        expect(frames[0].end.transform).toBe(reducedMotion === "reduce" ? "none" : `translateX(${kind === "tasks" ? -22 : 22}px)`);
         await expect(drawer).toHaveAttribute("data-closing", "true");
         await expect(page.locator(".workspace")).toHaveAttribute("inert", "");
         await expect(page.locator("body")).toHaveCSS("overflow", "hidden");
@@ -52,7 +54,7 @@ test("任务与详情抽屉固定标题、独立滚动并适配主题和窄屏",
   for (const theme of ["light", "dark"]) {
     await chooseTheme(page, theme);
     for (const kind of ["tasks", "details"]) {
-      const trigger = page.getByRole("button", { name: kind === "tasks" ? /^我的任务/ : "确认替换内容 查看并调整", exact: kind !== "tasks" });
+      const trigger = page.getByRole("button", { name: kind === "tasks" ? "查看全部任务" : "确认替换内容 查看并调整", exact: true });
       await trigger.click();
       const drawer = page.getByRole("dialog", { name: kind === "tasks" ? "我的任务" : "替换内容", exact: true });
       const head = drawer.locator(".drawer-head");
@@ -73,7 +75,7 @@ test("任务与详情抽屉固定标题、独立滚动并适配主题和窄屏",
         expect(bounds.x).toBe(0);
         expect(bounds.width).toBe(page.viewportSize().width);
       } else {
-        const edge = page.viewportSize().width - bounds.x - bounds.width;
+        const edge = kind === "tasks" ? bounds.x : page.viewportSize().width - bounds.x - bounds.width;
         expect(edge).toBeGreaterThanOrEqual(12);
       }
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

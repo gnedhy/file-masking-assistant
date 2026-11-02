@@ -30,7 +30,7 @@ test("集中记录：真实数据库、本人权限、管理员统计、导出�
   const drawer=page.getByRole('dialog',{name:'操作记录',exact:true});
   await expect(drawer.getByText('测试员工甲 · 只记录操作和文件名')).toBeVisible();
   await drawer.getByLabel('搜索',{exact:true}).fill(prefix);
-  await expect(drawer.locator('.operation-list li').first()).toBeVisible();
+  await expect(drawer.locator('.operation-tasks > li').first()).toBeVisible();
   expect((await context.request.get('/api/v1/operation-events?user=test-bob')).status()).toBe(403);
   // Records and restore data share one service and one session now.
   expect((await context.request.get('/api/v1/vault-tasks')).status()).toBe(200);
@@ -40,23 +40,23 @@ test("集中记录：真实数据库、本人权限、管理员统计、导出�
   await page.getByRole('button',{name:'操作记录',exact:true}).click();
   await drawer.getByRole('button',{name:'使用统计',exact:true}).click();
   const central=page.getByRole('region',{name:'集中操作记录'});
-  await expect(central.locator('.operation-list li')).toHaveCount(10);
+  await expect(central.locator('.operation-tasks > li')).toHaveCount(10);
   await central.getByRole('button',{name:'下一页',exact:true}).click();
   await expect(central.getByRole('button',{name:'上一页',exact:true})).toBeEnabled();
-  await expect(central.locator('.operation-list li')).toHaveCount(10);
+  await expect(central.locator('.operation-tasks > li')).toHaveCount(10);
   const searches=[];
-  page.on('request',request=>{const url=new URL(request.url());if(url.pathname==='/api/v1/operation-events'&&url.searchParams.get('query'))searches.push(url.searchParams.get('query'));});
+  page.on('request',request=>{const url=new URL(request.url());if(url.pathname==='/api/v1/operation-tasks'&&url.searchParams.get('query'))searches.push(url.searchParams.get('query'));});
   await central.getByLabel('文件名／任务搜索',{exact:true}).pressSequentially(prefix,{delay:15});
   await expect(central.getByRole('button',{name:'上一页',exact:true})).toBeDisabled();
-  await expect(central.locator('.operation-list li').first()).toBeVisible();
+  await expect(central.locator('.operation-tasks > li').first()).toBeVisible();
   await expect.poll(()=>searches.at(-1)).toBe(prefix);
   expect(searches).toEqual([prefix]);
-  await page.route('**/api/v1/operation-events?*',route=>route.fulfill({status:503,json:{code:'RECORDS_UNAVAILABLE'}}));
+  await page.route('**/api/v1/operation-tasks?*',route=>route.fulfill({status:503,json:{code:'RECORDS_UNAVAILABLE'}}));
   await central.getByRole('button',{name:'最近 7 天',exact:true}).click();
   await expect(central.getByRole('alert')).toContainText('暂时无法读取记录');
-  await page.unroute('**/api/v1/operation-events?*');
+  await page.unroute('**/api/v1/operation-tasks?*');
   await central.getByRole('button',{name:'重新读取',exact:true}).click();
-  await expect(central.locator('.operation-list li').first()).toBeVisible();
+  await expect(central.locator('.operation-tasks > li').first()).toBeVisible();
   for (const theme of ['浅色','深色','系统']) {
     await chooseTheme(page,{ 浅色:'light', 深色:'dark', 系统:'system' }[theme]);
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);

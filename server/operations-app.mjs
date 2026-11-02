@@ -25,7 +25,7 @@ export function createOperationsHandler({repository,origin,auth}) {
       if(!path.startsWith('/api/'))return null;
       if(request.headers.get('origin')&&request.headers.get('origin')!==origin)return json({code:'ORIGIN_DENIED'},403);
       if(request.headers.get('sec-fetch-site')==='cross-site')return json({code:'ORIGIN_DENIED'},403);
-      if(!['/api/v1/operation-events/batch','/api/v1/operation-events','/api/v1/operation-statistics','/api/v1/operation-events/export'].includes(path))return null;
+      if(!['/api/v1/operation-events/batch','/api/v1/operation-events','/api/v1/operation-tasks','/api/v1/operation-statistics','/api/v1/operation-events/export'].includes(path))return null;
       const session=auth.authenticate(request); if(!session)return json({code:'AUTH_REQUIRED',message:'身份已过期，请重新进入应用。'},401);
       limit(session.userId);
       if(request.method!=='GET'&&(request.headers.get('origin')!==origin||!equal(request.headers.get('x-csrf-token'),session.csrf)))return json({code:'CSRF_DENIED'},403);
@@ -37,6 +37,7 @@ export function createOperationsHandler({repository,origin,auth}) {
       }
       const filters=Object.fromEntries(url.searchParams);
       if(path==='/api/v1/operation-events'&&request.method==='GET')return json(await repository.list(session,filters));
+      if(path==='/api/v1/operation-tasks'&&request.method==='GET')return json(await repository.listTasks(session,filters));
       if(path==='/api/v1/operation-statistics'&&request.method==='GET')return json(await repository.statistics(session,filters));
       if(path==='/api/v1/operation-events/export'&&request.method==='POST'){
         const f=await readJson(request);buildFilter(session,f);

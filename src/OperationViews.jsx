@@ -2,10 +2,11 @@ import { useEffect, useState } from "react";
 import { DownloadSimple } from "@phosphor-icons/react";
 import { OPERATION_LABELS, OPERATION_RESULTS, recordOperation } from "./operationLog.js";
 import { operationsCsv } from "./operationReports.js";
+import { isFileTask } from "./operationTasks.js";
 
 export const activeFilterCount = (value) => ["from", "to", "action", "result", "query"].filter(key => value[key]).length;
 
-export function RecordFilters({ value, onChange, users, collapsible = false }) {
+export function RecordFilters({ value, onChange, users, collapsible = false, shortcuts = null }) {
   const control = (key, next) => onChange({ ...value, [key]: next });
   const fields = <>
     <label>开始日期<input type="date" value={value.from || ""} onChange={e => control("from", e.target.value)} /></label>
@@ -18,7 +19,7 @@ export function RecordFilters({ value, onChange, users, collapsible = false }) {
     const count = activeFilterCount({ ...value, query: "" });
     return <div className="record-filters-compact">
       <label className="record-search"><span className="visually-hidden">搜索</span><input type="search" placeholder="搜索文件名或任务编号" value={value.query || ""} onChange={e => control("query", e.target.value)} /></label>
-      <details className="record-filters-more"><summary>{count ? `筛选（${count}）` : "筛选"}</summary><div className="record-filters">{fields}</div></details>
+      <details className="record-filters-more"><summary>{count ? `筛选（${count}）` : "筛选"}</summary>{shortcuts}<div className="record-filters">{fields}</div></details>
       {rangeError}
     </div>;
   }
@@ -31,14 +32,31 @@ export function RecordFilters({ value, onChange, users, collapsible = false }) {
 export function RecordFilename({ label, name }) {
   return <div className="record-filename"><span>{label}</span>{name ? <details><summary title="点击展开或收起完整文件名">{name}</summary></details> : <span>未记录</span>}</div>;
 }
-export function RecordList({ records, compact = false }) {
+export function RecordList({ records, compact = false, withinTask = false }) {
   return <ol className="operation-list">{records.map(r => <li key={r.id}>
     <div className="operation-list__head"><strong>{OPERATION_LABELS[r.action] || "操作"}</strong><span data-result={r.result}>{OPERATION_RESULTS[r.result] || "未知状态"}</span></div>
     {!compact && !/credential|mapping|export_records/.test(r.action) && <><RecordFilename label="输入" name={r.inputName} />{(r.outputName || /^(protect|restore|download_)/.test(r.action)) && <RecordFilename label="输出" name={r.outputName} />}</>}
     <time dateTime={r.time}>{new Date(r.time).toLocaleString("zh-CN", { hour12: false })}</time>
-    {!compact && <p>{[r.userName, r.format?.toUpperCase(), r.taskId && `任务 ${r.marker || r.taskId}`].filter(Boolean).join(" · ")}</p>}
+    {!compact && !withinTask && <p>{[r.userName, r.format?.toUpperCase(), r.taskId && `任务 ${r.marker || r.taskId}`].filter(Boolean).join(" · ")}</p>}
   </li>)}</ol>;
 }
+const DOT_LABELS = { done: "已完成", partial: "部分完成", failed: "失败", none: "未进行" };
+
+// One row per task; the two dots are masking and restoring, the steps open underneath.
+export function TaskRecordList({ tasks, showUser = false }) {
+  return <ol className="operation-tasks">{tasks.map(task => <li key={task.key}>
+    <div className="operation-tasks__head">
+      <strong title={task.title}>{task.title}</strong>
+      {isFileTask(task.events) && <span className="task-progress" role="img" aria-label={`脱敏${DOT_LABELS[task.protect]}，还原${DOT_LABELS[task.restore]}`}>
+        <i data-state={task.protect} title={`脱敏：${DOT_LABELS[task.protect]}`} />
+        <i data-state={task.restore} title={`还原：${DOT_LABELS[task.restore]}`} />
+      </span>}
+    </div>
+    <p className="operation-tasks__meta">{[showUser && task.userName, task.format?.toUpperCase(), task.marker && `任务 ${task.marker}`, new Date(task.lastTime).toLocaleString("zh-CN", { hour12: false })].filter(Boolean).join(" · ")}</p>
+    <details className="operation-tasks__steps"><summary>操作明细（{task.events.length} 条）</summary><RecordList records={task.events} withinTask /></details>
+  </li>)}</ol>;
+}
+
 const GROUP_RESULTS = { ...OPERATION_RESULTS, idle: "未生成文件" };
 
 export function OperationGroups({ days }) {
