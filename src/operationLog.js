@@ -1,6 +1,6 @@
 import { enqueueOperation } from "./operationSync.js";
 export const OPERATION_LABELS = {
-  import_protect: "导入待脱敏文件", import_restore: "导入待还原文件", export_records: "导出操作记录",
+  import_protect: "导入待脱敏文件", import_restore: "导入待还原文件", export_records: "导出操作记录", view_all_records: "查看全员记录",
   inspect_protect: "检查待脱敏文件", inspect_restore: "检查待还原文件",
   protect: "生成脱敏文件", restore: "生成还原文件",
   save_mapping: "保存还原记录", delete_mapping: "删除还原记录",

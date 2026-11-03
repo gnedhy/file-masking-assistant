@@ -16,6 +16,14 @@ const csvLine=row=>row.map(csvCell).join(',')+'\r\n';
 export function createOperationsHandler({repository,origin,auth}) {
   if(!origin||!auth)throw new Error('Operations origin and auth required');
   const rates=new Map();
+  // An admin reading other people's records leaves one event per 10 minutes, so filter changes do not flood the log.
+  const viewed=new Map();
+  const recordAdminView=async(session,filters)=>{
+    if(!session.isAdmin||filters.user===session.userId||viewed.get(session.userId)>Date.now())return;
+    viewed.set(session.userId,Date.now()+10*60000);
+    try{await repository.append(session,{eventId:randomUUID(),operationId:randomUUID(),version:1,time:new Date().toISOString(),action:'view_all_records',result:'success'});}
+    catch(e){viewed.delete(session.userId);throw e;}
+  };
   const limit=key=>{const now=Date.now();let r=rates.get(key);if(!r||r.until<now)r={n:0,until:now+60000};r.n++;rates.set(key,r);if(rates.size>10000)for(const[k,v]of rates)if(v.until<now)rates.delete(k);if(r.n>120)throw Object.assign(new Error('RATE_LIMITED'),{status:429});};
   return async request=>{
     const url=new URL(request.url),path=url.pathname;
@@ -36,9 +44,8 @@ export function createOperationsHandler({repository,origin,auth}) {
         return json({results});
       }
       const filters=Object.fromEntries(url.searchParams);
-      if(path==='/api/v1/operation-events'&&request.method==='GET')return json(await repository.list(session,filters));
-      if(path==='/api/v1/operation-tasks'&&request.method==='GET')return json(await repository.listTasks(session,filters));
-      if(path==='/api/v1/operation-statistics'&&request.method==='GET')return json(await repository.statistics(session,filters));
+      const read={'/api/v1/operation-events':'list','/api/v1/operation-tasks':'listTasks','/api/v1/operation-statistics':'statistics'}[path];
+      if(read&&request.method==='GET'){const result=await repository[read](session,filters);await recordAdminView(session,filters);return json(result);}
       if(path==='/api/v1/operation-events/export'&&request.method==='POST'){
         const f=await readJson(request);buildFilter(session,f);
         const scope=JSON.stringify({from:f.from||'最近180天',to:f.to||'当前',user:session.isAdmin?(f.user||'全部用户'):session.userId,format:f.format||'全部',result:f.result||'全部',action:f.action||'全部',query:f.query||''});

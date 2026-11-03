@@ -62,6 +62,17 @@ test('shared sessions, CSRF, origin checks, limits and route hand-off',async()=>
   assert.equal((await request('/healthz')).status,200);
 });
 
+test('admins reading all records leave one view event per 10 minutes; staff and self-scoped reads leave none',async()=>{
+  const appended=[];const repo={append:async(s,e)=>{validateEvent(e);appended.push([s.userId,e.action]);return'accepted';},list:async()=>({records:[]}),listTasks:async()=>({tasks:[]}),statistics:async()=>({totals:{},users:[]})};
+  const origin='http://127.0.0.1:4175',handler=createOperationsHandler({repository:repo,origin,auth});
+  const get=(path,user)=>handler(new Request(origin+path,{headers:{cookie:'session='+user}}));
+  for(const path of ['/api/v1/operation-tasks','/api/v1/operation-statistics','/api/v1/operation-events'])assert.equal((await get(path,'alice')).status,200);
+  assert.equal((await get('/api/v1/operation-statistics?user=test-admin','admin')).status,200);
+  assert.deepEqual(appended,[]);
+  await Promise.all([get('/api/v1/operation-tasks','admin'),get('/api/v1/operation-statistics','admin')]);
+  await get('/api/v1/operation-events?user=test-bob','admin');
+  assert.deepEqual(appended,[['test-admin','view_all_records']]);
+});
 test('PostgreSQL isolation, duplicate conflict, pagination, statistics and export',{skip:!process.env.OPERATIONS_TEST_DATABASE_URL},async()=>{
   const connectionString=process.env.OPERATIONS_TEST_DATABASE_URL;
   if(!new URL(connectionString).pathname.endsWith('_test'))throw new Error('Only explicit test databases are allowed');
