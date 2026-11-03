@@ -128,7 +128,7 @@ export async function inspectOfficeRestoreFile(file, context) {
       checkedAreas: inspection.checkedAreas,
       uncheckedAreas: inspection.uncheckedAreas,
       warnings: ["图片未扫描，部分代号未出现不代表异常。", "真实内容变长后可能产生换行或溢出，请在 Office 中复核版式。"],
-      occurrenceComparison: occurrenceComparison(vault.occurrenceBaseline, inspection.occurrences),
+      occurrenceComparison: occurrenceComparison(vault, inspection.occurrences, format),
     };
   } catch (error) {
     throw asSafeFileError(error);
@@ -143,7 +143,7 @@ export async function restoreOfficeSafeFile(file, expectedTaskId, context) {
     const vault = await resolveRestoreVault(initial, context, expectedTaskId);
     if (!vault) throw new SafeFileError("VAULT_NOT_FOUND", "本机还原记录已不存在，无法还原。");
     const before = await inspectOfficePackage(zip, format, vault.mapping);
-    const comparison = occurrenceComparison(vault.occurrenceBaseline, before.occurrences);
+    const comparison = occurrenceComparison(vault, before.occurrences, format);
     const unknown = before.uniqueTokens.filter((token) => !vault.mapping[token]);
     if (unknown.length || before.altered.length || before.unsupportedOccurrences.length) {
       throw new SafeFileError("UNRESOLVED_TOKENS", "文件未通过还原前的完整代号检查，已停止输出。", [

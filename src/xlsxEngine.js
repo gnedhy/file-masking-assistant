@@ -192,7 +192,7 @@ export async function inspectRestoreFile(file, context) {
     taskName: vault.taskName,
     occurrences: inspection.occurrences.length,
     uniqueTokens: inspection.uniqueTokens.length,
-    occurrenceComparison: occurrenceComparison(vault.occurrenceBaseline, inspection.occurrences),
+    occurrenceComparison: occurrenceComparison(vault, inspection.occurrences, "xlsx"),
   };
 }
 
@@ -201,7 +201,7 @@ export async function restoreSafeWorkbook(file, expectedTaskId, context) {
   const inspection = inspectWorkbookTokens(workbook);
   const vault = await resolveRestoreVault(inspection, context, expectedTaskId);
   if (!vault) throw new SafeFileError("VAULT_NOT_FOUND", "本机还原记录已不存在，无法还原。");
-  const comparison = occurrenceComparison(vault.occurrenceBaseline, inspection.occurrences);
+  const comparison = occurrenceComparison(vault, inspection.occurrences, "xlsx");
   const altered = inspectWorkbookAlteredTokens(workbook, vault.mapping);
   if (altered.length) {
     throw new SafeFileError("ALTERED_TOKENS", "文件中存在残缺或被改写的已知代号，已停止输出。", altered.map((item) => `${item.sheetName}!${item.address}：${item.value}`));

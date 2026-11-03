@@ -356,8 +356,10 @@ function ReadyState({ mode, file, analysis, selectedIds, fieldModes = {}, restor
   const valueCount = selectedColumns.reduce((sum, column) => sum + column.valueCount, 0);
   const valueUnit = fileFormatFromName(file.name) === "csv" ? "个字段值" : "个单元格";
   const comparison = restoreInspection?.occurrenceComparison;
-  const hasContentLoss = Boolean(comparison?.missing);
-  const changedTokens = comparison?.byToken?.filter((item) => item.missing || item.added) ?? [];
+  const hasContentLoss = Boolean(comparison?.missing) && !comparison.rewritten;
+  const changedTokens = comparison?.rewritten ? [] : comparison?.byToken?.filter((item) => item.missing || item.added) ?? [];
+  const usedTokens = comparison?.byToken?.filter((item) => item.returned).length ?? 0;
+  const originalTokens = comparison?.byToken?.filter((item) => item.original).length ?? 0;
   const summary = mode === "protect"
     ? analysis?.kind === "text"
       ? `已选择 ${selectedCandidates.length} 项敏感内容，共出现 ${selectedCandidates.reduce((sum, item) => sum + item.count, 0)} 处`
@@ -386,6 +388,8 @@ function ReadyState({ mode, file, analysis, selectedIds, fieldModes = {}, restor
               ? `可确认的代号会正常还原；${restoreInspection.unresolvedOccurrences.length} 处被改写的代号将原样保留。`
               : hasContentLoss
                 ? `AI 返回内容中有 ${comparison.missing} 处代号未出现；现有完整代号仍可正常还原。`
+              : comparison?.rewritten && comparison.missing
+                ? `任务已匹配。AI 生成的新文件用到了 ${originalTokens} 个代号中的 ${usedTokens} 个，没用到的属于正常改写。`
               : "任务已匹配，还原记录可读取。请核对后生成还原文件。"}</small></span>
           </div>
           <dl>
@@ -530,7 +534,7 @@ function SuccessState({ mode, result, downloadRequested, detailsOpen, onDetails,
   const count = protect ? result.replacedCells : result.restoredOccurrences;
   const outputFileName = splitFileName(result.outputName);
   const handoff = protect && downloadRequested;
-  const hasContentLoss = !protect && Boolean(result.occurrenceComparison?.missing);
+  const hasContentLoss = !protect && Boolean(result.occurrenceComparison?.missing) && !result.occurrenceComparison.rewritten;
   const valueUnit = result.format === "csv" ? "个字段值" : ["txt", "md", "docx"].includes(result.format) ? "处文字" : "个单元格";
   return (
     <div className="success-state" data-handoff={handoff} data-partial={Boolean(result.partialRestore)} data-content-loss={hasContentLoss} role="status" aria-live="polite">
@@ -680,7 +684,7 @@ const ERROR_PRESENTATION = {
   FILE_TOO_LARGE: { title: "文件超过当前安全限制", description: "Office 文件不能超过 20 MB，HTML 不能超过 10 MB。", guidance: "请拆分文件或压缩图片后重试。" },
   PACKAGE_TOO_LARGE: { title: "文件内部结构超过安全限制", description: "解包总量或内部文件项过多，系统已停止处理。", guidance: "请精简文件后重试。" },
   ALTERED_TOKENS: { title: "有些代号已被改写或截断", description: "系统只还原完整且能由还原记录确认的代号。", guidance: "请让 AI 保留完整代号，或重新生成处理文件。" },
-  UNSUPPORTED_CONTENT: { title: "代号出现在不安全或暂不处理的位置", description: "Office 的图表、SmartArt、批注、嵌入内容，或 HTML 的脚本、样式、链接、事件属性中发现代号，因此已停止输出。", guidance: "请把代号放回普通文字或表格后再试。" },
+  UNSUPPORTED_CONTENT: { title: "代号出现在不安全或暂不处理的位置", description: "Office 的 SmartArt、批注、自定义属性、嵌入内容，或 HTML 的外部脚本、样式、链接、事件属性中发现代号，因此已停止输出。具体位置见下方明细。", guidance: "请把代号放回普通文字、表格或图表后再试。" },
 };
 
 const ISSUE_PREVIEW_LIMIT = 5;
@@ -1254,7 +1258,7 @@ export function App() {
       } else {
         const inspection = await inspectRestoreFile(selected);
         setRestoreInspection(inspection);
-        recordFileOperation("inspect_restore", inspection.occurrenceComparison?.missing ? "missing" : "success", { ...inspection, inputName: selected.name });
+        recordFileOperation("inspect_restore", inspection.occurrenceComparison?.missing && !inspection.occurrenceComparison.rewritten ? "missing" : "success", { ...inspection, inputName: selected.name });
       }
       if (mode === "protect") recordFileOperation("inspect_protect", "success", { format, inputName: selected.name });
       setStatus("ready");
@@ -1316,7 +1320,7 @@ export function App() {
       }
       output = { ...output, inputName: file.name, operationId: operationIdRef.current, ...(mode === "restore" ? { marker: restoreInspection.marker } : {}) };
       setResult(output); setStatus("success");
-      recordFileOperation(mode, output.partialRestore ? "partial" : output.occurrenceComparison?.missing ? "missing" : "success", { ...output, format: fileFormatFromName(file.name) });
+      recordFileOperation(mode, output.partialRestore ? "partial" : output.occurrenceComparison?.missing && !output.occurrenceComparison.rewritten ? "missing" : "success", { ...output, format: fileFormatFromName(file.name) });
       if (mode === "protect") {
         getLocalTaskStatus()
           .then((summary) => setLocalTasks({ status: "ready", ...summary }))

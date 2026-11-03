@@ -244,6 +244,37 @@ test("inspection reports mixed tasks, unknown tokens and unsupported SmartArt to
   assert.deepEqual(new Set(inspection.taskIds), new Set([TASK, "AAAAAAAA"]));
   assert.ok(inspection.uniqueTokens.includes(unknown));
   assert.equal(inspection.unsupportedOccurrences[0].token, P);
+  assert.equal(inspection.unsupportedOccurrences[0].location, "SmartArt（ppt/diagrams/data1.xml）");
+});
+
+test("PPTX restores tokens in the document title, subject and slide titles listed in app.xml", async () => {
+  const bytes = await packageBytes("pptx", {
+    "ppt/slides/slide1.xml": `<p:sld>${aParagraph(C)}</p:sld>`,
+    "docProps/core.xml": `<cp:coreProperties><dc:title>${C} 销售经营分析</dc:title><dc:subject>${P} &amp; 渠道</dc:subject><dc:creator>python-pptx</dc:creator></cp:coreProperties>`,
+    "docProps/app.xml": `<Properties><TitlesOfParts><vt:vector><vt:lpstr>${S} 的客户</vt:lpstr></vt:vector></TitlesOfParts></Properties>`,
+    "docProps/custom.xml": "<Properties><property name=\"x\"><vt:lpwstr>无代号</vt:lpwstr></property></Properties>",
+  });
+  const { zip, format } = await loadOfficePackage(bytes, "pptx");
+  const before = await inspectOfficePackage(zip, format, mapping);
+  assert.equal(before.unsupportedOccurrences.length, 0);
+  assert.equal(before.occurrences.length, 4);
+  assert.ok(before.checkedAreas.includes("文档属性（标题、主题等）"));
+  const restored = await restoreOfficePackage(zip, format, mapping);
+  assert.equal(restored.restoredOccurrences, 4);
+  assert.match(await zip.file("docProps/core.xml").async("string"), /<dc:title>浙江ABC染整有限公司 销售经营分析<\/dc:title><dc:subject>HT-825GK &amp; 渠道<\/dc:subject><dc:creator>python-pptx<\/dc:creator>/);
+  assert.match(await zip.file("docProps/app.xml").async("string"), /<vt:lpstr>张三 的客户<\/vt:lpstr>/);
+  const after = await inspectOfficePackage(zip, format, mapping);
+  assert.equal(after.occurrences.length + after.unsupportedOccurrences.length, 0);
+});
+
+test("a token in custom document properties is reported by its plain name", async () => {
+  const bytes = await packageBytes("pptx", {
+    "ppt/slides/slide1.xml": `<p:sld>${aParagraph(C)}</p:sld>`,
+    "docProps/custom.xml": `<Properties><property name="客户"><vt:lpwstr>${C}</vt:lpwstr></property></Properties>`,
+  });
+  const { zip, format } = await loadOfficePackage(bytes, "pptx");
+  const inspection = await inspectOfficePackage(zip, format, mapping);
+  assert.equal(inspection.unsupportedOccurrences[0].location, "自定义文档属性（docProps/custom.xml）");
 });
 
 test("altered known short tokens and partial syntax are detected", () => {

@@ -152,6 +152,9 @@ for (const { format, file } of [
     await expect(page.getByRole("link", { name: "下载还原文件" })).toBeVisible({ timeout: 30000 });
     const restored = await download(page, "下载还原文件");
     let text = restored.buffer.toString("utf8");
+    // The Swiss page keeps its inline script, so the restored page sits in a sandboxed frame's srcdoc.
+    const srcdoc = text.match(/<iframe sandbox="allow-scripts"[^>]*srcdoc="([^"]*)"/)?.[1];
+    if (srcdoc) text = srcdoc.replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&quot;", '"').replaceAll("&amp;", "&");
     if (format === "pptx") {
       const zip = await JSZip.loadAsync(restored.buffer);
       const slides = Object.keys(zip.files).filter((name) => /^ppt\/(slides|notesSlides)\/[^/]+\.xml$/.test(name));

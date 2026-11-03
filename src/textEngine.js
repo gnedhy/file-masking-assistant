@@ -83,7 +83,7 @@ export async function inspectTextRestoreFile(file, format, context) {
   return {
     ...taskEvidence(vault), format, formatLabel: format === "md" ? "Markdown" : "TXT", taskId, taskName: vault.taskName,
     occurrences: inspection.occurrences.length, usedMappings: inspection.uniqueTokens.length,
-    occurrenceComparison: occurrenceComparison(vault.occurrenceBaseline, inspection.occurrences),
+    occurrenceComparison: occurrenceComparison(vault, inspection.occurrences, format),
     checkedAreas: ["全部纯文本内容"], uncheckedAreas: ["图片、脚本和嵌入对象（纯文本本身不包含）"],
     warnings: [format === "md" ? "部分代号未出现不代表异常；Markdown 不会被渲染或执行。" : "部分代号未出现不代表异常；TXT 按纯文本处理。"],
   };
@@ -94,7 +94,7 @@ export async function restoreSafeText(file, expectedTaskId, format, context) {
   const inspection = inspectTextTokens(document.text);
   const vault = await resolveRestoreVault(inspection, context, expectedTaskId);
   if (!vault) throw new SafeFileError("VAULT_NOT_FOUND", "本机还原记录已不存在，无法还原。");
-  const comparison = occurrenceComparison(vault.occurrenceBaseline, inspection.occurrences);
+  const comparison = occurrenceComparison(vault, inspection.occurrences, format);
   const altered = inspectAlteredTextTokens(document.text, vault.mapping);
   if (altered.length) throw new SafeFileError("ALTERED_TOKENS", "文件中存在残缺或被改写的已知代号。", altered.map((item) => item.value));
   const result = restoreText(document.text, vault.mapping);

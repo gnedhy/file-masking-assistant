@@ -50,7 +50,7 @@ def deck(chart=False, core_title=False, group=False):
         prs.core_properties.title = f"{c1} 销售经营分析"
     return prs
 
-deck(group=True, chart=True).save("tests/fixtures/ai-style-deck.pptx")
+deck(group=True, chart=True, core_title=True).save("tests/fixtures/ai-style-deck.pptx")
 
 style = "<style>body{font-family:system-ui;margin:40px}table{border-collapse:collapse}td,th{border:1px solid #ccc;padding:6px 10px}.kpi{color:#2343aa}</style>"
 table = f"<table><thead><tr><th>客户</th><th>产品</th><th>负责人</th></tr></thead><tbody><tr><td>{c1}</td><td>{p1}</td><td>{s1}</td></tr><tr><td>{c2}</td><td>{p2}</td><td>{s2}</td></tr></tbody></table>"
@@ -59,9 +59,9 @@ body = f"<h1>{c1} 销售经营分析</h1><p class=\"kpi\">本期 <strong>{c1}</s
 def html(head_extra="", body_extra="", title=f"{c1} 销售经营分析"):
     return f"<!DOCTYPE html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>{title}</title>{style}{head_extra}</head><body>{body}{body_extra}</body></html>"
 
-open("tests/fixtures/ai-style-report.html", "w", encoding="utf-8").write(html(body_extra=f"<img alt=\"{c1} 销售趋势图\" src=\"data:image/png;base64,iVBORw0KGgo=\"><abbr title=\"{c2}\">客户二</abbr>"))
 chart_js = "<script src=\"https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js\"></script>"
 chart_body = f"<canvas id=\"c\"></canvas><script>new Chart(document.getElementById('c'),{{type:'bar',data:{{labels:['{c1}','{c2}'],datasets:[{{label:'销售额',data:[128000,86000]}}]}}}});</script>"
+open("tests/fixtures/ai-style-report.html", "w", encoding="utf-8").write(html(chart_js, f"<img alt=\"{c1} 销售趋势图\" src=\"data:image/png;base64,iVBORw0KGgo=\"><abbr title=\"{c2}\">客户二</abbr>{chart_body}"))
 # Same chart but with no aliases inside the script: labels read from the table instead.
 clean_chart = "<canvas id=\"c\"></canvas><script>const rows=[...document.querySelectorAll('tbody tr')];new Chart(document.getElementById('c'),{type:'bar',data:{labels:rows.map(r=>r.cells[0].textContent),datasets:[{label:'销售额',data:[128000,86000]}]}});</script>"
 print("ok", c1, c2, p1, p2, s1, s2)

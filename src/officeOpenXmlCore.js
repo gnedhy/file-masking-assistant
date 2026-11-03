@@ -46,6 +46,36 @@ const WORKBOOK_TEXT_NODES = [
   { pattern: /^xl\/worksheets\/sheet\d+\.xml$/i, config: { paragraphTag: "is", textTag: "t" } },
 ];
 const UNSAFE_PACKAGE_ENTRY = /(^|\/)(embeddings|activeX)\/|vbaProject\.bin$/i;
+// AI tools often put the deck title into the document properties, and PowerPoint lists slide titles in app.xml.
+// Each property is a single text element, so tokens there are restored element by element.
+const DOCUMENT_PROPERTIES = { pattern: /^docProps\/(?:core|app)\.xml$/i, area: "文档属性（标题、主题等）" };
+const PART_LABELS = [
+  [/^docProps\/custom\.xml$/i, "自定义文档属性"],
+  [/^(?:word|ppt)\/comments/i, "批注"],
+  [/^ppt\/diagrams\//i, "SmartArt"],
+  [/^word\/(?:footnotes|endnotes)\.xml$/i, "脚注或尾注"],
+  [/^(?:word|ppt)\/(?:slideMasters|slideLayouts|theme)\//i, "母版、版式或主题"],
+  [/\.rels$/i, "文件内部链接"],
+];
+
+function partLocation(name) {
+  const label = PART_LABELS.find(([pattern]) => pattern.test(name))?.[1];
+  return label ? `${label}（${name}）` : name;
+}
+
+function replacePropertyText(xml, mapping) {
+  let count = 0;
+  const output = xml.replace(/>([^<>]+)</g, (match, text) => {
+    const restored = decodeXml(text).replace(tokenPattern(), (token) => {
+      const entry = mapping[token];
+      if (!entry) return token;
+      count += 1;
+      return serializedValueAsText(entry);
+    });
+    return restored === decodeXml(text) ? match : `>${encodeXml(restored)}<`;
+  });
+  return { xml: output, count };
+}
 
 function resolvePartPath(base, target) {
   const parts = base.split("/").slice(0, -1);
@@ -464,12 +494,12 @@ export async function inspectOfficePackage(zip, format, mapping = null) {
   for (const entry of Object.values(zip.files)) {
     if (entry.dir || !/\.(xml|rels)$/i.test(entry.name)) continue;
     const xml = await entry.async("string");
-    const area = supportedArea(entry.name, config);
+    const area = supportedArea(entry.name, config) ?? (DOCUMENT_PROPERTIES.pattern.test(entry.name) ? DOCUMENT_PROPERTIES : null);
     const hidden = [...xml.matchAll(/\b[\w:.-]+\s*=\s*(?:"([^"]*)"|'([^']*)')|<!--[\s\S]*?-->/g)]
       .map(match => decodeXml(match[1] ?? match[2] ?? match[0])).join("\n");
-    unsupportedOccurrences.push(...scanText(hidden, `${entry.name} 属性或注释`).filter(item => item.taskId.startsWith("short:")));
+    unsupportedOccurrences.push(...scanText(hidden, `${partLocation(entry.name)} 的属性或注释`).filter(item => item.taskId.startsWith("short:")));
     if (mapping) altered.push(...findKnownShortTokens(hidden.replace(tokenPattern(), " "), new Set()).map(value => ({ location: `${entry.name} 属性或注释`, value })));
-    const found = scanOfficeXml(xml, format, entry.name);
+    const found = scanOfficeXml(xml, format, area ? entry.name : partLocation(entry.name));
     if (area) {
       occurrences.push(...found);
       if (found.length) checkedAreas.add(area.area);
@@ -512,6 +542,15 @@ export async function restoreOfficePackage(zip, format, mapping) {
   const checkedAreas = new Set();
   for (const entry of Object.values(zip.files)) {
     if (entry.dir || !entry.name.toLowerCase().endsWith(".xml")) continue;
+    if (DOCUMENT_PROPERTIES.pattern.test(entry.name)) {
+      const replaced = replacePropertyText(await entry.async("string"), mapping);
+      if (replaced.count) {
+        zip.file(entry.name, replaced.xml);
+        restoredOccurrences += replaced.count;
+        checkedAreas.add(DOCUMENT_PROPERTIES.area);
+      }
+      continue;
+    }
     const area = supportedArea(entry.name, config);
     if (!area) continue;
     const xml = await entry.async("string");

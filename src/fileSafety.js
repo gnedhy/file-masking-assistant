@@ -17,8 +17,12 @@ export function occurrenceBaseline(occurrences) {
   return occurrences.reduce((counts, { token }) => ({ ...counts, [token]: (counts[token] || 0) + 1 }), {});
 }
 
-export function occurrenceComparison(baseline, occurrences) {
+// A file in another format than the source (an AI summary deck from a sales sheet) is new writing, so tokens
+// it leaves out are expected. Only a file in the source's own format is expected to keep every token.
+export function occurrenceComparison(vault, occurrences, format) {
+  const baseline = vault?.occurrenceBaseline;
   if (!baseline) return null;
+  const rewritten = Boolean(vault.sourceFormat) && vault.sourceFormat !== format;
   const returned = occurrenceBaseline(occurrences);
   const tokens = new Set([...Object.keys(baseline), ...Object.keys(returned)]);
   let original = 0, current = 0, missing = 0, added = 0;
@@ -36,7 +40,7 @@ export function occurrenceComparison(baseline, occurrences) {
       added: Math.max(0, after - before),
     });
   }
-  return { original, returned: current, missing, added, byToken };
+  return { original, returned: current, missing, added, rewritten, byToken };
 }
 
 export function suspiciousTextFindings(text) {
