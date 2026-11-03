@@ -6223,7 +6223,7 @@ input {
 .feedback-dialog__field, .feedback-compose label, .feedback-resolve label { display: grid; gap: 6px; color: var(--muted); font-size: var(--fs-xs); }
 .feedback-dialog textarea, .feedback-compose textarea, .feedback-resolve textarea { width: 100%; min-height: 96px; resize: vertical; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface); color: var(--ink); font: inherit; font-size: var(--fs-sm); line-height: 1.6; }
 .feedback-dialog textarea:focus-visible, .feedback-compose textarea:focus-visible, .feedback-resolve textarea:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
-.feedback-dialog__files { display: grid; gap: 8px; margin: 14px 0 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface-soft); }
+.feedback-dialog__files { display: grid; gap: 10px; margin: 14px 0 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface-raised); }
 .feedback-dialog__files legend { padding: 0 4px; color: var(--muted); font-size: var(--fs-xs); }
 .feedback-dialog__files label { display: flex; align-items: flex-start; gap: 8px; color: var(--ink); font-size: var(--fs-sm); cursor: pointer; }
 .feedback-dialog__files label span { display: grid; gap: 2px; }
@@ -6231,6 +6231,10 @@ input {
 .feedback-dialog__files p { margin: 2px 0 0; }
 .feedback-dialog__files input { margin-top: 3px; accent-color: var(--blue); }
 .feedback-dialog__auto { cursor: default !important; }
+.feedback-dialog__auto { display: flex; align-items: flex-start; gap: 8px; color: var(--ink); font-size: var(--fs-sm); }
+.feedback-dialog__auto span { display: grid; gap: 2px; }
+.feedback-dialog__auto svg { flex: 0 0 auto; width: 16px; height: 16px; margin-top: 2px; color: var(--green); }
+.feedback-dialog__files p { padding-top: 8px; border-top: 1px dashed var(--line); }
 .feedback-dialog__error { margin: 10px 0 0; color: var(--danger); font-size: var(--fs-sm); }
 .feedback-center { max-width: 960px; }
 .feedback-layout { display: grid; gap: 20px; margin-top: 20px; }

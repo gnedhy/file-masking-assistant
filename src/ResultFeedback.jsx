@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ThumbsDown, ThumbsUp } from "@phosphor-icons/react";
+import { CheckCircle, ThumbsDown, ThumbsUp } from "@phosphor-icons/react";
 import { submitFeedback } from "./feedbackApi.js";
 import { recordOperation } from "./operationLog.js";
 
@@ -51,7 +51,7 @@ function FeedbackDialog({ mode, result, sourceFile, summary, onClose }) {
       <label className="feedback-dialog__field"><span>问题描述</span><textarea ref={fieldRef} value={content} maxLength={2000} required onChange={e => setContent(e.target.value)} placeholder="例如：客户名称列有几行没有替换" /></label>
       <fieldset className="feedback-dialog__files">
         <legend>一并发送</legend>
-        <label className="feedback-dialog__auto"><input type="checkbox" checked disabled /><span>本次检查结果<small>{summary}</small></span></label>
+        <div className="feedback-dialog__auto"><CheckCircle weight="fill" aria-hidden="true" /><span>本次检查结果（自动附上）<small>{summary}</small></span></div>
         {options.map(o => <label key={o.key}><input type="checkbox" checked={picked.has(o.key)} onChange={e => setPicked(old => { const next = new Set(old); if (e.target.checked) next.add(o.key); else next.delete(o.key); return next; })} /><span>{o.label}<small>{o.name || result.outputName} · {o.hint}</small></span></label>)}
         <p>原文件和还原后的文件含真实信息，不会发送。</p>
       </fieldset>
