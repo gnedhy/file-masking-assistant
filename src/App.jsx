@@ -378,9 +378,6 @@ function ReadyState({ mode, file, analysis, selectedIds, fieldModes = {}, restor
         </div>
       )}
       <p className="recognition-line"><CheckCircle weight="duotone" /><span>{summary}</span></p>
-      {mode === "protect" && <ReplacementPreview items={analysis?.kind === "text"
-        ? selectedCandidates.map((item) => ({ key: item.id, title: item.value, detail: `${item.label} · ${item.count} 处` }))
-        : selectedColumns.map((column) => ({ key: column.id, title: column.header, detail: `${column.processingMode === "whole" ? "整个单元格" : "仅文中已选内容"} · ${column.valueCount} 个值` }))} />}
       {mode === "restore" && (
         <section className="compatibility-check" data-partial={restoreInspection.partialRestore} data-content-loss={hasContentLoss} aria-labelledby="compatibility-check-title">
           <div className="compatibility-check__head">
@@ -408,11 +405,26 @@ function ReadyState({ mode, file, analysis, selectedIds, fieldModes = {}, restor
           </span>
         </div>
       )}
-      <div className="rule" />
-      <button className="evidence-trigger" type="button" onClick={onDetails} aria-expanded={detailsOpen} aria-controls="security-details">
-        <span><ShieldCheck weight="duotone" /><strong>{mode === "protect" ? analysis?.kind === "text" ? "确认替换内容" : "确认替换列" : `任务编号 ${restoreInspection.marker || restoreInspection.taskId}`}</strong></span>
-        <span className="evidence-trigger__action">{mode === "protect" ? "查看并调整" : "查看检查详情"}<CaretRight weight="bold" /></span>
-      </button>
+      {mode === "protect" ? (
+        // The header and the preview share one card so the sizes read as one block.
+        <div className="replacement-card">
+          <button className="evidence-trigger" type="button" onClick={onDetails} aria-expanded={detailsOpen} aria-controls="security-details">
+            <span><ShieldCheck weight="duotone" /><strong>{analysis?.kind === "text" ? "确认替换内容" : "确认替换列"}</strong></span>
+            <span className="evidence-trigger__action">查看并调整<CaretRight weight="bold" /></span>
+          </button>
+          <ReplacementPreview items={analysis?.kind === "text"
+            ? selectedCandidates.map((item) => ({ key: item.id, title: item.value, detail: `${item.label} · ${item.count} 处` }))
+            : selectedColumns.map((column) => ({ key: column.id, title: column.header, detail: `${column.processingMode === "whole" ? "整个单元格" : "仅文中已选内容"} · ${column.valueCount} 个值` }))} />
+        </div>
+      ) : (
+        <>
+          <div className="rule" />
+          <button className="evidence-trigger" type="button" onClick={onDetails} aria-expanded={detailsOpen} aria-controls="security-details">
+            <span><ShieldCheck weight="duotone" /><strong>任务编号 {restoreInspection.marker || restoreInspection.taskId}</strong></span>
+            <span className="evidence-trigger__action">查看检查详情<CaretRight weight="bold" /></span>
+          </button>
+        </>
+      )}
       <button className="primary-button" type="button" onClick={onPrimary} disabled={mode === "protect" ? (!(analysis?.kind === "text" ? selectedCandidates.length : selectedColumns.length) || hasOnlyInlineFields) : false}>
         {MODE_COPY[mode].primary}<ArrowRight weight="bold" />
       </button>

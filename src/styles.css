@@ -6074,3 +6074,50 @@ input {
 
 .drawer-head__actions { display: flex; flex: 0 0 auto; align-items: center; gap: var(--sp-2); }
 .drawer-head__link { display: inline-flex; align-items: center; gap: 4px; min-height: 32px; padding: 4px 8px; color: var(--blue); font-size: var(--fs-sm); font-weight: var(--fw-bold); white-space: nowrap; }
+
+/* Ready state: "确认替换列" and the columns it covers form one card, as wide as the file card above. */
+.replacement-card {
+  width: 100%;
+  margin: 0 0 44px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+  text-align: left;
+}
+
+.replacement-card .evidence-trigger {
+  width: 100%;
+  min-height: 0;
+  margin: 0;
+  padding: 18px 22px;
+  border: 0;
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+  background: transparent;
+}
+
+.replacement-card .evidence-trigger strong { font-size: var(--fs-lg); }
+
+.replacement-card .replacement-preview {
+  margin: 0 !important;
+  padding: 0 22px 20px;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+}
+
+.replacement-card .replacement-preview li {
+  gap: 4px;
+  padding: 12px 14px;
+  background: color-mix(in srgb, var(--surface-soft) 45%, transparent);
+}
+
+.replacement-card .replacement-preview strong { font-size: 15px; }
+.replacement-card .replacement-preview small { font-size: var(--fs-sm); }
+
+@media (min-width: 1181px) {
+  .replacement-card { margin-bottom: 53px; }
+}
+
+@media (max-width: 640px) {
+  .replacement-card { margin-bottom: 28px; }
+  .replacement-card .evidence-trigger { flex-direction: row; align-items: center; padding: 14px; }
+  .replacement-card .replacement-preview { padding: 0 14px 14px; }
+}
