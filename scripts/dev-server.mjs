@@ -6,10 +6,16 @@ import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { Readable } from "node:stream";
 import { createServer as createViteServer } from "vite";
+import { createAccess, MemoryAccessRepository, PgAccessRepository } from "../server/access.mjs";
 import { createAppHandler } from "../server/handler.mjs";
+import { MemoryFeedbackRepository, PgFeedbackRepository } from "../server/feedback.mjs";
 import { PgOperationsRepository, validateEvent } from "../server/operations-repository.mjs";
 import { PgVaultRepository } from "../server/repository.mjs";
 import { summarizeTask, taskKeyResolver } from "../src/operationTasks.js";
+import { ISSUE_RESULTS, operationReport } from "../src/operationReports.js";
+import { reportRange } from "../server/operations-repository.mjs";
+
+process.env.TZ ||= "Asia/Shanghai";
 
 export const TEST_USERS = {
   admin: { userId: "test-admin", userName: "测试管理员", isAdmin: true },
@@ -63,6 +69,7 @@ export class MemoryOperationsRepository {
     const query = String(filters.query || "").toLowerCase();
     return this.rows.filter(row => (!user || row.userId === user)
       && ["action", "result", "format"].every(key => !filters[key] || row[key] === filters[key])
+      && (!filters.issues || ISSUE_RESULTS.includes(row.result))
       && (!query || [row.inputName, row.outputName, row.taskId, row.marker].join(" ").toLowerCase().includes(query)))
       .sort((a, b) => b.time.localeCompare(a.time));
   }
@@ -87,6 +94,7 @@ export class MemoryOperationsRepository {
     const rows = this.visible(session, filters);
     return { totals: totals(rows), users: [...new Set(rows.map(r => r.userId))].sort().map(userId => ({ userId, userName: rows.find(r => r.userId === userId).userName, ...totals(rows.filter(r => r.userId === userId)) })) };
   }
+  async report(session, filters = {}, { limit } = {}) { return operationReport(this.visible(session, filters), reportRange(filters), { people: session.isAdmin, limit }); }
   async *exportRows(session, filters = {}, excludeEventId) { yield this.visible(session, filters).filter(row => row.eventId !== excludeEventId); }
   async ready() {}
 }
@@ -120,7 +128,25 @@ if (process.env.DATABASE_URL) {
   operationsRepository = new PgOperationsRepository({ connectionString: process.env.DATABASE_URL });
   await operationsRepository.initialize(await readFile(new URL("../server/operations-schema.sql", import.meta.url), "utf8"));
 }
-const handle = createAppHandler({ vaultRepository, operationsRepository, auth, origin });
+// A small fake company directory; test-admin starts as the only admin, as if they had signed in first.
+const DEV_DIRECTORY = {
+  departments: [{ id: 1, name: "测试公司", parentId: null, order: 3 }, { id: 2, name: "销售部", parentId: 1, order: 2 }, { id: 3, name: "财务部", parentId: 1, order: 1 }],
+  members: Object.values(TEST_USERS).map((user, index) => ({ userId: user.userId, name: user.userName, departmentIds: [index === 2 ? 3 : 2] })),
+};
+let accessRepository = new MemoryAccessRepository({ admins: [TEST_USERS.admin.userId] });
+if (process.env.DATABASE_URL) {
+  accessRepository = new PgAccessRepository({ connectionString: process.env.DATABASE_URL });
+  await accessRepository.initialize(await readFile(new URL("../server/access-schema.sql", import.meta.url), "utf8"));
+  // Tests share one database: reset the admin list to test-admin on every start.
+  await accessRepository.transaction(c => c.query("DELETE FROM app_admins; DELETE FROM admin_changes; INSERT INTO app_admins(user_id, granted_by) VALUES('test-admin', 'test-admin')"));
+}
+const access = await createAccess({ repository: accessRepository, auth, directorySource: async () => structuredClone(DEV_DIRECTORY), origin });
+let feedbackRepository = new MemoryFeedbackRepository();
+if (process.env.DATABASE_URL) {
+  feedbackRepository = new PgFeedbackRepository({ connectionString: process.env.DATABASE_URL, masterKey: Buffer.alloc(32, 7) });
+  await feedbackRepository.initialize(await readFile(new URL("../server/feedback-schema.sql", import.meta.url), "utf8"));
+}
+const handle = createAppHandler({ vaultRepository, operationsRepository, feedbackRepository, access, origin });
 
 const server = createServer(async (req, res) => {
   if (!API_PATHS.test(new URL(req.url, origin).pathname)) { vite.middlewares(req, res); return; }
@@ -130,7 +156,7 @@ const server = createServer(async (req, res) => {
     // localhost and 127.0.0.1 are the same machine here; production checks one fixed origin.
     if (headers.get("origin") === `http://localhost:${port}`) headers.set("origin", origin);
     let issued = null;
-    if (req.url.startsWith("/api/") && !auth.authenticate(new Request(origin, { headers }))) {
+    if (req.url.startsWith("/api/") && !access.authenticate(new Request(origin, { headers }))) {
       issued = `dev-${randomBytes(8).toString("hex").slice(0, 10)}`;
       headers.set("cookie", `dev_session=${issued}.${sign(issued)}`);
     }

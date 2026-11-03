@@ -1,6 +1,7 @@
 import pg from 'pg';
 import { OPERATION_LABELS, OPERATION_RESULTS } from '../src/operationLog.js';
 import { summarizeTask } from '../src/operationTasks.js';
+import { ISSUE_RESULTS, daySpan, localDay, operationReport, previousRange } from '../src/operationReports.js';
 
 const uuid = /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i;
 const fields = ['eventId','operationId','version','time','action','result','taskId','marker','format','inputName','outputName'];
@@ -24,7 +25,7 @@ export function validateEvent(event, now = Date.now()) {
 }
 
 export function buildFilter(session, filters = {}) {
-  if(!filters||typeof filters!=='object'||Array.isArray(filters)||Object.keys(filters).some(k=>!['from','to','user','format','result','action','query','page'].includes(k)))throw new Error('INVALID_FILTER');
+  if(!filters||typeof filters!=='object'||Array.isArray(filters)||Object.keys(filters).some(k=>!['from','to','user','format','result','action','query','page','issues'].includes(k)))throw new Error('INVALID_FILTER');
   const values = []; const clauses = ["occurred_at >= now() - interval '180 days'"];
   const add = (sql,value) => { values.push(value); clauses.push(sql.replace('?',`$${values.length}`)); };
   if (!session.isAdmin) {
@@ -41,6 +42,7 @@ export function buildFilter(session, filters = {}) {
     if (!allowed.includes(filters[key])) throw new Error('INVALID_FILTER');
     add(`${key} = ?`,filters[key]);
   }
+  if (filters.issues) { if (filters.issues !== '1') throw new Error('INVALID_FILTER'); add('result = ANY(?)', ISSUE_RESULTS); }
   if (filters.query) {
     if (typeof filters.query !== 'string' || filters.query.length > 512) throw new Error('INVALID_QUERY');
     add("strpos(lower(concat_ws(' ',input_name,output_name,task_id,marker)),lower(?)) > 0",filters.query.trim());
@@ -48,6 +50,19 @@ export function buildFilter(session, filters = {}) {
   const page = filters.page === undefined ? 1 : Number(filters.page);
   if (!Number.isSafeInteger(page) || page < 1 || page > 10000000) throw new Error('INVALID_PAGE');
   return { sql:clauses.join(' AND '),values,page };
+}
+// The statistics page range: defaults to the last 30 days, at most a year.
+export function reportRange(filters = {}) {
+  const today = localDay(new Date());
+  const start = new Date(); start.setDate(start.getDate() - 29);
+  const from = filters.from || localDay(start);
+  const to = filters.to || today;
+  if (![from, to].every(day => /^\d{4}-\d{2}-\d{2}$/.test(day)) || from > to || daySpan(from, to) > 366) throw new Error('INVALID_DATE_RANGE');
+  return { from, to };
+}
+export function exportRange(filters = {}) {
+  const start = new Date(); start.setDate(start.getDate() - 179);
+  return reportRange({ from: filters.from || localDay(start), to: filters.to });
 }
 const columns = `event_id AS "eventId", event_id AS id, operation_id AS "operationId", owner_user_id AS "userId", user_name AS "userName", occurred_at AS time, received_at AS "receivedAt", action,result,task_id AS "taskId",marker,format,input_name AS "inputName",output_name AS "outputName",version`;
 const business = "action IN ('import_protect','import_restore','inspect_protect','inspect_restore','download_protect','download_restore','protect','restore')";
@@ -96,6 +111,12 @@ export class PgOperationsRepository {
     const {rows:[totals]}=await this.pool.query(`SELECT ${aggregates} FROM operation_events WHERE ${f.sql}`,f.values);
     const {rows:users}=await this.pool.query(`SELECT owner_user_id AS "userId",max(user_name) AS "userName",${aggregates} FROM operation_events WHERE ${f.sql} GROUP BY owner_user_id ORDER BY owner_user_id`,f.values);
     return {totals,users};
+  }
+  // Rows for the range and the period before it; the shared report helpers do the counting.
+  async report(session,filters={},{limit}={}) {
+    const {from,to}=reportRange(filters);const f=buildFilter(session,{...filters,from:previousRange(from,to).from,to});
+    const {rows}=await this.pool.query(`SELECT owner_user_id AS "userId",user_name AS "userName",occurred_at AS time,action,result,task_id AS "taskId",operation_id AS "operationId",format FROM operation_events WHERE ${f.sql}`,f.values);
+    return operationReport(rows,{from,to},{people:session.isAdmin,limit});
   }
   async *exportRows(session,filters={},excludeEventId) {
     const f=buildFilter(session,filters);

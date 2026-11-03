@@ -39,7 +39,7 @@ export function TrendChart({ buckets, onSelect }) {
 
 const OUTCOME_ICONS = { partial: WarningCircle, missing: WarningCircle, failed: XCircle, waiting: Clock };
 
-export function OutcomeCard({ rate, issues, onSelect }) {
+export function OutcomeCard({ rate, issues, onSelect, footer }) {
   const circumference = 2 * Math.PI * 44;
   return <figure className="usage-outcomes">
     <figcaption><h2>处理结果</h2></figcaption>
@@ -50,6 +50,7 @@ export function OutcomeCard({ rate, issues, onSelect }) {
     {issues.length ? <ul className="usage-issues">{issues.map(({ key, label, count }) => { const Icon = OUTCOME_ICONS[key]; return <li key={key} data-status={key}>
       <button type="button" aria-label={`查看${label}的明细，共 ${count} 项`} onClick={() => onSelect(key, label)}><Icon aria-hidden="true" weight="fill" /><span>{label}</span><b>{count}</b></button>
     </li>; })}</ul> : <p className="usage-clear"><CheckCircle aria-hidden="true" weight="fill" />没有需要关注的异常</p>}
+    {footer}
   </figure>;
 }
 

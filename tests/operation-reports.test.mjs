@@ -4,7 +4,7 @@ import { bucketActivity, dailyActivity, filterOperations, groupByDay, groupOpera
 test("filters, distinct tasks, download requests and CSV formula neutralization", () => {
   const base={userId:"u1",taskId:"A",time:"2026-10-28T08:00:00Z",format:"txt",inputName:"=HYPERLINK(\"x\")"};
   const rows=[{...base,action:"import_protect",result:"requested"},{...base,action:"protect",result:"success"},{...base,action:"restore",result:"success"},{...base,action:"restore",result:"missing"},...Array.from({length:2},()=>({...base,action:"download_restore",result:"requested"})),{...base,action:"export_records",result:"requested"},{...base,action:"inspect_restore",result:"failed"}];
-  assert.deepEqual(summarizeOperations(rows),{users:1,protected:1,restored:1,failed:1,imports:1,downloads:2});
+  assert.deepEqual(summarizeOperations(rows),{users:1,protected:1,restored:1,failed:1,imports:1,downloads:2,likes:0,dislikes:0,satisfaction:null});
   assert.equal(filterOperations(rows,{from:"2026-10-28",to:"2026-10-28",user:"u1",format:"txt",query:"hyperlink",result:"failed"}).length,1);
   assert.equal(filterOperations(rows,{from:"2026-10-29",to:"2026-10-28"}).length,0);
   const csv=operationsCsv(rows,true);assert.ok(csv.startsWith("\uFEFF"));assert.ok(csv.includes("虚构示例"));assert.ok(csv.includes("'=HYPERLINK"));assert.ok(csv.includes('""x""'));
@@ -69,4 +69,40 @@ test("完成率不把未发起还原算作失败，异常项只列有数量的�
 test("排行只计成功脱敏并按数量排序", () => {
   const row = (userName, action = "protect", result = "success") => ({ userId: userName, userName, action, result });
   assert.deepEqual(rankBy([row("甲"), row("乙"), row("乙"), row("丙", "restore"), row("丁", "protect", "failed")], r => r.userId, r => r.userName).map(i => [i.label, i.count]), [["乙", 2], ["甲", 1]]);
+});
+
+test("统计报表：对比前一段同样长的时间，普通用户没有人员排行", async () => {
+  const { operationReport, previousRange } = await import("../src/operationReports.js");
+  assert.deepEqual(previousRange("2026-10-08", "2026-10-14"), { from: "2026-10-01", to: "2026-10-07" });
+  const row = (day, userId, action, result, taskId) => ({ time: `${day}T10:00:00+08:00`, userId, userName: userId, action, result, taskId, format: "xlsx" });
+  const rows = [row("2026-10-10", "a", "protect", "success", "t1"), row("2026-10-11", "b", "protect", "success", "t2"), row("2026-10-11", "b", "restore", "partial", "t2"), row("2026-10-03", "a", "protect", "success", "t0")];
+  const admin = operationReport(rows, { from: "2026-10-08", to: "2026-10-14" });
+  assert.equal(admin.span, 7);
+  assert.equal(admin.totals.protected, 2);
+  assert.equal(admin.previous.protected, 1);
+  assert.equal(admin.days.length, 7);
+  assert.deepEqual(admin.outcome.issues.map(i => i.key), ["partial"]);
+  assert.deepEqual(admin.people.map(p => p.key), ["a", "b"]);
+  assert.deepEqual(admin.members.map(m => m.id).sort(), ["a", "b"]);
+  const own = operationReport(rows.filter(r => r.userId === "a"), { from: "2026-10-08", to: "2026-10-14" }, { people: false });
+  assert.deepEqual([own.people, own.members, own.totals.protected], [[], [], 1]);
+});
+
+test("统计报表日期范围：默认最近 30 天，最长一年，只看异常筛选只接受固定值", async () => {
+  const { reportRange, buildFilter } = await import("../server/operations-repository.mjs");
+  const range = reportRange({});
+  assert.equal((new Date(range.to) - new Date(range.from)) / 86400000, 29);
+  assert.throws(() => reportRange({ from: "2026-10-10", to: "2026-10-01" }), /INVALID_DATE_RANGE/);
+  assert.throws(() => reportRange({ from: "2025-01-01", to: "2026-10-01" }), /INVALID_DATE_RANGE/);
+  const filter = buildFilter({ userId: "a", isAdmin: false }, { issues: "1" });
+  assert.match(filter.sql, /result = ANY/);
+  assert.deepEqual(filter.values.at(-1), ["failed", "partial", "missing", "waiting"]);
+  assert.throws(() => buildFilter({ userId: "a", isAdmin: false }, { issues: "yes" }), /INVALID_FILTER/);
+});
+
+test("满意度：同一个人对同一次处理改评价只算最后一次，没有评价时为空", () => {
+  const rate = (userId, operationId, action, minute) => ({ userId, operationId, action, result: "success", time: `2026-10-10T10:${String(minute).padStart(2, "0")}:00Z` });
+  assert.equal(summarizeOperations([]).satisfaction, null);
+  const totals = summarizeOperations([rate("a", "op1", "rate_down", 1), rate("a", "op1", "rate_up", 2), rate("a", "op2", "rate_down", 3), rate("b", "op1", "rate_up", 4)]);
+  assert.deepEqual([totals.likes, totals.dislikes, totals.satisfaction], [2, 1, 67]);
 });

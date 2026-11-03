@@ -4,6 +4,10 @@ import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { validateEvent,buildFilter,PgOperationsRepository } from '../server/operations-repository.mjs';
 import { createOperationsHandler } from '../server/operations-app.mjs';
+import { operationReport } from '../src/operationReports.js';
+import ExcelJS from 'exceljs';
+// Reads an exported workbook into { sheetName: [[cell values]] }.
+const readBook=async response=>{const book=new ExcelJS.Workbook();await book.xlsx.load(Buffer.from(await response.arrayBuffer()));return Object.fromEntries(book.worksheets.map(ws=>[ws.name,ws.getSheetValues().filter(Boolean).map(row=>row.slice(1))]));};
 const TEST_USERS={admin:{userId:'test-admin',userName:'测试管理员',isAdmin:true},alice:{userId:'test-alice',userName:'测试员工甲',isAdmin:false},bob:{userId:'test-bob',userName:'测试员工乙',isAdmin:false}};
 // The shared WeCom session is stubbed here: a cookie names the test user and carries a fixed CSRF token.
 const auth={authenticate:request=>{const user=/session=([a-z]+)/.exec(request.headers.get('cookie')||'')?.[1];return TEST_USERS[user]?{...TEST_USERS[user],csrf:'csrf-'+user}:null;}};
@@ -21,7 +25,7 @@ test('single-connection exports finish concurrently without holding a second con
     const session={csrf:'csrf-alice'},cookie='session=alice';
     await Promise.all(Array.from({length:3},async()=>{
       const response=await handler(new Request(origin+'/api/v1/operation-events/export',{method:'POST',headers:{origin,cookie,'content-type':'application/json','x-csrf-token':session.csrf},body:JSON.stringify({query:taskId})}));
-      assert.equal(response.status,200);const csv=await response.text();assert.ok(csv.includes(taskId));assert.ok(!csv.includes('导出操作记录'));
+      assert.equal(response.status,200);const book=await readBook(response);const detail=book['明细'].slice(1);assert.equal(detail.length,1);assert.equal(detail[0][2],taskId.slice(0,8));assert.ok(!detail.some(row=>row.includes('导出操作记录')));
     }));
   } finally {await repo.pool.query('DELETE FROM operation_events WHERE task_id=$1',[taskId]);await repo.close();}
 });
@@ -37,7 +41,7 @@ test('filters always scope ordinary users and parameterize literal search',()=>{
   for(const bad of [{from:'2026-02-31'},{to:'9999-99-99'},{page:0},{format:'exe'},{result:'ok'},{userId:'forged'},null])assert.throws(()=>buildFilter(TEST_USERS.admin,bad));
 });
 test('shared sessions, CSRF, origin checks, limits and route hand-off',async()=>{
-  const calls=[];const repo={ready:async()=>{},append:async(s,e)=>{validateEvent(e);calls.push(s);return'accepted';},list:async(s,f)=>{buildFilter(s,f);return{records:[],total:0,page:1,pageSize:10};},async *exportRows(){yield [{...event(),userName:'测试甲'}];}};
+  const calls=[];const repo={ready:async()=>{},append:async(s,e)=>{validateEvent(e);calls.push(s);return'accepted';},list:async(s,f)=>{buildFilter(s,f);return{records:[],total:1,page:1,pageSize:10};},report:async(s,f)=>operationReport([],{from:f.from,to:f.to},{people:s.isAdmin}),async *exportRows(){yield [{...event(),userName:'测试甲'}];}};
   const origin='http://127.0.0.1:4175';const handler=createOperationsHandler({repository:repo,origin,auth});
   const request=(path,method='GET',body,headers={})=>handler(new Request(origin+path,{method,headers:{origin,'content-type':'application/json',...headers},...(body?{body:JSON.stringify(body)}:{})}));
   const cookie='session=alice';const headers={cookie,'x-csrf-token':'csrf-alice'};
@@ -56,7 +60,21 @@ test('shared sessions, CSRF, origin checks, limits and route hand-off',async()=>
   assert.equal((await request('/api/v1/operation-events?userId=forged','GET',null,headers)).status,400);
   assert.equal((await request('/api/v1/operation-events?to=9999-99-99','GET',null,headers)).status,400);
   const exported=await request('/api/v1/operation-events/export','POST',{format:'txt'},headers);
-  assert.equal(exported.status,200);const csv=await exported.text();assert.ok(csv.includes('筛选范围'));assert.ok(csv.includes('test-alice'));assert.ok(csv.includes("'=测试.txt"));
+  assert.equal(exported.status,200);assert.match(exported.headers.get('content-type'),/spreadsheetml/);
+  const body=Buffer.from(await exported.arrayBuffer());const book=await readBook(new Response(body));assert.deepEqual(Object.keys(book),['统计分析','明细','数据表']);
+  // The analysis sheet states who exported and the scope; ordinary users see only themselves.
+  assert.ok(book['统计分析'].some(row=>row.includes('仅本人')));
+  assert.ok(!book['统计分析'].some(row=>row.includes('活跃用户')));
+  assert.ok(book['数据表'].some(row=>row.includes('数据范围')&&row.some(v=>String(v).includes('仅本人'))));
+  assert.ok(book['数据表'].some(row=>row.includes('格式')&&row.includes('TXT')));
+  assert.ok(!book['数据表'].some(row=>row.includes('人员排行')));
+  // The trend chart is a real chart part; ordinary users get no people ranking chart.
+  const zip=await (await import('jszip')).default.loadAsync(body);
+  assert.deepEqual(Object.keys(zip.files).filter(name=>name.startsWith('xl/charts/')&&name.endsWith('.xml')).sort(),['xl/charts/chart1.xml']);
+  assert.match(await zip.file('xl/worksheets/sheet1.xml').async('string'),/<drawing r:id="rIdCharts"\/>/);
+  // Text that looks like a formula stays plain text in the cell.
+  assert.deepEqual(book['明细'][0],['时间（北京时间）','用户','任务编号','输入文件名','输出文件名','格式','操作','结果']);
+  assert.equal(book['明细'][1][3],'=测试.txt');assert.equal(book['明细'][1][1],'测试甲');
   const bad=await request('/api/v1/operation-events/batch','POST',{events:[{...event(),mapping:'private'}]},headers);assert.equal((await bad.json()).results[0].status,'rejected');
   assert.equal((await request('/api/v1/operation-events/batch','POST',{events:Array.from({length:101},event)},headers)).status,400);
   assert.equal((await request('/healthz')).status,200);

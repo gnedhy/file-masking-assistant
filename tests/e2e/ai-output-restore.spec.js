@@ -64,7 +64,7 @@ for (const format of ["pptx", "html"]) {
     await fileInput(page).setInputFiles({ name: `AI 汇报.${format}`, mimeType: "application/octet-stream", buffer: await withMarker(format, marker) });
     await expect(page.locator(".restore-task-match")).toBeVisible({ timeout: 20000 });
     for (const area of format === "pptx" ? ["幻灯片文字和表格", "演讲者备注", "图表文字和数据", "文档属性（标题、主题等）"] : ["图表脚本中的文字"]) {
-      await expect(page.locator(".compatibility-check dd").first()).toContainText(area);
+      await expect(page.locator('.compatibility-check [data-area="checked"]')).toContainText(area);
     }
     // The deck and the report use 6 of the sheet's tokens; that is normal for a new file, not missing content.
     await expect(page.locator(".compatibility-check")).toHaveAttribute("data-content-loss", "false");

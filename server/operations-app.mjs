@@ -1,6 +1,6 @@
 import { randomUUID, timingSafeEqual } from 'node:crypto';
-import { OPERATION_LABELS, OPERATION_RESULTS } from '../src/operationLog.js';
-import { buildFilter } from './operations-repository.mjs';
+import { buildFilter, exportRange } from './operations-repository.mjs';
+import { recordsWorkbook } from './operations-export.mjs';
 
 const json=(data,status=200,headers={})=>new Response(JSON.stringify(data),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store',...headers}});
 const equal=(a,b)=>typeof a==='string'&&typeof b==='string'&&Buffer.byteLength(a)===Buffer.byteLength(b)&&timingSafeEqual(Buffer.from(a),Buffer.from(b));
@@ -11,8 +11,6 @@ async function readJson(request) {
   while(true) { const {done,value}=await reader.read(); if(done) break; size+=value.byteLength; if(size>256*1024) { await reader.cancel(); throw Object.assign(new Error('REQUEST_TOO_LARGE'),{status:413}); } parts.push(value); }
   try { return JSON.parse(Buffer.concat(parts).toString('utf8')); } catch { throw new Error('INVALID_JSON'); }
 }
-const csvCell=value=>{let s=String(value??'');if(/^[\s\uFEFF]*[=+@-]/u.test(s)||/^[\t\r\n]/.test(s))s="'"+s;return '"'+s.replaceAll('"','""')+'"';};
-const csvLine=row=>row.map(csvCell).join(',')+'\r\n';
 export function createOperationsHandler({repository,origin,auth}) {
   if(!origin||!auth)throw new Error('Operations origin and auth required');
   const rates=new Map();
@@ -33,7 +31,7 @@ export function createOperationsHandler({repository,origin,auth}) {
       if(!path.startsWith('/api/'))return null;
       if(request.headers.get('origin')&&request.headers.get('origin')!==origin)return json({code:'ORIGIN_DENIED'},403);
       if(request.headers.get('sec-fetch-site')==='cross-site')return json({code:'ORIGIN_DENIED'},403);
-      if(!['/api/v1/operation-events/batch','/api/v1/operation-events','/api/v1/operation-tasks','/api/v1/operation-statistics','/api/v1/operation-events/export'].includes(path))return null;
+      if(!['/api/v1/operation-events/batch','/api/v1/operation-events','/api/v1/operation-tasks','/api/v1/operation-statistics','/api/v1/operation-report','/api/v1/operation-events/export'].includes(path))return null;
       const session=auth.authenticate(request); if(!session)return json({code:'AUTH_REQUIRED',message:'身份已过期，请重新进入应用。'},401);
       limit(session.userId);
       if(request.method!=='GET'&&(request.headers.get('origin')!==origin||!equal(request.headers.get('x-csrf-token'),session.csrf)))return json({code:'CSRF_DENIED'},403);
@@ -44,24 +42,20 @@ export function createOperationsHandler({repository,origin,auth}) {
         return json({results});
       }
       const filters=Object.fromEntries(url.searchParams);
-      const read={'/api/v1/operation-events':'list','/api/v1/operation-tasks':'listTasks','/api/v1/operation-statistics':'statistics'}[path];
+      const read={'/api/v1/operation-events':'list','/api/v1/operation-tasks':'listTasks','/api/v1/operation-statistics':'statistics','/api/v1/operation-report':'report'}[path];
       if(read&&request.method==='GET'){const result=await repository[read](session,filters);await recordAdminView(session,filters);return json(result);}
       if(path==='/api/v1/operation-events/export'&&request.method==='POST'){
         const f=await readJson(request);buildFilter(session,f);
-        const scope=JSON.stringify({from:f.from||'最近180天',to:f.to||'当前',user:session.isAdmin?(f.user||'全部用户'):session.userId,format:f.format||'全部',result:f.result||'全部',action:f.action||'全部',query:f.query||''});
+        const {total}=await repository.list(session,{...f,page:undefined});
+        // The analysis sheet covers the same records as the detail sheet; without dates that is the 180-day retention window.
+        const analysis=await repository.report(session,{...f,...exportRange(f),page:undefined},{limit:50});
         const exportEventId=randomUUID();
         await repository.append(session,{eventId:exportEventId,operationId:randomUUID(),version:1,time:new Date().toISOString(),action:'export_records',result:'requested'});
         const iterator=repository.exportRows(session,f,exportEventId)[Symbol.asyncIterator]();
         // Start the query before sending headers so database failures are visible as an error.
-        let first=await iterator.next();
-        const encoder=new TextEncoder();let header=true;
-        const stream=new ReadableStream({async pull(controller){try{
-          if(header){controller.enqueue(encoder.encode('\uFEFF'+csvLine(['数据来源','筛选范围','用户','时间','任务','任务标记','输入文件名','输出文件名','格式','操作','结果'])));header=false;return;}
-          const item=first||await iterator.next();first=null;
-          if(item.done){controller.close();return;}
-          controller.enqueue(encoder.encode(item.value.map(r=>csvLine(['集中操作记录',scope,r.userName,new Date(r.time).toISOString(),r.taskId,r.marker,r.inputName||'未记录',r.outputName||'未记录',r.format?.toUpperCase(),OPERATION_LABELS[r.action],OPERATION_RESULTS[r.result]])).join('')));
-        }catch(e){controller.error(e);await iterator.return?.();}},async cancel(){await iterator.return?.();}});
-        return new Response(stream,{headers:{'content-type':'text/csv; charset=utf-8','cache-control':'no-store','content-disposition':"attachment; filename*=UTF-8''%E9%9B%86%E4%B8%AD%E6%93%8D%E4%BD%9C%E8%AE%B0%E5%BD%95.csv"}});
+        const first=await iterator.next();
+        const batches={async *[Symbol.asyncIterator](){try{if(first.done)return;yield first.value;for(let item=await iterator.next();!item.done;item=await iterator.next())yield item.value;}finally{await iterator.return?.();}}};
+        return new Response(await recordsWorkbook({session,filters:f,total,analysis,batches}),{headers:{'content-type':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','cache-control':'no-store','content-disposition':"attachment; filename*=UTF-8''"+encodeURIComponent('使用统计明细.xlsx')}});
       }
       return json({code:'METHOD_NOT_ALLOWED'},405);
     }catch(e){const status=e.status||(/^(INVALID_|EVENT_)/.test(e.message)?400:503);return json({code:status===503?'RECORDS_UNAVAILABLE':e.message,message:status===503?'记录服务暂不可用，请稍后重试。':'请求未通过检查。'},status);}

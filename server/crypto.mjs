@@ -21,6 +21,17 @@ export function encryptMapping(mapping, masterKey, keyVersion = "v1") {
   return { ...data, wrappedKey, keyVersion };
 }
 
+// Same envelope for arbitrary bytes, such as feedback attachments.
+export function encryptFile(bytes, masterKey, keyVersion = "v1") {
+  if (masterKey.length !== 32) throw new Error("Vault master key must be 32 bytes");
+  const dataKey = randomBytes(32);
+  return { ...encryptBytes(bytes, dataKey), wrappedKey: encryptBytes(dataKey, masterKey), keyVersion };
+}
+
+export function decryptFile(record, masterKey) {
+  return decryptBytes(record, decryptBytes(record.wrappedKey, masterKey));
+}
+
 export function decryptMapping(record, masterKey) {
   const dataKey = decryptBytes(record.wrappedKey, masterKey);
   return JSON.parse(decryptBytes(record, dataKey).toString("utf8"));

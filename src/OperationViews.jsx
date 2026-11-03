@@ -1,7 +1,4 @@
-import { useEffect, useState } from "react";
-import { DownloadSimple } from "@phosphor-icons/react";
-import { OPERATION_LABELS, OPERATION_RESULTS, recordOperation } from "./operationLog.js";
-import { operationsCsv } from "./operationReports.js";
+import { OPERATION_LABELS, OPERATION_RESULTS } from "./operationLog.js";
 import { isFileTask } from "./operationTasks.js";
 
 export const activeFilterCount = (value) => ["from", "to", "action", "result", "query"].filter(key => value[key]).length;
@@ -25,7 +22,7 @@ export function RecordFilters({ value, onChange, users, collapsible = false, sho
   }
   return <div className="record-filters">
     {fields}
-    {!users && <label className="record-search">搜索<input type="search" placeholder="文件名或任务编号" value={value.query || ""} onChange={e => control("query", e.target.value)} /></label>}
+    <label className="record-search">搜索<input type="search" placeholder="文件名或任务编号" value={value.query || ""} onChange={e => control("query", e.target.value)} /></label>
     {rangeError}
   </div>;
 }
@@ -35,7 +32,7 @@ export function RecordFilename({ label, name }) {
 export function RecordList({ records, compact = false, withinTask = false }) {
   return <ol className="operation-list">{records.map(r => <li key={r.id}>
     <div className="operation-list__head"><strong>{OPERATION_LABELS[r.action] || "操作"}</strong><span data-result={r.result}>{OPERATION_RESULTS[r.result] || "未知状态"}</span></div>
-    {!compact && !/credential|mapping|export_records|view_all_records/.test(r.action) && <><RecordFilename label="输入" name={r.inputName} />{(r.outputName || /^(protect|restore|download_)/.test(r.action)) && <RecordFilename label="输出" name={r.outputName} />}</>}
+    {!compact && !/credential|mapping|export_records|view_all_records|rate_|feedback/.test(r.action) && <><RecordFilename label="输入" name={r.inputName} />{(r.outputName || /^(protect|restore|download_)/.test(r.action)) && <RecordFilename label="输出" name={r.outputName} />}</>}
     <time dateTime={r.time}>{new Date(r.time).toLocaleString("zh-CN", { hour12: false })}</time>
     {!compact && !withinTask && <p>{[r.userName, r.format?.toUpperCase(), r.taskId && `任务 ${r.marker || r.taskId}`].filter(Boolean).join(" · ")}</p>}
   </li>)}</ol>;
@@ -69,18 +66,4 @@ export function OperationGroups({ days }) {
       {group.steps.length > 1 && <details className="operation-steps"><summary>查看 {group.steps.length} 个步骤</summary><RecordList records={group.steps} compact /></details>}
     </li>)}</ol>
   </section>);
-}
-
-export function ExportRecords({ records, example = false, label = "导出记录" }) {
-  const [url, setUrl] = useState("");
-  const [notice, setNotice] = useState("");
-  useEffect(() => {
-    const url = URL.createObjectURL(new Blob([operationsCsv(records, example)], { type: "text/csv;charset=utf-8" }));
-    setUrl(url); return () => URL.revokeObjectURL(url);
-  }, [records, example]);
-  return <div className="record-export"><a className="secondary-button" href={url || undefined} download={example ? "示例_使用统计明细.csv" : "本机操作记录.csv"} aria-disabled={!url || !records.length} onClick={e => {
-    if (!url || !records.length) { e.preventDefault(); return; }
-    if (!example) recordOperation("export_records", "requested");
-    setNotice("已发起记录导出，请在下载列表确认。");
-  }}><DownloadSimple size={18} aria-hidden="true" /><span>{example ? "导出示例记录" : label}</span></a><small role="status">{notice}</small></div>;
 }

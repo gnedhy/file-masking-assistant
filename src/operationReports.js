@@ -120,8 +120,16 @@ export function rankBy(records, keyOf, labelOf, limit = 6) {
 export function summarizeOperations(records) {
   const business = records.filter(r => /^(import|inspect|download)_(protect|restore)$/.test(r.action) || ["protect", "restore"].includes(r.action));
   const taskCount = action => new Set(business.filter(r => r.action === action && (r.result === "success" || action === "restore" && ["partial", "missing"].includes(r.result)) && r.taskId).map(r => `${r.userId}:${r.taskId}`)).size;
+  // One rating per person per processed file: changing your mind replaces the earlier rating.
+  const ratings = new Map();
+  for (const r of records) if (r.action === "rate_up" || r.action === "rate_down") {
+    const key = `${r.userId}:${r.operationId || r.taskId || r.id}`, seen = ratings.get(key);
+    if (!seen || new Date(r.time) >= new Date(seen.time)) ratings.set(key, r);
+  }
+  const likes = [...ratings.values()].filter(r => r.action === "rate_up").length, dislikes = ratings.size - likes;
   return { users: new Set(business.map(r => r.userId).filter(Boolean)).size, protected: taskCount("protect"), restored: taskCount("restore"), failed: records.filter(r => r.result === "failed").length,
-    imports: business.filter(r => r.action.startsWith("import_")).length, downloads: business.filter(r => r.action.startsWith("download_") && r.result === "requested").length };
+    imports: business.filter(r => r.action.startsWith("import_")).length, downloads: business.filter(r => r.action.startsWith("download_") && r.result === "requested").length,
+    likes, dislikes, satisfaction: ratings.size ? Math.round((likes / ratings.size) * 100) : null };
 }
 export function operationsCsv(records, example = false) {
   const cell = value => {
@@ -132,4 +140,26 @@ export function operationsCsv(records, example = false) {
   const rows = [["数据来源", "用户", "时间", "任务", "任务编号（简短）", "输入文件名", "输出文件名", "格式", "操作", "结果"],
     ...records.map(r => [example ? "虚构示例" : "本机记录", r.userName || "本机（未登录）", r.time, r.taskId, r.marker, r.inputName || "未记录", r.outputName || "未记录", r.format?.toUpperCase(), OPERATION_LABELS[r.action], OPERATION_RESULTS[r.result]])];
   return "\uFEFF" + rows.map(row => row.map(cell).join(",")).join("\r\n");
+}
+
+const shiftDay = (day, offset) => { const date = new Date(`${day}T00:00:00`); date.setDate(date.getDate() + offset); return localDay(date); };
+export const daySpan = (from, to) => Math.round((new Date(`${to}T00:00:00`) - new Date(`${from}T00:00:00`)) / 86400000) + 1;
+// The equally long period just before from..to, for the "较前 N 天" comparison.
+export const previousRange = (from, to) => ({ from: shiftDay(from, -daySpan(from, to)), to: shiftDay(from, -1) });
+
+// Everything the statistics page draws, for one date range. Records may include the previous period.
+// Ordinary users get no people ranking: their records are only their own.
+export function operationReport(records, { from, to }, { people = true, limit = 6 } = {}) {
+  const current = filterOperations(records, { from, to });
+  return {
+    from, to, span: daySpan(from, to),
+    totals: summarizeOperations(current),
+    previous: summarizeOperations(filterOperations(records, previousRange(from, to))),
+    days: dailyActivity(current, from, to),
+    outcome: outcomeSummary(current),
+    people: people ? rankBy(current, r => r.userId, r => r.userName, limit) : [],
+    // Everyone with records in either period, for the user filter.
+    members: people ? [...new Map(records.filter(r => r.userId).map(r => [r.userId, { id: r.userId, name: r.userName || r.userId }])).values()] : [],
+    formats: rankBy(current.filter(r => r.format), r => r.format, r => r.format.toUpperCase(), limit),
+  };
 }

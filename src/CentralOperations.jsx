@@ -89,7 +89,7 @@ export default function CentralOperations({ onBack, compact = false }) {
       if (!response.ok) throw new Error("导出失败，请重试；未生成下载文件。");
       const url = URL.createObjectURL(await response.blob());
       const link = document.createElement("a");
-      link.href = url; link.download = `集中操作记录_${filters.from || "全部"}_${filters.to || "至今"}.csv`;
+      link.href = url; link.download = `使用统计明细_${filters.from || "全部"}_${filters.to || "至今"}.xlsx`;
       link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
       setExportState({ kind: "done", text: "" });
     } catch (error) { setExportState({ kind: "error", text: error.message }); }
@@ -98,14 +98,14 @@ export default function CentralOperations({ onBack, compact = false }) {
   const totals = data.stats?.totals;
   const dateShortcuts = <div className={compact ? "record-date-shortcuts record-date-shortcuts--compact" : "record-date-shortcuts"} aria-label="快捷日期">{[[7,"最近 7 天"],[30,"最近 30 天"],["month","本月"]].map(([days,label]) => <button className="secondary-button" type="button" key={days} onClick={() => changeFilters({ ...filters, ...dateRange(days) })}>{label}</button>)}</div>;
   return <section className={compact ? "central-records" : "usage-preview"} aria-label="集中操作记录">
-    {!compact && <div className="usage-heading"><h1 ref={heading} tabIndex={-1}>{sync.session?.isAdmin ? "使用统计" : "我的记录"}</h1><button className="secondary-button" type="button" onClick={onBack}>返回文件处理</button></div>}
-    {!compact && <p className="operation-scope">{sync.session?.userName} · {sync.session?.isAdmin ? "管理员可查看全部记录" : "仅显示本人记录"} · 按北京时间筛选 · 保留 180 天</p>}
+    {!compact && <div className="usage-heading"><h1 ref={heading} tabIndex={-1}>使用统计</h1><button className="secondary-button" type="button" onClick={onBack}>返回文件处理</button></div>}
+    {!compact && <p className="operation-scope">{sync.session?.userName} · {sync.session?.isAdmin ? "管理员 · 统计全部人员" : "仅统计本人的记录"} · 按北京时间筛选 · 保留 180 天</p>}
     <SyncStatus />
     {!compact && dateShortcuts}
     <RecordFilters value={filters} onChange={changeFilters} users={!compact && sync.session?.isAdmin ? users : undefined} collapsible={compact} shortcuts={compact ? dateShortcuts : null} />
     {compact ? null : sync.session?.isAdmin ? <label className="central-search">文件名／任务搜索<input type="search" value={filters.query || ""} onChange={e => changeFilters({ ...filters, query: e.target.value })}/></label> : <label className="central-search">格式<select value={filters.format || ""} onChange={e => changeFilters({ ...filters, format:e.target.value })}><option value="">全部格式</option>{["xlsx","csv","txt","md","docx","pptx","html"].map(f=><option key={f}>{f}</option>)}</select></label>}
     {data.loading ? <p role="status">正在读取集中记录…</p> : data.error ? <div role="alert"><p>{data.error}</p><button type="button" className="secondary-button" onClick={() => setReload(v => v + 1)}>重新读取</button></div> : <>
-      {!compact && totals && <dl className="usage-metrics">{[["使用人数",totals.users],["成功脱敏任务",totals.protected],["有还原结果的任务",totals.restored],["失败操作",totals.failed]].map(([label,value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>}
+      {!compact && totals && <dl className="usage-metrics" data-count={sync.session?.isAdmin ? 4 : 3}>{[...(sync.session?.isAdmin ? [["使用人数",totals.users]] : []),["成功脱敏任务",totals.protected],["有还原结果的任务",totals.restored],["失败操作",totals.failed]].map(([label,value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>}
       {!compact && sync.session?.isAdmin && <section><h2>按用户汇总</h2><div className="usage-user-grid">{data.stats.users.map(u => <article key={u.userId}><h3>{u.userName}</h3><p>脱敏 {u.protected} · 还原 {u.restored}</p><p>导入 {u.imports} · 下载请求 {u.downloads} · 失败 {u.failed}</p></article>)}</div></section>}
       <div className="record-toolbar" ref={details} tabIndex={-1}><strong>操作记录 · {data.total} 个任务</strong><button className={compact ? "text-button record-export-button record-export-button--compact" : "secondary-button record-export-button"} data-done={exportState.kind === "done" || undefined} type="button" title="导出的文件名可能包含敏感信息，请妥善保管" disabled={!data.total || exporting || query !== (filters.query || "")} onClick={exportRecords}>{exportState.kind === "done" ? <Check size={18} weight="bold" aria-hidden="true"/> : <DownloadSimple size={18} aria-hidden="true"/>}{exporting ? "正在导出…" : exportState.kind === "done" ? "已开始下载" : "导出记录"}</button></div>
       {!compact && <p className="operation-scope">导出筛选范围内的全部操作明细，不只当前页。下载仅代表发起请求。</p>}

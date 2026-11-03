@@ -3,7 +3,10 @@ import { TaskDetails } from "./TaskDetails.jsx";
 import { THEME_OPTIONS, ThemeSwitcher } from "./ThemeSwitcher.jsx";
 import { ConfirmDialog } from "./ConfirmDialog.jsx";
 import { OperationDrawer } from "./OperationDrawer.jsx";
-import CentralOperations from "./CentralOperations.jsx";
+import AccessSettings from "./AccessSettings.jsx";
+import FeedbackCenter from "./FeedbackCenter.jsx";
+import ResultFeedback from "./ResultFeedback.jsx";
+import { useFeedbackSummary } from "./feedbackApi.js";
 import { recordOperation, hasOperationWriteFailure } from "./operationLog.js";
 import {
   ArrowRight,
@@ -28,6 +31,8 @@ import {
   ShieldCheck,
   Trash,
   UploadSimple,
+  UserGear,
+  ChatCircleDots,
   WarningCircle,
   X,
 } from "@phosphor-icons/react";
@@ -50,7 +55,7 @@ import {
 } from "./fileEngine.js";
 import { getSession, signIn } from "./session.js";
 
-const UsagePreview = import.meta.env.DEV ? lazy(() => import("./UsagePreview.jsx")) : null;
+const UsageStats = lazy(() => import("./UsageStats.jsx"));
 
 const WORKSPACE_COPY = {
   protect: {
@@ -125,7 +130,7 @@ function FileMark({ size = "large", format = "xlsx" }) {
   const Icon = FILE_ICONS[format] ?? FileXls;
   return (
     <span className={`file-mark file-mark--${FILE_CLASSES[format] ?? "excel"} file-mark--${size}`} aria-hidden="true">
-      <Icon weight="duotone" />
+      <Icon weight="bold" />
     </span>
   );
 }
@@ -133,7 +138,7 @@ function FileMark({ size = "large", format = "xlsx" }) {
 function TaskChoice({ active, icon: Icon, title, subtitle, disabled, onClick }) {
   return (
     <button className="task-choice" data-active={active} type="button" disabled={disabled} onClick={onClick} aria-pressed={active}>
-      <span className="task-choice__icon" aria-hidden="true"><Icon weight="duotone" /></span>
+      <span className="task-choice__icon" aria-hidden="true"><Icon weight="bold" /></span>
       <span className="task-choice__copy"><strong>{title}</strong>{subtitle && <span>{subtitle}</span>}</span>
     </button>
   );
@@ -160,7 +165,7 @@ function LocalTaskPanel({ localTasks, disabled, onContinue, onViewAll, viewAllBu
   return (
     <section className="local-task-panel" data-has-tasks={Boolean(hasTasks)} aria-labelledby="local-task-title" aria-live="polite">
       <div className="local-task-panel__head">
-        <span className="local-task-panel__mark" aria-hidden="true"><LockKey weight="duotone" /></span>
+        <span className="local-task-panel__mark" aria-hidden="true"><LockKey weight="bold" /></span>
         <div>
           <h2 id="local-task-title">我的任务</h2>
           <p>{localTasks.status === "loading"
@@ -280,7 +285,7 @@ function BoundaryRoute({ stage }) {
       {ROUTE_STEPS.map(({ id, label, icon: Icon }, index) => (
         <Fragment key={id}>
           {index > 0 && <ArrowRight weight="bold" aria-hidden="true" />}
-          <span aria-current={id === stage ? "step" : undefined}><Icon weight="duotone" />{label}</span>
+          <span aria-current={id === stage ? "step" : undefined}><Icon weight="bold" />{label}</span>
         </Fragment>
       ))}
     </div>
@@ -291,7 +296,7 @@ function MobileProgress({ stage }) {
   const index = ROUTE_STEPS.findIndex((step) => step.id === stage);
   return (
     <section className="mobile-boundary" aria-label="当前进度">
-      <div><LockKey weight="duotone" /><strong>第 {index + 1} 步 · {ROUTE_STEPS[index].label}</strong></div>
+      <div><LockKey weight="bold" /><strong>第 {index + 1} 步 · {ROUTE_STEPS[index].label}</strong></div>
       <p>{ROUTE_STEPS.map(({ id, label }, stepIndex) => (
         <Fragment key={id}>
           {stepIndex > 0 && <ArrowRight aria-hidden="true" />}
@@ -327,7 +332,7 @@ function EmptyState({ mode, inputRef, isDraggingFile }) {
         ? <>文件在浏览器内处理，不会上传</>
         : <><span>支持{supportedCopy}</span><small className="empty-state__limit">文本类上限 {TEXT_SIZE_LIMIT_MB} MB · Office 上限 {OFFICE_SIZE_LIMIT_MB} MB</small></>}</span>
       {!isDraggingFile && <button className="small-button" type="button" onClick={() => inputRef.current?.click()}>选择文件</button>}
-      {mode === "restore" && <span className="same-device-note"><DesktopTower weight="duotone" />登录同一企业微信账号即可还原，换电脑也可以</span>}
+      {mode === "restore" && <span className="same-device-note"><DesktopTower weight="bold" />登录同一企业微信账号即可还原，换电脑也可以</span>}
     </div>
   );
 }
@@ -369,17 +374,16 @@ function ReadyState({ mode, file, analysis, selectedIds, fieldModes = {}, restor
   return (
     <div className="ready-state">
       <SelectedFile file={file} onRemove={onRemove} />
-      {mode === "restore" && restoreInspection.taskName && <p className="restore-task-match">匹配任务：<strong>{restoreInspection.taskName}</strong> · {formatTaskTime(restoreInspection.createdAt)}</p>}
       {regenerationNotice && (
         <div className="task-change-banner" role="status">
-          <WarningCircle weight="duotone" aria-hidden="true" />
+          <WarningCircle weight="bold" aria-hidden="true" />
           <span>
             <strong>你正在创建一个新的脱敏文件</strong>
             <small>已下载的旧文件仍对应任务 {regenerationNotice.taskId}。重新生成后会创建新任务，请不要混用两个文件。</small>
           </span>
         </div>
       )}
-      <p className="recognition-line"><CheckCircle weight="duotone" /><span>{summary}</span></p>
+      {mode === "protect" && <p className="recognition-line"><CheckCircle weight="bold" /><span>{summary}</span></p>}
       {mode === "restore" && (
         <section className="compatibility-check" data-partial={restoreInspection.partialRestore} data-content-loss={hasContentLoss} aria-labelledby="compatibility-check-title">
           <div className="compatibility-check__head">
@@ -391,18 +395,21 @@ function ReadyState({ mode, file, analysis, selectedIds, fieldModes = {}, restor
               : comparison?.rewritten && comparison.missing
                 ? `任务已匹配。AI 生成的新文件用到了 ${originalTokens} 个代号中的 ${usedTokens} 个，没用到的属于正常改写。`
               : "任务已匹配，还原记录可读取。请核对后生成还原文件。"}</small></span>
+            <button className="compatibility-check__details" type="button" onClick={onDetails} aria-expanded={detailsOpen} aria-controls="security-details">查看检查详情<CaretRight weight="bold" /></button>
           </div>
           <dl>
-            <div><dt>会检查并还原</dt><dd>{restoreInspection.checkedAreas.join("、") || "文件文字区域"}</dd></div>
+            {restoreInspection.taskName && <div><dt>匹配任务</dt><dd className="restore-task-match"><strong>{restoreInspection.taskName}</strong> · 编号 {restoreInspection.marker || restoreInspection.taskId} · {formatTaskTime(restoreInspection.createdAt)}</dd></div>}
+            <div><dt>识别结果</dt><dd>{summary}</dd></div>
+            <div><dt>会检查并还原</dt><dd data-area="checked">{restoreInspection.checkedAreas.join("、") || "文件文字区域"}</dd></div>
             <div><dt>暂不检查</dt><dd>{restoreInspection.uncheckedAreas.join("、") || "无"}</dd></div>
           </dl>
           {changedTokens.length > 0 && <div className="token-change-list" aria-label="代号出现次数变化">{changedTokens.map((item) => <div key={item.token}><strong>{item.token}</strong><span>原始 {item.original} · 返回 {item.returned}</span></div>)}</div>}
-          {restoreInspection.warnings?.length > 0 && <p><Info weight="duotone" />{restoreInspection.warnings[0]}</p>}
+          {restoreInspection.warnings?.length > 0 && <p><Info weight="bold" />{restoreInspection.warnings[0]}</p>}
         </section>
       )}
       {hasOnlyInlineFields && (
         <div className="task-change-banner" role="alert">
-          <WarningCircle weight="duotone" aria-hidden="true" />
+          <WarningCircle weight="bold" aria-hidden="true" />
           <span>
             <strong>请先保留至少一列“整个单元格”</strong>
             <small>“仅文中已选内容”需要以客户、产品或人员等完整字段作为准确依据，不能自行猜测备注里哪些文字需要替换。</small>
@@ -413,22 +420,14 @@ function ReadyState({ mode, file, analysis, selectedIds, fieldModes = {}, restor
         // The header and the preview share one card so the sizes read as one block.
         <div className="replacement-card">
           <button className="evidence-trigger" type="button" onClick={onDetails} aria-expanded={detailsOpen} aria-controls="security-details">
-            <span><ShieldCheck weight="duotone" /><strong>{analysis?.kind === "text" ? "确认替换内容" : "确认替换列"}</strong></span>
+            <span><ShieldCheck weight="bold" /><strong>{analysis?.kind === "text" ? "确认替换内容" : "确认替换列"}</strong></span>
             <span className="evidence-trigger__action">查看并调整<CaretRight weight="bold" /></span>
           </button>
           <ReplacementPreview items={analysis?.kind === "text"
             ? selectedCandidates.map((item) => ({ key: item.id, title: item.value, detail: `${item.label} · ${item.count} 处` }))
             : selectedColumns.map((column) => ({ key: column.id, title: column.header, detail: `${column.processingMode === "whole" ? "整个单元格" : "仅文中已选内容"} · ${column.valueCount} 个值` }))} />
         </div>
-      ) : (
-        <>
-          <div className="rule" />
-          <button className="evidence-trigger" type="button" onClick={onDetails} aria-expanded={detailsOpen} aria-controls="security-details">
-            <span><ShieldCheck weight="duotone" /><strong>任务编号 {restoreInspection.marker || restoreInspection.taskId}</strong></span>
-            <span className="evidence-trigger__action">查看检查详情<CaretRight weight="bold" /></span>
-          </button>
-        </>
-      )}
+      ) : null}
       <button className="primary-button" type="button" onClick={onPrimary} disabled={mode === "protect" ? (!(analysis?.kind === "text" ? selectedCandidates.length : selectedColumns.length) || hasOnlyInlineFields) : false}>
         {MODE_COPY[mode].primary}<ArrowRight weight="bold" />
       </button>
@@ -492,7 +491,7 @@ function WorkbookDownloadLink({ mode, result, requested, secondary = false, onRe
         recordOperation(`download_${mode}`, "requested", result);
       }}
     >
-      <DownloadSimple weight="duotone" />
+      <DownloadSimple weight="bold" />
       {label}
     </a>
   );
@@ -513,29 +512,35 @@ function AiHandoff({ taskId, marker }) {
   };
   return (
     <div className="ai-handoff" aria-label="脱敏文件交给 AI 后的操作步骤">
-      <div className="ai-handoff__head"><strong>接下来，用任意 AI 处理脱敏文件</strong></div>
-      <ol>
-        <li><b>1</b><span><strong>请确认下载</strong><small>在浏览器下载列表中确认文件</small></span></li>
-        <li data-state="active"><b>2</b><span><strong>交给 AI 处理</strong><small>可生成 Excel、CSV、Word 或 PPT，保留代号原样</small></span></li>
-        <li><b>3</b><span><strong>带回本机还原</strong><small>完成后导入 AI 处理后的文件</small></span></li>
+      <ol className="ai-handoff__steps">
+        <li><b>1</b>确认已下载</li>
+        <li data-state="active" aria-current="step"><b>2</b>交给任意 AI 处理</li>
+        <li><b>3</b>带回本机还原</li>
       </ol>
       <div className="ai-handoff__instruction">
         <button type="button" onClick={copyInstruction}><Copy weight="bold" />{copyState === "copied" ? "处理说明已复制" : "复制 AI 处理说明"}</button>
-        <span>粘贴给 AI，帮助它把代号当作客户、产品或人员继续处理。</span>
+        <span>粘贴给 AI，它会保留代号继续处理，可生成 Excel、CSV、Word 或 PPT。</span>
       </div>
       {copyState === "manual" && <label className="ai-handoff__manual"><span>自动复制失败，请手动复制：</span><textarea readOnly value={instruction} onFocus={(event) => event.currentTarget.select()} /></label>}
-      <p><DesktopTower weight="duotone" />可以稍后回来，换电脑也能还原。</p>
+      <p><DesktopTower weight="bold" />可以稍后回来，换电脑也能还原。</p>
     </div>
   );
 }
 
-function SuccessState({ mode, result, downloadRequested, detailsOpen, onDetails, onDownloadRequested, onAdjust, onNext, onReset }) {
+function SuccessState({ mode, result, sourceFile, downloadRequested, detailsOpen, onDetails, onDownloadRequested, onAdjust, onNext, onReset }) {
   const protect = mode === "protect";
   const count = protect ? result.replacedCells : result.restoredOccurrences;
   const outputFileName = splitFileName(result.outputName);
   const handoff = protect && downloadRequested;
   const hasContentLoss = !protect && Boolean(result.occurrenceComparison?.missing) && !result.occurrenceComparison.rewritten;
   const valueUnit = result.format === "csv" ? "个字段值" : ["txt", "md", "docx"].includes(result.format) ? "处文字" : "个单元格";
+  const checkSummary = protect
+    ? `本机完成 · 已替换 ${count} ${valueUnit} · ${result.uniqueValues} 条还原记录已保存`
+    : result.partialRestore
+      ? `本机完成 · 已还原 ${count} 处 · ${result.unresolvedOccurrences.length} 处未还原并已标记`
+      : hasContentLoss
+        ? `本机完成 · 已还原 ${count} 处 · ${result.occurrenceComparison.missing} 处代号未返回`
+        : `本机完成 · 已还原 ${count} 处 · 使用 ${result.usedMappings} 条还原记录 · 未发现未还原代号`;
   return (
     <div className="success-state" data-handoff={handoff} data-partial={Boolean(result.partialRestore)} data-content-loss={hasContentLoss} role="status" aria-live="polite">
       <span className="success-state__seal" aria-hidden="true">{result.partialRestore || hasContentLoss ? <WarningCircle weight="fill" /> : <Check weight="bold" />}</span>
@@ -557,13 +562,7 @@ function SuccessState({ mode, result, downloadRequested, detailsOpen, onDetails,
         </span>
       </div>
       <button className="evidence-trigger evidence-trigger--success" type="button" onClick={onDetails} aria-expanded={detailsOpen}>
-        <span><ShieldCheck weight="duotone" /><span className="evidence-trigger__summary"><strong>{result.partialRestore ? "部分还原已完成" : hasContentLoss ? "还原完成，内容有缺失" : "检查通过"}</strong><small>{protect
-          ? `本机完成 · 已替换 ${count} ${valueUnit} · ${result.uniqueValues} 条还原记录已保存`
-          : result.partialRestore
-            ? `本机完成 · 已还原 ${count} 处 · ${result.unresolvedOccurrences.length} 处未还原并已标记`
-            : hasContentLoss
-              ? `本机完成 · 已还原 ${count} 处 · ${result.occurrenceComparison.missing} 处代号未返回`
-            : `本机完成 · 已还原 ${count} 处 · 使用 ${result.usedMappings} 条还原记录 · 未发现未还原代号`}</small></span></span>
+        <span><ShieldCheck weight="bold" /><span className="evidence-trigger__summary"><strong>{result.partialRestore ? "部分还原已完成" : hasContentLoss ? "还原完成，内容有缺失" : "检查通过"}</strong><small>{checkSummary}</small></span></span>
         <span className="evidence-trigger__action">查看检查详情<CaretRight weight="bold" /></span>
       </button>
       {handoff && <AiHandoff taskId={result.taskId} marker={result.marker} />}
@@ -584,6 +583,7 @@ function SuccessState({ mode, result, downloadRequested, detailsOpen, onDetails,
             <i aria-hidden="true" />
             <button className="text-button" type="button" onClick={onReset}>换一个文件</button>
           </div>
+          <ResultFeedback key={result.operationId} mode={mode} result={result} summary={checkSummary.replace("本机完成 · ", "")} />
         </>
       ) : (
         <>
@@ -592,6 +592,7 @@ function SuccessState({ mode, result, downloadRequested, detailsOpen, onDetails,
           <WorkbookDownloadLink mode={mode} result={result} requested={downloadRequested} onRequested={onDownloadRequested} />
           <button className="secondary-button" type="button" onClick={onReset}>再还原一个文件</button>
         </div>
+        <ResultFeedback key={result.operationId} mode={mode} result={result} sourceFile={sourceFile} summary={checkSummary.replace("本机完成 · ", "")} />
         </>
       )}
     </div>
@@ -706,7 +707,7 @@ function ErrorState({ mode, error, canAdjustFields, residualColumns = [], onAddR
       <p className="state-kicker">已安全停止</p>
       <h2>{copy.title}</h2>
       <p className="state-description">{copy.description}</p>
-      <div className="blocked-export"><LockKey weight="duotone" /><span><strong>没有生成输出文件</strong><small>原文件保持不变</small></span></div>
+      <div className="blocked-export"><LockKey weight="bold" /><span><strong>没有生成输出文件</strong><small>原文件保持不变</small></span></div>
       {residualColumns.length > 0 ? (
         <div className="error-issues">
           <p>这些没有选中的列里还有真实值：</p>
@@ -835,7 +836,7 @@ function TextCandidateSelection({ analysis, selectedIds, onToggle, onAdd, onRemo
         <div><input id="manual-sensitive-value" value={manualValue} placeholder="粘贴文件中需要替换的完整文字" onChange={(event) => setManualValue(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); submitManual(); } }} /><button type="button" onClick={submitManual}>添加</button></div>
         {manualError && <small role="alert">{manualError}</small>}
       </div>
-      <p className="drawer-note"><Info weight="duotone" />{analysis.format === "docx"
+      <p className="drawer-note"><Info weight="bold" />{analysis.format === "docx"
         ? "Word 处理正文、普通表格、页眉页脚和文本框；图片文字不扫描，复杂结构会停止生成。"
         : analysis.format === "md" ? "Markdown 按纯文本处理，不渲染或执行 HTML、脚本；代码块、链接和 Front Matter 中的已选完整文字也会替换。"
           : "TXT 按纯文本处理，匹配已选完整文字并保留原换行与 BOM。"}</p>
@@ -870,11 +871,11 @@ function SecurityDrawer({ mode, status, analysis, selectedIds, fieldModes = {}, 
       {error ? (
         <div className="error-diagnosis">
           <section className="diagnosis-card diagnosis-card--analysis" aria-labelledby="diagnosis-analysis-title">
-            <div className="diagnosis-card__title"><Info weight="duotone" /><h3 id="diagnosis-analysis-title">现状分析</h3></div>
+            <div className="diagnosis-card__title"><Info weight="bold" /><h3 id="diagnosis-analysis-title">现状分析</h3></div>
             <p>{errorDiagnosis.analysis}</p>
           </section>
           <section className="diagnosis-card" aria-labelledby="diagnosis-guidance-title">
-            <div className="diagnosis-card__title"><ShieldCheck weight="duotone" /><h3 id="diagnosis-guidance-title">调整建议</h3></div>
+            <div className="diagnosis-card__title"><ShieldCheck weight="bold" /><h3 id="diagnosis-guidance-title">调整建议</h3></div>
             <ol>{errorDiagnosis.suggestions.map((suggestion) => <li key={suggestion}>{suggestion}</li>)}</ol>
           </section>
           <section className="issue-overview" aria-labelledby="issue-overview-title">
@@ -902,7 +903,7 @@ function SecurityDrawer({ mode, status, analysis, selectedIds, fieldModes = {}, 
         </dl>
       )}
       {mode === "protect" && analysis?.riskFindings?.length > 0 && status === "ready" && (
-        <p className="drawer-note drawer-note--warning"><WarningCircle weight="duotone" /><span><strong>还发现可能需要保护的信息：</strong>{analysis.riskFindings.map((item) => `${item.label} ${item.count} 处`).join("、")}。请确认对应字段或内容是否已经加入替换范围。</span></p>
+        <p className="drawer-note drawer-note--warning"><WarningCircle weight="bold" /><span><strong>还发现可能需要保护的信息：</strong>{analysis.riskFindings.map((item) => `${item.label} ${item.count} 处`).join("、")}。请确认对应字段或内容是否已经加入替换范围。</span></p>
       )}
       {mode === "restore" && !error && (result || restoreInspection) && (
         <section className="restore-scope" aria-label="还原检查范围">
@@ -926,7 +927,7 @@ function SecurityDrawer({ mode, status, analysis, selectedIds, fieldModes = {}, 
               <div>{changedTokens.map((item) => <p key={item.token}><strong>{item.token}</strong><span>原始 {item.original} · 返回 {item.returned}{item.missing ? ` · 缺失 ${item.missing}` : ` · 新增 ${item.added}`}</span></p>)}</div>
             </div>
           )}
-          <p className="drawer-note restore-scope__note"><Info weight="duotone" />{["csv", "txt", "md"].includes(result?.format ?? restoreInspection.format)
+          <p className="drawer-note restore-scope__note"><Info weight="bold" />{["csv", "txt", "md"].includes(result?.format ?? restoreInspection.format)
             ? comparison?.missing
               ? "纯文本不包含图片、样式和嵌入对象；未返回的代号可能是 AI 汇总或删除造成，请复核内容完整性。"
               : "纯文本不包含图片、样式和嵌入对象；部分代号未出现不代表异常。"
@@ -960,25 +961,25 @@ function SecurityDrawer({ mode, status, analysis, selectedIds, fieldModes = {}, 
               );
             })}
           </div>
-          <p className="drawer-note drawer-note--method"><Info weight="duotone" /><span><strong>整个单元格</strong>：整格换成一个代号。<strong>仅文中已选内容</strong>：只替换其他已选整格列中确认的内容，保留句子，不猜测陌生名称。</span></p>
+          <p className="drawer-note drawer-note--method"><Info weight="bold" /><span><strong>整个单元格</strong>：整格换成一个代号。<strong>仅文中已选内容</strong>：只替换其他已选整格列中确认的内容，保留句子，不猜测陌生名称。</span></p>
           {selectedColumns.length > 0 && wholeColumnCount === 0 && (
-            <p className="drawer-note drawer-note--warning"><WarningCircle weight="duotone" /><span>当前全部选为“仅文中已选内容”。请至少把一列客户、产品、人员或自定义实体设为“整个单元格”，作为文中识别依据。</span></p>
+            <p className="drawer-note drawer-note--warning"><WarningCircle weight="bold" /><span>当前全部选为“仅文中已选内容”。请至少把一列客户、产品、人员或自定义实体设为“整个单元格”，作为文中识别依据。</span></p>
           )}
           {selectedMetricColumns.length > 0 ? (
             <p className="drawer-note drawer-note--warning">
-              <WarningCircle weight="duotone" />
+              <WarningCircle weight="bold" />
               {analysis.format === "csv"
                 ? <>选择后，“{selectedMetricColumns.map((column) => column.header).join("、")}”会变成代号。AI 看不到真实数值，也无法计算总额、排名和图表；还原后会恢复原始字段文字。CSV 本身不保存 Excel 公式和样式。</>
                 : <>选择后，“{selectedMetricColumns.map((column) => column.header).join("、")}”会变成代号。AI 看不到真实数值，也无法计算总额、排名和图表；还原后，原始数值会按原值恢复，文件中现有的公式会保留，并在使用 Excel 打开时重新计算。</>}
             </p>
           ) : (
-            <p className="drawer-note"><Info weight="duotone" />金额、日期等分析指标不会自动勾选；如确有需要，可由你手动加入。</p>
+            <p className="drawer-note"><Info weight="bold" />金额、日期等分析指标不会自动勾选；如确有需要，可由你手动加入。</p>
           )}
         </section>
       )}
 
-      <div className="task-token-note"><ShieldCheck weight="duotone" /><p><strong>处理边界</strong>未选内容、上下文和图片仍可能含敏感信息。</p></div>
-      <p className="drawer-note"><Info weight="duotone" />还原记录加密保存在公司服务器，可在“我的任务”中删除。</p>
+      <div className="task-token-note"><ShieldCheck weight="bold" /><p><strong>处理边界</strong>未选内容、上下文和图片仍可能含敏感信息。</p></div>
+      <p className="drawer-note"><Info weight="bold" />还原记录加密保存在公司服务器，可在“我的任务”中删除。</p>
       </div>
     </aside>
   );
@@ -1038,6 +1039,11 @@ export function App() {
   const [switchPrompt, setSwitchPrompt] = useState(false);
   const switchResolveRef = useRef(null);
   const [usagePreview, setUsagePreview] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [signedIn, setSignedIn] = useState(false);
+  const feedbackSummary = useFeedbackSummary(signedIn);
+  // Admins are told about open feedback; everyone is told about new replies to their own.
+  const feedbackBadge = (isAdmin ? feedbackSummary.open : 0) + feedbackSummary.replies;
   const [auditIncomplete, setAuditIncomplete] = useState(hasOperationWriteFailure);
   useEffect(() => {
     const update = () => setAuditIncomplete(hasOperationWriteFailure());
@@ -1081,7 +1087,7 @@ export function App() {
   }, [themePreference]);
 
   useEffect(() => {
-    getSession().catch(error => { if (error.code === "AUTH_REQUIRED") signIn(); });
+    getSession().then(session => { setIsAdmin(session.isAdmin); setSignedIn(true); }).catch(error => { if (error.code === "AUTH_REQUIRED") signIn(); });
   }, []);
 
   useEffect(() => {
@@ -1394,7 +1400,7 @@ export function App() {
   else if (status === "inspecting") mainState = <ProcessingState mode={mode} file={file} phase="inspect" />;
   else if (status === "ready") mainState = <ReadyState mode={mode} file={file} analysis={analysis} selectedIds={selectedIds} fieldModes={fieldModes} restoreInspection={restoreInspection} regenerationNotice={regenerationNotice} detailsOpen={detailsOpen} onRemove={() => reset(mode)} onPrimary={processFile} onDetails={openDetails} />;
   else if (status === "processing") mainState = <ProcessingState mode={mode} file={file} />;
-  else if (status === "success") mainState = <SuccessState mode={mode} result={result} downloadRequested={downloadRequested} detailsOpen={detailsOpen} onDetails={openDetails} onDownloadRequested={() => setDownloadRequested(true)} onAdjust={adjustProtection} onNext={openRestorePicker} onReset={() => reset(mode)} />;
+  else if (status === "success") mainState = <SuccessState mode={mode} result={result} sourceFile={file} downloadRequested={downloadRequested} detailsOpen={detailsOpen} onDetails={openDetails} onDownloadRequested={() => setDownloadRequested(true)} onAdjust={adjustProtection} onNext={openRestorePicker} onReset={() => reset(mode)} />;
   else mainState = <ErrorState mode={mode} error={error} canAdjustFields={canAdjustFailedProtectionSelection} residualColumns={residualColumns} onAddResidualColumns={addResidualColumns} onAdjustFields={adjustFailedProtectionSelection} onReset={() => reset(mode)} onDetails={openDetails} onBackToProtect={() => reset("protect")} />;
 
   const routeStage = mode === "restore" ? "restore" : status === "success" && downloadRequested ? "ai" : "protect";
@@ -1402,14 +1408,16 @@ export function App() {
   return (
     <div className="app" data-mode={mode}>
       <header className="app-header" inert={detailsOpen || localTasksOpen || auditOpen || switchPrompt}>
-        <div className="brand"><span className="brand__mark" aria-hidden="true"><ShieldCheck weight="duotone" /></span><div><strong>文件脱敏助手</strong></div></div>
+        <div className="brand"><span className="brand__mark" aria-hidden="true"><ShieldCheck weight="bold" /></span><div><strong>文件脱敏助手</strong></div></div>
         <BoundaryRoute stage={routeStage} />
         <div className="local-status">
           <ThemeSwitcher value={themePreference} onChange={setThemePreference} />
+          {signedIn && <button className="audit-trigger feedback-trigger" type="button" title={feedbackBadge ? `反馈：${isAdmin && feedbackSummary.open ? `${feedbackSummary.open} 条待处理` : ""}${isAdmin && feedbackSummary.open && feedbackSummary.replies ? "，" : ""}${feedbackSummary.replies ? `${feedbackSummary.replies} 条新回复` : ""}` : "反馈"} aria-label={feedbackBadge ? `反馈，${feedbackBadge} 条新提醒` : "反馈"} aria-pressed={usagePreview === "feedback"} onClick={() => setUsagePreview("feedback")}><ChatCircleDots aria-hidden="true" weight="bold" /><span>反馈</span>{feedbackBadge > 0 && <b aria-hidden="true">{feedbackBadge > 99 ? "99+" : feedbackBadge}</b>}</button>}
+          {isAdmin && <button className="audit-trigger access-trigger" type="button" title="权限配置" aria-label="权限配置" aria-pressed={usagePreview === "access"} onClick={() => setUsagePreview("access")}><UserGear aria-hidden="true" weight="bold" /><span>权限配置</span></button>}
           <button className="audit-trigger" type="button" title={auditIncomplete ? "操作记录：有记录未能保存" : "操作记录"} aria-label="操作记录" aria-haspopup="dialog" aria-expanded={auditOpen} onClick={event => { drawerTriggerRef.current = event.currentTarget; setAuditOpen(true); }}><ClockCounterClockwise aria-hidden="true" weight="bold" /><span>操作记录</span>{auditIncomplete && <b aria-label="有操作记录未保存">!</b>}</button>
         </div>
       </header>
-      {usagePreview && <div inert={auditOpen}>{usagePreview === "central" ? <CentralOperations onBack={() => { setUsagePreview(false); requestAnimationFrame(() => document.querySelector(".audit-trigger")?.focus()); }} /> : UsagePreview && <Suspense fallback={<p role="status">正在打开统计预览…</p>}><UsagePreview onBack={() => { setUsagePreview(false); requestAnimationFrame(() => document.querySelector(".audit-trigger")?.focus()); }}/></Suspense>}</div>}
+      {usagePreview && <div inert={auditOpen}>{usagePreview === "feedback" ? <FeedbackCenter admin={isAdmin} onBack={() => { setUsagePreview(false); requestAnimationFrame(() => document.querySelector(".feedback-trigger")?.focus()); }} /> : usagePreview === "access" ? <AccessSettings onBack={() => { setUsagePreview(false); requestAnimationFrame(() => document.querySelector(".access-trigger")?.focus()); }} /> : <Suspense fallback={<p role="status">正在打开使用统计…</p>}><UsageStats onBack={() => { setUsagePreview(false); requestAnimationFrame(() => document.querySelector(".audit-trigger:not(.access-trigger)")?.focus()); }}/></Suspense>}</div>}
       <main className="app-main" hidden={usagePreview}>
         <section className="workspace" aria-label="文件处理工作区" inert={detailsOpen || localTasksOpen || auditOpen || switchPrompt}>
           <header className="workspace-intro">

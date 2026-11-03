@@ -3,7 +3,7 @@ import { defineConfig, devices } from "@playwright/test";
 // Runs the dev server against the isolated PostgreSQL test database (see scripts/operations-local.mjs).
 export default defineConfig({
   testDir: "./tests/e2e",
-  testMatch: ["central-operations.spec.js"],
+  testMatch: ["central-operations.spec.js", "access-settings.spec.js", "feedback.spec.js"],
   workers: 1,
   use: { baseURL: "http://127.0.0.1:4175", trace: "retain-on-failure" },
   projects: [
