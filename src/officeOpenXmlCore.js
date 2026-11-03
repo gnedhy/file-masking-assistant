@@ -33,10 +33,58 @@ export const OFFICE_FORMATS = {
     supported: [
       { pattern: /^ppt\/slides\/slide\d+\.xml$/i, area: "幻灯片文字和表格" },
       { pattern: /^ppt\/notesSlides\/notesSlide\d+\.xml$/i, area: "演讲者备注" },
+      { pattern: /^ppt\/charts\/chart\d+\.xml$/i, area: "图表文字和数据" },
     ],
-    unchecked: ["图片中的文字", "批注、图表、SmartArt、动画文本和嵌入对象"],
+    unchecked: ["图片中的文字", "批注、SmartArt、动画文本和其他嵌入对象"],
   },
 };
+
+// Chart values sit in <c:pt><c:v>; the chart's own data workbook keeps strings in <si> and inline <is>.
+const CHART_VALUE_NODES = { paragraphTag: "c:pt", textTag: "c:v" };
+const WORKBOOK_TEXT_NODES = [
+  { pattern: /^xl\/sharedStrings\.xml$/i, config: { paragraphTag: "si", textTag: "t" } },
+  { pattern: /^xl\/worksheets\/sheet\d+\.xml$/i, config: { paragraphTag: "is", textTag: "t" } },
+];
+const UNSAFE_PACKAGE_ENTRY = /(^|\/)(embeddings|activeX)\/|vbaProject\.bin$/i;
+
+function resolvePartPath(base, target) {
+  const parts = base.split("/").slice(0, -1);
+  for (const segment of target.split("/")) {
+    if (segment === "..") parts.pop();
+    else if (segment && segment !== ".") parts.push(segment);
+  }
+  return parts.join("/");
+}
+
+// A PowerPoint chart always embeds a workbook with its data. Only workbooks a chart points to are allowed.
+async function chartDataWorkbooks(zip) {
+  const names = new Set();
+  for (const rels of Object.values(zip.files).filter((entry) => /^ppt\/charts\/_rels\/chart\d+\.xml\.rels$/i.test(entry.name))) {
+    const xml = await rels.async("string");
+    for (const relationship of xml.matchAll(/<Relationship\b[^>]*>/g)) {
+      if (/TargetMode\s*=\s*"External"/i.test(relationship[0])) continue;
+      const target = relationship[0].match(/Target\s*=\s*"([^"]+)"/)?.[1];
+      const name = target && resolvePartPath(rels.name.replace("/_rels/", "/").replace(/\.rels$/i, ""), target);
+      if (name && /^ppt\/embeddings\/[^/]+\.xlsx$/i.test(name) && zip.file(name)) names.add(name);
+    }
+  }
+  return names;
+}
+
+async function loadChartWorkbook(zip, name) {
+  let nested;
+  try {
+    nested = await JSZip.loadAsync(await zip.file(name).async("uint8array"));
+  } catch (error) {
+    throw Object.assign(new Error("图表数据无法读取。"), { code: "INVALID_OFFICE_PACKAGE", details: [name], cause: error });
+  }
+  const unsafe = Object.values(nested.files).find((entry) => !entry.dir && UNSAFE_PACKAGE_ENTRY.test(entry.name));
+  const contentTypes = await nested.file("[Content_Types].xml")?.async("string");
+  if (unsafe || !contentTypes || /macroEnabled|vnd\.ms-office\.vbaProject/i.test(contentTypes)) {
+    throw Object.assign(new Error("图表数据里包含宏或嵌入对象，暂不处理。"), { code: "EMBEDDED_OBJECTS", details: [unsafe ? `${name}：${unsafe.name}` : name] });
+  }
+  return nested;
+}
 
 function decodeXml(value) {
   return String(value)
@@ -102,7 +150,9 @@ function isIndependentMatch(text, source, index) {
 
 export function allXmlText(xml) {
   const values = [];
-  for (const match of xml.matchAll(/>([^<>]+)</g)) values.push(decodeXml(match[1]));
+  // Chart points, formulas and workbook cells are separate values; joining them would glue "客户-K7M4-02" to "Sheet1".
+  const separated = xml.replace(/<\/(?:c:v|c:f|si|is|c)>/g, "$&\n");
+  for (const match of separated.matchAll(/>([^<>]+)</g)) values.push(decodeXml(match[1]));
   return values.join("");
 }
 
@@ -156,7 +206,10 @@ function replaceParagraph(paragraph, mapping) {
 }
 
 export function replaceSupportedXml(xml, format, mapping) {
-  const config = OFFICE_FORMATS[format];
+  return replaceXmlText(xml, OFFICE_FORMATS[format], mapping);
+}
+
+function replaceXmlText(xml, config, mapping) {
   const paragraphs = collectParagraphs(xml, config);
   let output = xml;
   let count = 0;
@@ -381,8 +434,12 @@ export async function loadOfficePackage(input, declaredFormat, limits = OFFICE_L
   if (entries.length > limits.entries) throw Object.assign(new Error("文件包含过多内部项目。"), { code: "PACKAGE_TOO_LARGE" });
   const totalSize = entries.reduce((sum, entry) => sum + (Number(entry?._data?.uncompressedSize) || 0), 0);
   if (totalSize > limits.uncompressedBytes) throw Object.assign(new Error("文件解包后的总量超过 250 MB。"), { code: "PACKAGE_TOO_LARGE" });
-  const unsafeEntry = entries.find((entry) => /(^|\/)(embeddings|activeX)\//i.test(entry.name) || /vbaProject\.bin$/i.test(entry.name));
+  const chartWorkbooks = /\.presentationml\.presentation\.main\+xml/i.test(await zip.file("[Content_Types].xml")?.async("string") ?? "")
+    ? await chartDataWorkbooks(zip)
+    : new Set();
+  const unsafeEntry = entries.find((entry) => UNSAFE_PACKAGE_ENTRY.test(entry.name) && !chartWorkbooks.has(entry.name));
   if (unsafeEntry) throw Object.assign(new Error("文件包含宏、OLE 或嵌入包，暂不处理。"), { code: "EMBEDDED_OBJECTS", details: [unsafeEntry.name] });
+  for (const name of chartWorkbooks) await loadChartWorkbook(zip, name);
 
   const contentTypesFile = zip.file("[Content_Types].xml");
   if (!contentTypesFile) throw Object.assign(new Error("缺少 Office 内容类型声明。"), { code: "INVALID_OFFICE_PACKAGE" });
@@ -419,12 +476,31 @@ export async function inspectOfficePackage(zip, format, mapping = null) {
     } else if (found.length) unsupportedOccurrences.push(...found);
     if (mapping) altered.push(...findAlteredTokens(xml, format, mapping).map((value) => ({ location: entry.name, value })));
   }
+  // The chart's data workbook repeats what the chart shows, so its tokens are checked but not counted again.
+  const chartDataOccurrences = [];
+  for (const name of format === "pptx" ? await chartDataWorkbooks(zip) : []) {
+    const nested = await loadChartWorkbook(zip, name);
+    for (const entry of Object.values(nested.files)) {
+      if (entry.dir || !/\.(xml|rels)$/i.test(entry.name)) continue;
+      const xml = await entry.async("string");
+      const location = `${name} 图表数据 ${entry.name}`;
+      const hidden = [...xml.matchAll(/\b[\w:.-]+\s*=\s*(?:"([^"]*)"|'([^']*)')|<!--[\s\S]*?-->/g)]
+        .map(match => decodeXml(match[1] ?? match[2] ?? match[0])).join("\n");
+      unsupportedOccurrences.push(...scanText(hidden, `${location} 属性或注释`).filter(item => item.taskId.startsWith("short:")));
+      const found = scanOfficeXml(xml, format, location);
+      if (WORKBOOK_TEXT_NODES.some((item) => item.pattern.test(entry.name))) chartDataOccurrences.push(...found);
+      else unsupportedOccurrences.push(...found);
+      if (mapping) altered.push(...findAlteredTokens(xml, format, mapping).map((value) => ({ location, value })));
+    }
+  }
+  const all = [...occurrences, ...unsupportedOccurrences, ...chartDataOccurrences];
   return {
     occurrences,
     unsupportedOccurrences,
+    chartDataOccurrences,
     altered,
-    taskIds: [...new Set([...occurrences, ...unsupportedOccurrences].map((item) => item.taskId))],
-    uniqueTokens: [...new Set([...occurrences, ...unsupportedOccurrences].map((item) => item.token))],
+    taskIds: [...new Set(all.map((item) => item.taskId))],
+    uniqueTokens: [...new Set(all.map((item) => item.token))],
     checkedAreas: [...checkedAreas],
     uncheckedAreas: config.unchecked,
   };
@@ -440,11 +516,25 @@ export async function restoreOfficePackage(zip, format, mapping) {
     if (!area) continue;
     const xml = await entry.async("string");
     const replaced = replaceSupportedXml(xml, format, mapping);
-    if (replaced.count) {
-      zip.file(entry.name, replaced.xml);
-      restoredOccurrences += replaced.count;
+    // Chart categories and series names are <c:v> values, not paragraphs.
+    const values = /^ppt\/charts\//i.test(entry.name) ? replaceXmlText(replaced.xml, CHART_VALUE_NODES, mapping) : { xml: replaced.xml, count: 0 };
+    if (replaced.count + values.count) {
+      zip.file(entry.name, values.xml);
+      restoredOccurrences += replaced.count + values.count;
       checkedAreas.add(area.area);
     }
+  }
+  // Restore the chart's data workbook too, or PowerPoint would bring the tokens back when the data is edited.
+  for (const name of format === "pptx" ? await chartDataWorkbooks(zip) : []) {
+    const nested = await loadChartWorkbook(zip, name);
+    let changed = false;
+    for (const entry of Object.values(nested.files)) {
+      const nodes = !entry.dir && WORKBOOK_TEXT_NODES.find((item) => item.pattern.test(entry.name));
+      if (!nodes) continue;
+      const replaced = replaceXmlText(await entry.async("string"), nodes.config, mapping);
+      if (replaced.count) { nested.file(entry.name, replaced.xml); changed = true; }
+    }
+    if (changed) zip.file(name, await nested.generateAsync({ type: "uint8array", compression: "DEFLATE" }));
   }
   return { restoredOccurrences, checkedAreas: [...checkedAreas] };
 }

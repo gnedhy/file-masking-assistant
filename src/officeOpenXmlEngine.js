@@ -154,9 +154,10 @@ export async function restoreOfficeSafeFile(file, expectedTaskId, context) {
     }
     const restored = await restoreOfficePackage(zip, format, vault.mapping);
     const postCheck = await inspectOfficePackage(zip, format);
-    if (postCheck.occurrences.length || postCheck.unsupportedOccurrences.length) {
+    if (postCheck.occurrences.length || postCheck.unsupportedOccurrences.length || postCheck.chartDataOccurrences.length) {
       throw new SafeFileError("RESIDUAL_TOKENS", "还原后仍检测到代号，已停止输出。", [
         ...postCheck.occurrences.map((item) => `${item.location}：${item.token}`),
+        ...postCheck.chartDataOccurrences.map((item) => `${item.location}：${item.token}`),
         ...postCheck.unsupportedOccurrences.map((item) => `${item.location}：${item.token}`),
       ]);
     }
