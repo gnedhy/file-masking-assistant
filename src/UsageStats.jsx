@@ -1,16 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import { RecordFilters, RecordList, RecordFilename, activeFilterCount } from "./OperationViews.jsx";
+import { Pagination, RecordFilters, TaskTable, activeFilterCount, usePageSize } from "./OperationViews.jsx";
 import { DownloadSimple, FunnelSimple, X } from "@phosphor-icons/react";
 import { bucketActivity, localDay } from "./operationReports.js";
-import { failureReason } from "./errorPresentation.js";
-import { OPERATION_LABELS, OPERATION_RESULTS } from "./operationLog.js";
 import { OutcomeCard, RankBars, StatTile, TrendChart } from "./UsageCharts.jsx";
 import { useOperationSync } from "./CentralOperations.jsx";
 import { getSession } from "./session.js";
 
 const RANGES = [["最近 7 天", 7], ["最近 30 天", 30], ["最近 60 天", 60]];
 const MIN_ACTIVE_DAYS = 3;
-const PAGE_SIZE = 10;
 const rangeOf = (days) => { const from = new Date(); from.setDate(from.getDate() - days + 1); return { from: localDay(from), to: localDay(new Date()) }; };
 const NOTES = [
   ["成功脱敏任务", "按用户与任务编号去重，仅计成功生成脱敏文件的任务。"],
@@ -44,13 +41,23 @@ export default function UsageStats({ onBack }) {
   const [onlyIssues, setOnlyIssues] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = usePageSize();
   const [remote, setRemote] = useState({ loading: true, error: "", report: null });
-  const [detailData, setDetailData] = useState({ loading: false, error: "", records: [], total: 0 });
+  const [detailData, setDetailData] = useState({ loading: false, error: "", tasks: [], total: 0 });
   const [knownUsers, setKnownUsers] = useState([]);
   const [reload, setReload] = useState(0);
   const [exportState, setExportState] = useState({ busy: false, text: "" });
   const heading = useRef(null);
   const detail = useRef(null);
+  const filtersRef = useRef(null);
+  // The filter popover closes on a click elsewhere or Escape, like the other menus.
+  useEffect(() => {
+    const onPointerDown = event => { const el = filtersRef.current; if (el?.open && !el.contains(event.target)) el.open = false; };
+    const onKeyDown = event => { const el = filtersRef.current; if (event.key === "Escape" && el?.open && !el.querySelector("[aria-expanded=\"true\"]")) { el.open = false; el.querySelector("summary")?.focus(); } };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => { document.removeEventListener("pointerdown", onPointerDown); document.removeEventListener("keydown", onKeyDown); };
+  }, []);
   useEffect(() => { heading.current?.focus(); }, []);
 
   const range = filters.from && filters.to && filters.from <= filters.to;
@@ -70,14 +77,14 @@ export default function UsageStats({ onBack }) {
     if (!session || !detailOpen) return;
     const controller = new AbortController();
     setDetailData(old => ({ ...old, loading: true, error: "" }));
-    readJson(`/api/v1/operation-events?${params({ ...detailFilters, page })}`, controller.signal)
-      .then(result => setDetailData({ loading: false, error: "", records: result.records, total: result.total }))
+    // One row per task, like the operation records; a task shows all its steps when opened.
+    readJson(`/api/v1/operation-tasks?${params({ ...detailFilters, files: "1", page, pageSize })}`, controller.signal)
+      .then(result => setDetailData({ loading: false, error: "", tasks: result.tasks, total: result.total }))
       .catch(error => { if (!controller.signal.aborted) setDetailData(old => ({ ...old, loading: false, error: error.message })); });
     return () => controller.abort();
-  }, [session?.userId, detailOpen, detailKey, page, reload]);
+  }, [session?.userId, detailOpen, detailKey, page, reload, pageSize]);
 
   const report = remote.report;
-  const pageCount = Math.max(1, Math.ceil(detailData.total / PAGE_SIZE));
   const activeRange = RANGES.find(([, length]) => { const r = rangeOf(length); return r.from === filters.from && r.to === filters.to; })?.[1];
   const filterCount = activeFilterCount({ ...filters, from: "", to: "" }) + (filters.user ? 1 : 0) + (filters.format ? 1 : 0);
   const showDetail = (next, issues = false) => {
@@ -91,7 +98,7 @@ export default function UsageStats({ onBack }) {
     try {
       const current = await getSession({ refresh: true });
       if (current.userId !== session?.userId) throw new Error("身份已变化，请重新打开统计页面。");
-      const response = await fetch("/api/v1/operation-events/export", { method: "POST", headers: { "content-type": "application/json", "x-csrf-token": current.csrf }, body: JSON.stringify(Object.fromEntries(params(detailFilters))) });
+      const response = await fetch("/api/v1/operation-events/export", { method: "POST", headers: { "content-type": "application/json", "x-csrf-token": current.csrf }, body: JSON.stringify(Object.fromEntries(params({ ...detailFilters, files: "1" }))) });
       if (!response.ok) throw new Error("导出失败，请重试；未生成下载文件。");
       const url = URL.createObjectURL(await response.blob());
       const link = document.createElement("a");
@@ -120,7 +127,7 @@ export default function UsageStats({ onBack }) {
     {summary && !empty && <p className="usage-summary">{summary}{report.outcome.attention ? <>；<button type="button" onClick={() => showDetail(null, true)}>{report.outcome.attention} 项需要关注</button></> : "；没有需要关注的异常"}</p>}
     <div className="usage-controls">
       <div className="usage-ranges" role="group" aria-label="时间范围">{RANGES.map(([label, length]) => <button key={length} type="button" aria-pressed={activeRange === length} onClick={() => changeFilters({ ...filters, ...rangeOf(length) })}>{label}</button>)}</div>
-      <details className="usage-filters"><summary><FunnelSimple aria-hidden="true" />{filterCount ? `筛选（${filterCount}）` : "筛选"}</summary><RecordFilters value={filters} onChange={changeFilters} users={admin ? knownUsers : undefined} /></details>
+      <details className="usage-filters" ref={filtersRef}><summary><FunnelSimple aria-hidden="true" />{filterCount ? `筛选（${filterCount}）` : "筛选"}</summary><RecordFilters value={filters} onChange={changeFilters} users={admin ? knownUsers : undefined} /></details>
     </div>
     {!session ? <p className="usage-empty" role="status">正在确认身份…</p>
       : !range ? <p className="usage-empty" role="status">请选择开始和结束日期，开始日期不能晚于结束日期。</p>
@@ -140,7 +147,7 @@ export default function UsageStats({ onBack }) {
       {admin && <RankBars title="活跃用户" unit="个任务" items={report.people} onSelect={(key, label) => showDetail({ label, filters: { user: key } })} />}
       <RankBars title="文件格式" unit="个任务" items={report.formats} onSelect={(key, label) => showDetail({ label: `${label} 文件`, filters: { format: key } })} />
     </div>
-    <details ref={detail} className="usage-detail" open={detailOpen} onToggle={(event) => setDetailOpen(event.currentTarget.open)}><summary>操作明细{detailOpen && !detailData.loading ? ` · ${detailData.total} 条` : ""}</summary>
+    <details ref={detail} className="usage-detail" open={detailOpen} onToggle={(event) => setDetailOpen(event.currentTarget.open)}><summary>操作明细{detailOpen && !detailData.loading ? ` · ${detailData.total} 个任务` : ""}</summary>
       <div className="usage-detail__tools">
         {focus && <button type="button" className="usage-chip" onClick={() => { setFocus(null); setPage(1); }} aria-label={`取消筛选 ${focus.label}`}>{focus.label}<X aria-hidden="true" /></button>}
         <label className="usage-toggle"><input type="checkbox" checked={onlyIssues} onChange={(event) => { setOnlyIssues(event.target.checked); setPage(1); }} />只看异常</label>
@@ -149,8 +156,8 @@ export default function UsageStats({ onBack }) {
       {detailData.error ? <p role="alert">{detailData.error}</p>
         : detailData.loading ? <p role="status">正在读取明细…</p>
         : !detailData.total ? <p role="status">没有符合条件的记录。</p>
-        : <><div className="usage-table"><table><thead><tr>{[admin ? "用户 / 时间" : "时间", "任务", "输入 / 输出文件", "格式", "操作", "结果"].map(h => <th key={h}>{h}</th>)}</tr></thead><tbody>{detailData.records.map(r => <tr key={r.id}><td>{admin ? <>{r.userName}<small>{new Date(r.time).toLocaleString("zh-CN")}</small></> : new Date(r.time).toLocaleString("zh-CN")}</td><td title={r.taskId || undefined}>{r.marker || r.taskId?.slice(0, 8) || "—"}</td><td><RecordFilename label="输入" name={r.inputName} /><RecordFilename label="输出" name={r.outputName} /></td><td>{r.format?.toUpperCase() || "—"}</td><td>{OPERATION_LABELS[r.action]}</td><td>{OPERATION_RESULTS[r.result]}{r.result === "failed" && failureReason(r.errorCode) && <small>{failureReason(r.errorCode)}</small>}</td></tr>)}</tbody></table></div><div className="usage-mobile"><RecordList records={detailData.records} /></div></>}
-      {detailData.total > 0 && <nav className="record-pagination" aria-label="操作明细分页"><span role="status">第 {page} / {pageCount} 页 · 共 {detailData.total} 条</span><div><button type="button" className="secondary-button" disabled={page === 1} onClick={() => setPage(page - 1)}>上一页</button><button type="button" className="secondary-button" disabled={page === pageCount} onClick={() => setPage(page + 1)}>下一页</button></div></nav>}
+        : <TaskTable tasks={detailData.tasks} showUser={admin} />}
+      {detailData.total > 0 && <Pagination label="操作明细分页" page={page} total={detailData.total} pageSize={pageSize} unit="个任务" onPage={next => { setPage(next); detail.current?.scrollIntoView({ behavior: "smooth", block: "start" }); }} onPageSize={next => { setPageSize(next); setPage(1); }} />}
     </details>
     </>}
     <details className="usage-notes"><summary>统计口径</summary><dl>{NOTES.filter(([label]) => admin || label !== "使用人数").map(([label, note]) => <div key={label}><dt>{label}</dt><dd>{note}</dd></div>)}</dl></details>

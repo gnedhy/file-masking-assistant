@@ -45,7 +45,13 @@ test("权限配置：仅管理员可见；普通用户的使用统计只含本�
   // The old sync time is already on the page; wait for this sync to finish before changing anyone.
   await expect(settings.getByRole("button", { name: "同步通讯录" })).toBeEnabled();
   await expect(settings.getByText(/上次同步：.*3 个部门 · 3 人/)).toBeVisible();
-  await settings.getByRole("combobox", { name: "部门" }).selectOption({ label: "　财务部" });
+  // The parent department lists everyone under it; then narrow to one department.
+  await settings.getByRole("combobox", { name: "部门" }).click();
+  await settings.getByRole("option", { name: "测试公司" }).click();
+  await expect(settings.getByRole("navigation", { name: "通讯录分页" })).toHaveText("共 3 人");
+  await settings.getByRole("combobox", { name: "部门" }).click();
+  await settings.getByRole("option", { name: "财务部" }).click();
+  await expect(settings.getByRole("combobox", { name: "部门" })).toHaveText("财务部");
   const bob = settings.getByRole("listitem").filter({ hasText: "test-bob" });
   await expect(settings.getByRole("navigation", { name: "通讯录分页" })).toHaveText("共 1 人");
   await bob.getByRole("button", { name: "设为管理员" }).click();

@@ -28,7 +28,7 @@ const RESULT_COLORS = { failed: C.red, partial: C.amber, missing: C.amber, waiti
 
 export function describeFilters(session, f) {
   return [
-    ['数据范围', session.isAdmin ? (f.user ? `指定用户：${f.user}` : '全部人员') : `仅本人（${session.userName}）`],
+    ['数据范围', session.isAdmin ? (f.user ? `指定用户：${f.user}` : f.userIds ? `指定部门（${f.userIds.length} 人）` : '全部人员') : `仅本人（${session.userName}）`],
     ['日期', `${f.from || '最近 180 天'} 至 ${f.to || '今天'}`],
     ['格式', f.format ? f.format.toUpperCase() : '全部'],
     ['操作', f.action ? OPERATION_LABELS[f.action] : '全部'],

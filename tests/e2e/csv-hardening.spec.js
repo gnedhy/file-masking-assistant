@@ -79,7 +79,8 @@ test("短实体残留可在详情调整为整格替换并下载实名文件", as
   await page.getByRole("button", { name: "调整选择字段" }).click();
   const drawer = page.getByRole("dialog", { name: /替换列|替换内容|检查详情/ });
   await drawer.getByRole("checkbox", { name: /B 列 · 备注/ }).check();
-  await drawer.getByRole("combobox", { name: "备注的替换方式" }).selectOption("whole");
+  await drawer.getByRole("combobox", { name: "备注的替换方式" }).click();
+  await drawer.getByRole("option", { name: "整个单元格" }).click();
   await drawer.getByRole("button", { name: "关闭详情" }).click();
   await page.getByRole("button", { name: /生成脱敏文件/ }).click();
   const safeDownload = page.waitForEvent("download");

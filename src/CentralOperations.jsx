@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { RecordFilters, TaskRecordList } from "./OperationViews.jsx";
+import { Pagination, RecordFilters, TaskRecordList, usePageSize } from "./OperationViews.jsx";
 import { getOperationSyncState, retryOperationSync } from "./operationSync.js";
 import { Check, DownloadSimple } from "@phosphor-icons/react";
+import { Dropdown } from "./Dropdown.jsx";
 
 export function useOperationSync() {
   const [state, setState] = useState(getOperationSyncState);
@@ -39,15 +40,66 @@ function dateRange(days) {
   return { from: shanghaiDay(start), to };
 }
 
+// Departments as an indented list, parents before children, in WeCom order.
+function departmentOptions(departments) {
+  const children = new Map();
+  for (const d of departments) { const key = String(d.parentId ?? ""); if (!children.has(key)) children.set(key, []); children.get(key).push(d); }
+  const ids = new Set(departments.map(d => String(d.id)));
+  const roots = departments.filter(d => d.parentId == null || !ids.has(String(d.parentId)));
+  const out = [];
+  const walk = (list, depth) => [...list].sort((a, b) => (b.order ?? 0) - (a.order ?? 0)).forEach(d => { out.push({ id: String(d.id), label: d.name, depth, parentId: d.parentId == null ? "" : String(d.parentId) }); walk(children.get(String(d.id)) ?? [], depth + 1); });
+  walk(roots, 0);
+  return out;
+}
+
+// The department and every department under it.
+function departmentScope(departments, id) {
+  const ids = new Set([id]);
+  for (let grew = true; grew;) { grew = false; for (const d of departments) if (ids.has(d.parentId) && !ids.has(d.id)) { ids.add(d.id); grew = true; } }
+  return ids;
+}
+
+// Admins choose whose records the drawer shows: their own, or everyone, narrowed by department or person.
+function ScopePicker({ scope, onScope, directory, department, person, onDepartment, onPerson }) {
+  const options = directory ? departmentOptions(directory.departments) : [];
+  const inScope = department ? departmentScope(options, department) : null;
+  const people = (directory?.members ?? []).filter(m => !inScope || m.departmentIds.some(id => inScope.has(String(id)))).sort((a, b) => a.name.localeCompare(b.name, "zh-CN"));
+  return <div className="record-scope">
+    <div className="record-scope__switch" role="group" aria-label="查看范围">{[["mine", "我的"], ["all", "全部"]].map(([key, label]) => <button key={key} type="button" aria-pressed={scope === key} onClick={() => onScope(key)}>{label}</button>)}</div>
+    {scope === "all" && <div className="record-scope__filters">
+      {directory?.error ? <p role="alert">{directory.error}</p> : !directory ? <p role="status">正在读取通讯录…</p> : <>
+        <div className="field"><span>部门</span><Dropdown label="部门" value={department} onChange={onDepartment} options={[{ value: "", label: "全部部门" }, ...options.map(d => ({ value: d.id, label: d.label, depth: d.depth }))]} /></div>
+        <div className="field"><span>人员</span><Dropdown label="人员" value={person} onChange={onPerson} options={[{ value: "", label: department ? "部门全部人员" : "全部人员" }, ...people.map(m => ({ value: m.userId, label: m.name }))]} /></div>
+        {!directory.departments.length && <p className="record-scope__hint">还没有同步通讯录，可在“权限配置”里同步后按部门筛选。</p>}
+      </>}
+    </div>}
+  </div>;
+}
+
 export default function CentralOperations({ onBack, compact = false }) {
   const sync = useOperationSync();
   const [filters, setFilters] = useState(() => dateRange(30));
   const [query, setQuery] = useState("");
   useEffect(() => { const timer = setTimeout(() => setQuery(filters.query || ""), 300); return () => clearTimeout(timer); }, [filters.query]);
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = usePageSize();
   const [reload, setReload] = useState(0);
   const [data, setData] = useState({ loading: true, tasks: [], total: 0, stats: null, error: "" });
   const [users, setUsers] = useState([]);
+  const admin = sync.session?.isAdmin === true;
+  const [scope, setScope] = useState("mine");
+  const [department, setDepartment] = useState("");
+  const [person, setPerson] = useState("");
+  const [directory, setDirectory] = useState(null);
+  const allScope = compact && admin && scope === "all";
+  // Who the records belong to: in the drawer that is me, unless an admin picked "全部".
+  const owner = compact ? (allScope ? { user: person, department: person ? "" : department } : { user: sync.session?.userId || "" }) : {};
+  useEffect(() => {
+    if (!allScope || directory) return;
+    fetch("/api/v1/access", { cache: "no-store" }).then(r => { if (!r.ok) throw new Error(); return r.json(); })
+      .then(data => setDirectory({ departments: data.departments, members: data.members }))
+      .catch(() => setDirectory({ departments: [], members: [], error: "读取通讯录失败，可以先查看全部人员的记录。" }));
+  }, [allScope, directory]);
   // Success shows briefly on the button itself; only a failure gets a line of text.
   const [exportState, setExportState] = useState({ kind: "", text: "" });
   useEffect(() => {
@@ -62,7 +114,7 @@ export default function CentralOperations({ onBack, compact = false }) {
   useEffect(() => {
     const controller = new AbortController();
     setData(old => ({ ...old, loading: true, error: "" }));
-    const params = new URLSearchParams({ ...filters, query, ...(compact ? { user: sync.session?.userId || "" } : {}), page });
+    const params = new URLSearchParams(Object.entries({ ...filters, query, ...owner, page, pageSize }).filter(([, v]) => v !== "" && v != null));
     const read = async path => {
       const response = await fetch(`${path}?${params}`, { signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15000)]), cache: "no-store" });
       if (!response.ok) throw new Error(response.status === 401 ? "登录状态已过期，请重新进入应用。" : "暂时无法读取记录，请稍后重试。");
@@ -76,7 +128,7 @@ export default function CentralOperations({ onBack, compact = false }) {
       if (!controller.signal.aborted) setData({ loading: false, tasks: [], total: 0, stats: null, error: error.name === "TimeoutError" ? "读取超时，请重试；文件处理状态已保留。" : error.message });
     });
     return () => controller.abort();
-  }, [filters.from, filters.to, filters.user, filters.format, filters.result, filters.action, query, page, reload, compact, sync.session?.userId, sync.session?.isAdmin, sync.lastConfirmed]);
+  }, [filters.from, filters.to, filters.user, filters.format, filters.result, filters.action, query, page, reload, compact, sync.session?.userId, sync.session?.isAdmin, sync.lastConfirmed, scope, department, person, pageSize]);
   const changeFilters = next => { setFilters(next); setPage(1); setExportState({ kind: "", text: "" }); };
   async function exportRecords() {
     setExporting(true); setExportState({ kind: "", text: "" });
@@ -85,7 +137,7 @@ export default function CentralOperations({ onBack, compact = false }) {
       if (!sessionResponse.ok) throw new Error("登录状态已过期，请重新进入应用。");
       const session = await sessionResponse.json();
       if (session.userId !== sync.session?.userId) throw new Error("身份已变化，请重新打开记录页面。");
-      const response = await fetch("/api/v1/operation-events/export", { method: "POST", headers: { "content-type": "application/json", "x-csrf-token": session.csrf }, body: JSON.stringify({ ...filters, ...(compact ? { user: session.userId } : {}) }) });
+      const response = await fetch("/api/v1/operation-events/export", { method: "POST", headers: { "content-type": "application/json", "x-csrf-token": session.csrf }, body: JSON.stringify(Object.fromEntries(Object.entries({ ...filters, ...(compact ? (allScope ? owner : { user: session.userId }) : {}) }).filter(([, v]) => v !== "" && v != null))) });
       if (!response.ok) throw new Error("导出失败，请重试；未生成下载文件。");
       const url = URL.createObjectURL(await response.blob());
       const link = document.createElement("a");
@@ -101,6 +153,8 @@ export default function CentralOperations({ onBack, compact = false }) {
     {!compact && <div className="usage-heading"><h1 ref={heading} tabIndex={-1}>使用统计</h1><button className="secondary-button" type="button" onClick={onBack}>返回文件处理</button></div>}
     {!compact && <p className="operation-scope">{sync.session?.userName} · {sync.session?.isAdmin ? "管理员 · 统计全部人员" : "仅统计本人的记录"} · 按北京时间筛选 · 保留 180 天</p>}
     <SyncStatus />
+    {compact && admin && <ScopePicker scope={scope} directory={directory} department={department} person={person}
+      onScope={next => { setScope(next); setPage(1); }} onDepartment={next => { setDepartment(next); setPerson(""); setPage(1); }} onPerson={next => { setPerson(next); setPage(1); }} />}
     {!compact && dateShortcuts}
     <RecordFilters value={filters} onChange={changeFilters} users={!compact && sync.session?.isAdmin ? users : undefined} collapsible={compact} shortcuts={compact ? dateShortcuts : null} />
     {compact ? null : sync.session?.isAdmin ? <label className="central-search">文件名／任务搜索<input type="search" value={filters.query || ""} onChange={e => changeFilters({ ...filters, query: e.target.value })}/></label> : <label className="central-search">格式<select value={filters.format || ""} onChange={e => changeFilters({ ...filters, format:e.target.value })}><option value="">全部格式</option>{["xlsx","csv","txt","md","docx","pptx","html"].map(f=><option key={f}>{f}</option>)}</select></label>}
@@ -110,8 +164,8 @@ export default function CentralOperations({ onBack, compact = false }) {
       <div className="record-toolbar" ref={details} tabIndex={-1}><strong>操作记录 · {data.total} 个任务</strong><button className={compact ? "text-button record-export-button record-export-button--compact" : "secondary-button record-export-button"} data-done={exportState.kind === "done" || undefined} type="button" title="导出的文件名可能包含敏感信息，请妥善保管" disabled={!data.total || exporting || query !== (filters.query || "")} onClick={exportRecords}>{exportState.kind === "done" ? <Check size={18} weight="bold" aria-hidden="true"/> : <DownloadSimple size={18} aria-hidden="true"/>}{exporting ? "正在导出…" : exportState.kind === "done" ? "已开始下载" : "导出记录"}</button></div>
       {!compact && <p className="operation-scope">导出筛选范围内的全部操作明细，不只当前页。下载仅代表发起请求。</p>}
       <p className="record-export-status" role={exportState.kind === "error" ? "alert" : "status"}>{exportState.kind === "error" ? exportState.text : exportState.kind === "done" ? <span className="visually-hidden">已开始下载</span> : null}</p>
-      {data.tasks.length ? <TaskRecordList tasks={data.tasks} showUser={!compact && sync.session?.isAdmin} /> : <p role="status">当前筛选范围暂无记录。可调整日期或等待记录同步。</p>}
-      {data.total > 0 && <nav className="record-pagination" aria-label="操作记录分页"><span>第 {page} / {Math.ceil(data.total / 10)} 页</span><div>{[[-1,"上一页"],[1,"下一页"]].map(([delta,label]) => <button className="secondary-button" type="button" key={label} disabled={delta < 0 ? page === 1 : page * 10 >= data.total} onClick={() => { setPage(page + delta); details.current?.scrollIntoView({ block:"start" }); details.current?.focus({ preventScroll:true }); }}>{label}</button>)}</div></nav>}
+      {data.tasks.length ? <TaskRecordList tasks={data.tasks} showUser={allScope || (!compact && sync.session?.isAdmin)} /> : <p role="status">当前筛选范围暂无记录。可调整日期或等待记录同步。</p>}
+      {data.total > 0 && <Pagination label="操作记录分页" page={page} total={data.total} pageSize={pageSize} unit="个任务" onPage={next => { setPage(next); details.current?.scrollIntoView({ block: "start" }); details.current?.focus({ preventScroll: true }); }} onPageSize={next => { setPageSize(next); setPage(1); }} />}
     </>}
   </section>;
 }

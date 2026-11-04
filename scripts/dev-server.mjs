@@ -9,7 +9,7 @@ import { createServer as createViteServer } from "vite";
 import { createAccess, MemoryAccessRepository, PgAccessRepository } from "../server/access.mjs";
 import { createAppHandler } from "../server/handler.mjs";
 import { MemoryFeedbackRepository, PgFeedbackRepository } from "../server/feedback.mjs";
-import { PgOperationsRepository, validateEvent } from "../server/operations-repository.mjs";
+import { buildFilter, PgOperationsRepository, validateEvent } from "../server/operations-repository.mjs";
 import { PgVaultRepository } from "../server/repository.mjs";
 import { summarizeTask, taskKeyResolver } from "../src/operationTasks.js";
 import { ISSUE_RESULTS, operationReport } from "../src/operationReports.js";
@@ -69,17 +69,21 @@ export class MemoryOperationsRepository {
     const user = session.isAdmin ? filters.user : session.userId;
     const query = String(filters.query || "").toLowerCase();
     return this.rows.filter(row => (!user || row.userId === user)
+      && (!filters.userIds || filters.userIds.includes(row.userId))
+      && (!filters.files || !["view_all_records", "export_records"].includes(row.action))
       && ["action", "result", "format"].every(key => !filters[key] || row[key] === filters[key])
       && (!filters.issues || ISSUE_RESULTS.includes(row.result))
       && (!query || [row.inputName, row.outputName, row.taskId, row.marker].join(" ").toLowerCase().includes(query)))
       .sort((a, b) => b.time.localeCompare(a.time));
   }
   async list(session, filters = {}) {
-    const page = Number(filters.page || 1), rows = this.visible(session, filters);
-    return { records: rows.slice((page - 1) * 10, page * 10), total: rows.length, page, pageSize: 10 };
+    buildFilter(session, filters); // same checks as the real server
+    const page = Number(filters.page || 1), size = Number(filters.pageSize || 10), rows = this.visible(session, filters);
+    return { records: rows.slice((page - 1) * size, page * size), total: rows.length, page, pageSize: size };
   }
   async listTasks(session, filters = {}) {
-    const page = Number(filters.page || 1), keyOf = taskKeyResolver(this.rows), groups = new Map();
+    buildFilter(session, filters);
+    const page = Number(filters.page || 1), size = Number(filters.pageSize || 10), keyOf = taskKeyResolver(this.rows), groups = new Map();
     const hits = new Set(this.visible(session, filters).map(keyOf));
     for (const row of [...this.rows].sort((a, b) => a.time.localeCompare(b.time))) {
       const key = keyOf(row);
@@ -88,7 +92,7 @@ export class MemoryOperationsRepository {
       groups.get(key).push(row);
     }
     const tasks = [...groups].map(([key, events]) => summarizeTask(key, events)).sort((a, b) => b.lastTime.localeCompare(a.lastTime));
-    return { tasks: tasks.slice((page - 1) * 10, page * 10), total: tasks.length, page, pageSize: 10 };
+    return { tasks: tasks.slice((page - 1) * size, page * size), total: tasks.length, page, pageSize: size };
   }
   async statistics(session, filters = {}) {
     const totals = rows => ({ users: new Set(rows.map(r => r.userId)).size, protected: rows.filter(r => r.action === "protect" && r.result === "success").length, restored: rows.filter(r => r.action === "restore" && r.result !== "failed").length, failed: rows.filter(r => r.result === "failed").length, imports: rows.filter(r => r.action.startsWith("import_")).length, downloads: rows.filter(r => r.action.startsWith("download_")).length });

@@ -2,10 +2,14 @@ import { Fragment, lazy, Suspense, useCallback, useEffect, useRef, useState } fr
 import { randomId } from "./randomId.js";
 import { isEmptyColumn } from "./xlsxCore.js";
 import { ERROR_PRESENTATION } from "./errorPresentation.js";
+import { Dropdown } from "./Dropdown.jsx";
 import { TaskDetails } from "./TaskDetails.jsx";
 import { THEME_OPTIONS, ThemeSwitcher } from "./ThemeSwitcher.jsx";
 import { ConfirmDialog } from "./ConfirmDialog.jsx";
 import { OperationDrawer } from "./OperationDrawer.jsx";
+import { GuideDrawer, hasUnseenUpdate } from "./GuideDrawer.jsx";
+import { CURRENT_VERSION } from "./changelog.js";
+const CHANGELOG_VERSION = CURRENT_VERSION.version;
 import AccessSettings from "./AccessSettings.jsx";
 import FeedbackCenter from "./FeedbackCenter.jsx";
 import ResultFeedback from "./ResultFeedback.jsx";
@@ -38,6 +42,7 @@ import {
   ChatCircleDots,
   WarningCircle,
   X,
+  BookOpenText,
 } from "@phosphor-icons/react";
 import { addManualCandidate } from "./textCore.js";
 import {
@@ -771,6 +776,8 @@ function TextCandidateSelection({ analysis, selectedIds, onToggle, onAdd, onRemo
   );
 }
 
+const REPLACE_MODES = [{ value: "whole", label: "整个单元格" }, { value: "inline", label: "仅文中已选内容" }];
+
 function SecurityDrawer({ mode, status, analysis, selectedIds, fieldModes = {}, restoreInspection, result, error, modal, drawerRef, closeButtonRef, onClose, onToggleColumn, onModeChange, onAddCandidate, onRemoveCandidate, onSetSelection }) {
   const [issuesExpanded, setIssuesExpanded] = useState(false);
   const selectedColumns = (analysis?.columns ?? [])
@@ -880,10 +887,7 @@ function SecurityDrawer({ mode, status, analysis, selectedIds, fieldModes = {}, 
                 <div className={empty ? "column-selection column-selection--empty" : "column-selection"} key={column.id}>
                   <input id={inputId} type="checkbox" checked={checked} disabled={empty && !checked} onChange={() => onToggleColumn(column.id)} />
                   <label className="column-selection__copy" htmlFor={inputId}><strong>{spreadsheetColumnLabel(column.columnNumber)} 列 · {column.header}</strong><small>{column.sheetName} · {empty ? "这一列没有内容，无需替换" : <>{column.valueCount} 个值{column.samples[0] ? ` · 示例 ${column.samples[0]}` : ""}</>}</small></label>
-                  <label className="column-selection__method"><span>替换方式</span><select className="column-selection__mode" aria-label={`${column.header}的替换方式`} value={fieldModes[column.id] ?? column.recommendedMode ?? "whole"} disabled={!checked} onChange={(event) => onModeChange(column.id, event.target.value)}>
-                    <option value="whole">整个单元格</option>
-                    <option value="inline">仅文中已选内容</option>
-                  </select></label>
+                  <div className="column-selection__method"><span>替换方式</span><Dropdown className="column-selection__mode" label={`${column.header}的替换方式`} value={fieldModes[column.id] ?? column.recommendedMode ?? "whole"} disabled={!checked} onChange={(next) => onModeChange(column.id, next)} options={REPLACE_MODES} /></div>
                   <em>{empty ? "无内容" : column.suggested ? "自动建议" : "可自定义"}</em>
                 </div>
               );
@@ -944,6 +948,8 @@ export function App() {
   const localTasksViewButtonRef = useRef(null);
   const drawerTriggerRef = useRef(null);
   const auditDrawerRef = useRef(null);
+  const guideDrawerRef = useRef(null);
+  const guideCloseButtonRef = useRef(null);
   const auditCloseButtonRef = useRef(null);
   const [mode, setMode] = useState("protect");
   const [status, setStatus] = useState("empty");
@@ -964,6 +970,9 @@ export function App() {
   const [deletingTaskId, setDeletingTaskId] = useState(null);
   const [taskManagerError, setTaskManagerError] = useState("");
   const [auditOpen, setAuditOpen] = useState(false);
+  const [guideOpen, setGuideOpen] = useState(false);
+  const [guideUpdate, setGuideUpdate] = useState(hasUnseenUpdate);
+  const guideSeen = useCallback(() => setGuideUpdate(false), []);
   const [switchPrompt, setSwitchPrompt] = useState(false);
   const switchResolveRef = useRef(null);
   const [usagePreview, setUsagePreview] = useState(false);
@@ -1033,25 +1042,26 @@ export function App() {
   }, [refreshLocalTasks]);
 
   useEffect(() => {
-    const overlayOpen = localTasksOpen || detailsOpen || auditOpen;
+    const overlayOpen = localTasksOpen || detailsOpen || auditOpen || guideOpen;
     if (!overlayOpen) return undefined;
     const oldOverflow = document.body.style.overflow;
     const trigger = drawerTriggerRef.current;
     document.body.style.overflow = "hidden";
     // Delayed under load: never pull focus away from a control the user already reached inside the drawer.
     window.requestAnimationFrame(() => {
-      const drawer = (auditOpen ? auditDrawerRef : localTasksOpen ? localTasksDrawerRef : drawerRef).current;
-      if (!drawer?.contains(document.activeElement)) (auditOpen ? auditCloseButtonRef : localTasksOpen ? localTasksCloseButtonRef : closeButtonRef).current?.focus();
+      const drawer = (guideOpen ? guideDrawerRef : auditOpen ? auditDrawerRef : localTasksOpen ? localTasksDrawerRef : drawerRef).current;
+      if (!drawer?.contains(document.activeElement)) (guideOpen ? guideCloseButtonRef : auditOpen ? auditCloseButtonRef : localTasksOpen ? localTasksCloseButtonRef : closeButtonRef).current?.focus();
     });
     const onKey = (event) => {
       if (event.key === "Escape") {
-        if (auditOpen) closeAudit();
+        if (guideOpen) closeGuide();
+        else if (auditOpen) closeAudit();
         else if (localTasksOpen) closeLocalTasks();
         else closeDetails();
         return;
       }
       if (event.key !== "Tab") return;
-      const activeDrawer = auditOpen ? auditDrawerRef.current : localTasksOpen ? localTasksDrawerRef.current : drawerRef.current;
+      const activeDrawer = guideOpen ? guideDrawerRef.current : auditOpen ? auditDrawerRef.current : localTasksOpen ? localTasksDrawerRef.current : drawerRef.current;
       const focusable = Array.from(activeDrawer?.querySelectorAll('button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])') ?? [])
         .filter((element) => !element.hasAttribute("hidden") && element.getClientRects().length > 0);
       if (!focusable.length) return;
@@ -1074,7 +1084,11 @@ export function App() {
         else document.querySelector(".workbench .evidence-trigger")?.focus();
       });
     };
-  }, [detailsOpen, localTasksOpen, auditOpen]);
+  }, [detailsOpen, localTasksOpen, auditOpen, guideOpen]);
+
+  const closeGuide = async () => {
+    if (await animateDrawerExit(guideDrawerRef.current)) setGuideOpen(false);
+  };
 
   const closeAudit = async () => {
     if (await animateDrawerExit(auditDrawerRef.current)) setAuditOpen(false);
@@ -1335,9 +1349,12 @@ export function App() {
 
   return (
     <div className="app" data-mode={mode}>
-      <header className="app-header" inert={detailsOpen || localTasksOpen || auditOpen || switchPrompt}>
+      <header className="app-header" inert={detailsOpen || localTasksOpen || auditOpen || guideOpen || switchPrompt}>
         <div className="brand"><span className="brand__mark" aria-hidden="true"><ShieldCheck weight="bold" /></span><div><strong>文件脱敏助手</strong></div></div>
-        <BoundaryRoute stage={routeStage} />
+        <div className="header-center">
+          <BoundaryRoute stage={routeStage} />
+          <button className="audit-trigger guide-trigger" type="button" title={guideUpdate ? `使用指南：有新版本 v${CHANGELOG_VERSION}` : "使用指南"} aria-label={guideUpdate ? "使用指南，有新版本更新" : "使用指南"} aria-haspopup="dialog" aria-expanded={guideOpen} onClick={event => { drawerTriggerRef.current = event.currentTarget; setGuideOpen(true); }}><BookOpenText aria-hidden="true" weight="bold" /><span>使用指南</span>{guideUpdate && <i className="guide-trigger__dot" aria-hidden="true" />}</button>
+        </div>
         <div className="local-status">
           <ThemeSwitcher value={themePreference} onChange={setThemePreference} />
           {signedIn && <button className="audit-trigger feedback-trigger" type="button" title={feedbackBadge ? `反馈：${isAdmin && feedbackSummary.open ? `${feedbackSummary.open} 条待处理` : ""}${isAdmin && feedbackSummary.open && feedbackSummary.replies ? "，" : ""}${feedbackSummary.replies ? `${feedbackSummary.replies} 条新回复` : ""}` : "反馈"} aria-label={feedbackBadge ? `反馈，${feedbackBadge} 条新提醒` : "反馈"} aria-pressed={usagePreview === "feedback"} onClick={() => setUsagePreview("feedback")}><ChatCircleDots aria-hidden="true" weight="bold" /><span>反馈</span>{feedbackBadge > 0 && <b aria-hidden="true">{feedbackBadge > 99 ? "99+" : feedbackBadge}</b>}</button>}
@@ -1345,9 +1362,9 @@ export function App() {
           <button className="audit-trigger" type="button" title={auditIncomplete ? "操作记录：有记录未能保存" : "操作记录"} aria-label="操作记录" aria-haspopup="dialog" aria-expanded={auditOpen} onClick={event => { drawerTriggerRef.current = event.currentTarget; setAuditOpen(true); }}><ClockCounterClockwise aria-hidden="true" weight="bold" /><span>操作记录</span>{auditIncomplete && <b aria-label="有操作记录未保存">!</b>}</button>
         </div>
       </header>
-      {usagePreview && <div inert={auditOpen}>{usagePreview === "feedback" ? <FeedbackCenter admin={isAdmin} onBack={() => { setUsagePreview(false); requestAnimationFrame(() => document.querySelector(".feedback-trigger")?.focus()); }} /> : usagePreview === "access" ? <AccessSettings onBack={() => { setUsagePreview(false); requestAnimationFrame(() => document.querySelector(".access-trigger")?.focus()); }} /> : <Suspense fallback={<p role="status">正在打开使用统计…</p>}><UsageStats onBack={() => { setUsagePreview(false); requestAnimationFrame(() => document.querySelector(".audit-trigger:not(.access-trigger)")?.focus()); }}/></Suspense>}</div>}
+      {usagePreview && <div inert={auditOpen || guideOpen}>{usagePreview === "feedback" ? <FeedbackCenter admin={isAdmin} onBack={() => { setUsagePreview(false); requestAnimationFrame(() => document.querySelector(".feedback-trigger")?.focus()); }} /> : usagePreview === "access" ? <AccessSettings onBack={() => { setUsagePreview(false); requestAnimationFrame(() => document.querySelector(".access-trigger")?.focus()); }} /> : <Suspense fallback={<p role="status">正在打开使用统计…</p>}><UsageStats onBack={() => { setUsagePreview(false); requestAnimationFrame(() => document.querySelector(".audit-trigger[aria-label=\"操作记录\"]")?.focus()); }}/></Suspense>}</div>}
       <main className="app-main" hidden={usagePreview}>
-        <section className="workspace" aria-label="文件处理工作区" inert={detailsOpen || localTasksOpen || auditOpen || switchPrompt}>
+        <section className="workspace" aria-label="文件处理工作区" inert={detailsOpen || localTasksOpen || auditOpen || guideOpen || switchPrompt}>
           <header className="workspace-intro">
             <h1>{WORKSPACE_COPY[mode].title}</h1>
             <span>{WORKSPACE_COPY[mode].description}</span>
@@ -1368,6 +1385,7 @@ export function App() {
         {detailsOpen && <><button className="drawer-scrim" type="button" tabIndex={-1} onClick={closeDetails} aria-label="关闭详情" /><SecurityDrawer mode={mode} status={status} analysis={analysis} selectedIds={selectedIds} fieldModes={fieldModes} restoreInspection={restoreInspection} result={result} error={error} modal drawerRef={drawerRef} closeButtonRef={closeButtonRef} onClose={closeDetails} onToggleColumn={toggleProtectionColumn} onModeChange={changeProtectionMode} onAddCandidate={addTextCandidate} onRemoveCandidate={removeTextCandidate} onSetSelection={setSelectedIds} /></>}
         {localTasksOpen && <><button className="drawer-scrim drawer-scrim--local" type="button" tabIndex={-1} onClick={closeLocalTasks} aria-label="关闭我的任务" /><LocalTasksDrawer localTasks={localTasks} continueDisabled={status === "processing" || status === "inspecting"} onContinueLatest={continueLatestTask} currentTaskId={result?.taskId ?? restoreInspection?.taskId ?? null} pendingDeleteId={pendingDeleteId} deletingTaskId={deletingTaskId} error={taskManagerError} modal drawerRef={localTasksDrawerRef} closeButtonRef={localTasksCloseButtonRef} onClose={closeLocalTasks} onRequestDelete={setPendingDeleteId} onCancelDelete={() => setPendingDeleteId(null)} onConfirmDelete={deleteLocalTask} /></>}
       </main>
+      {guideOpen && <><button className="drawer-scrim" type="button" tabIndex={-1} onClick={closeGuide} aria-label="关闭使用指南遮罩" /><GuideDrawer drawerRef={guideDrawerRef} closeButtonRef={guideCloseButtonRef} onClose={closeGuide} onSeen={guideSeen} initialTab={guideUpdate ? "changes" : "use"} /></>}
       {auditOpen && <><button className="drawer-scrim" type="button" tabIndex={-1} onClick={closeAudit} aria-label="关闭记录遮罩" /><OperationDrawer drawerRef={auditDrawerRef} closeButtonRef={auditCloseButtonRef} onClose={closeAudit} onPreview={async view => { await closeAudit(); setUsagePreview(view); }} /></>}
       {switchPrompt && <ConfirmDialog title="切换任务？" message="切换后将清空当前页面选择，原文件不变。" confirmLabel="切换并清空" onClose={closeSwitchPrompt} />}
     </div>

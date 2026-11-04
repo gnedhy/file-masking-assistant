@@ -53,8 +53,13 @@ test("集中记录：真实数据库、本人权限、管理员统计、导出�
   await expect.poll(()=>reports.at(-1)).toBe(prefix);
   await expect(central.locator('.usage-tile').first()).toContainText('1');
   await central.locator('.usage-detail > summary').click();
-  await expect(central.locator('.usage-table tbody tr').first()).toContainText(prefix);
-  await expect(central.locator('.usage-table tbody tr').first()).toContainText('测试员工甲');
+  // The detail lists tasks; opening one shows its steps.
+  const firstTask=central.locator('.task-row').first();
+  await expect(firstTask).toContainText(prefix);
+  await expect(firstTask).toContainText('测试员工甲');
+  await firstTask.locator('.task-row__main').click();
+  await expect(firstTask.getByRole('list',{name:/的操作步骤$/}).getByRole('listitem').first()).toBeVisible();
+  await expect(central.locator('.task-row')).not.toContainText(['查看全员记录']);
   await page.route('**/api/v1/operation-report?*',route=>route.fulfill({status:503,json:{code:'RECORDS_UNAVAILABLE'}}));
   await central.getByRole('button',{name:'最近 7 天',exact:true}).click();
   await expect(central.getByRole('alert')).toContainText('暂时无法读取统计');

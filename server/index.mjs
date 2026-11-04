@@ -39,7 +39,7 @@ const handle = createAppHandler({ vaultRepository: repository, operationsReposit
 const clientRoot = path.join(root, "dist/client");
 const securityHeaders = SECURITY_HEADERS;
 
-const mime = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml", ".woff2": "font/woff2" };
+const mime = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml", ".woff2": "font/woff2", ".jpg": "image/jpeg", ".png": "image/png", ".webp": "image/webp", ".ico": "image/x-icon", ".txt": "text/plain; charset=utf-8" };
 
 const server = createServer(async (req, res) => {
   try {

@@ -22,6 +22,14 @@ export function createOperationsHandler({repository,origin,auth}) {
     try{await repository.append(session,{eventId:randomUUID(),operationId:randomUUID(),version:1,time:new Date().toISOString(),action:'view_all_records',result:'success'});}
     catch(e){viewed.delete(session.userId);throw e;}
   };
+  // An admin may narrow records to a department (and the departments under it); it becomes a list of people.
+  const resolveScope=async(session,filters)=>{
+    if(filters.department===undefined||filters.department===''){const {department,...rest}=filters;return rest;}
+    if(!session.isAdmin)throw Object.assign(new Error('FORBIDDEN'),{status:403});
+    if(typeof filters.department!=='string'||!/^\d{1,18}$/.test(filters.department)||!auth.departmentUserIds)throw new Error('INVALID_FILTER');
+    const {department,...rest}=filters;
+    return {...rest,userIds:await auth.departmentUserIds(department)};
+  };
   const limit=key=>{const now=Date.now();let r=rates.get(key);if(!r||r.until<now)r={n:0,until:now+60000};r.n++;rates.set(key,r);if(rates.size>10000)for(const[k,v]of rates)if(v.until<now)rates.delete(k);if(r.n>120)throw Object.assign(new Error('RATE_LIMITED'),{status:429});};
   return async request=>{
     const url=new URL(request.url),path=url.pathname;
@@ -41,11 +49,11 @@ export function createOperationsHandler({repository,origin,auth}) {
         for(const event of body.events){try{results.push({eventId:event?.eventId,status:await repository.append(session,event)});}catch(e){if(!/^(INVALID_|EVENT_)/.test(e.message))throw e;results.push({eventId:typeof event?.eventId==='string'?event.eventId.slice(0,64):null,status:'rejected',code:e.message});}}
         return json({results});
       }
-      const filters=Object.fromEntries(url.searchParams);
+      const filters=await resolveScope(session,Object.fromEntries(url.searchParams));
       const read={'/api/v1/operation-events':'list','/api/v1/operation-tasks':'listTasks','/api/v1/operation-statistics':'statistics','/api/v1/operation-report':'report'}[path];
       if(read&&request.method==='GET'){const result=await repository[read](session,filters);await recordAdminView(session,filters);return json(result);}
       if(path==='/api/v1/operation-events/export'&&request.method==='POST'){
-        const f=await readJson(request);buildFilter(session,f);
+        const f=await resolveScope(session,await readJson(request)??{});buildFilter(session,f);
         const {total}=await repository.list(session,{...f,page:undefined});
         // The analysis sheet covers the same records as the detail sheet; without dates that is the 180-day retention window.
         const analysis=await repository.report(session,{...f,...exportRange(f),page:undefined},{limit:50});

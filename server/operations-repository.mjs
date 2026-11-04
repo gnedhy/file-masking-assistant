@@ -26,14 +26,22 @@ export function validateEvent(event, now = Date.now()) {
   return result;
 }
 
+export const PAGE_SIZES = [10, 20, 50, 100];
+
 export function buildFilter(session, filters = {}) {
-  if(!filters||typeof filters!=='object'||Array.isArray(filters)||Object.keys(filters).some(k=>!['from','to','user','format','result','action','query','page','issues'].includes(k)))throw new Error('INVALID_FILTER');
+  if(!filters||typeof filters!=='object'||Array.isArray(filters)||Object.keys(filters).some(k=>!['from','to','user','format','result','action','query','page','issues','userIds','files','pageSize'].includes(k)))throw new Error('INVALID_FILTER');
   const values = []; const clauses = ["occurred_at >= now() - interval '180 days'"];
   const add = (sql,value) => { values.push(value); clauses.push(sql.replace('?',`$${values.length}`)); };
   if (!session.isAdmin) {
     if (filters.user && filters.user !== session.userId) throw Object.assign(new Error('FORBIDDEN'),{status:403});
     add('owner_user_id = ?',session.userId);
   } else if (filters.user) { if (typeof filters.user !== 'string' || filters.user.length > 128) throw new Error('INVALID_FILTER'); add('owner_user_id = ?',filters.user); }
+  // userIds comes from a department filter, resolved by the operations handler; only admins can reach it.
+  if (filters.userIds !== undefined) {
+    if (!session.isAdmin) throw Object.assign(new Error('FORBIDDEN'),{status:403});
+    if (!Array.isArray(filters.userIds) || filters.userIds.length > 5000 || filters.userIds.some(id => typeof id !== 'string' || !id || id.length > 128)) throw new Error('INVALID_FILTER');
+    add('owner_user_id = ANY(?::text[])',filters.userIds);
+  }
   for (const key of ['from','to']) if (filters[key]) {
     const date=new Date(`${filters[key]}T00:00:00Z`);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(filters[key]) || !Number.isFinite(date.getTime()) || date.toISOString().slice(0,10) !== filters[key]) throw new Error('INVALID_DATE');
@@ -44,6 +52,8 @@ export function buildFilter(session, filters = {}) {
     if (!allowed.includes(filters[key])) throw new Error('INVALID_FILTER');
     add(`${key} = ?`,filters[key]);
   }
+  // files=1 leaves out the admin's own bookkeeping (viewing or exporting records), which is not file work.
+  if (filters.files) { if (filters.files !== '1') throw new Error('INVALID_FILTER'); clauses.push("action NOT IN ('view_all_records','export_records')"); }
   if (filters.issues) { if (filters.issues !== '1') throw new Error('INVALID_FILTER'); add('result = ANY(?)', ISSUE_RESULTS); }
   if (filters.query) {
     if (typeof filters.query !== 'string' || filters.query.length > 512) throw new Error('INVALID_QUERY');
@@ -51,7 +61,10 @@ export function buildFilter(session, filters = {}) {
   }
   const page = filters.page === undefined ? 1 : Number(filters.page);
   if (!Number.isSafeInteger(page) || page < 1 || page > 10000000) throw new Error('INVALID_PAGE');
-  return { sql:clauses.join(' AND '),values,page };
+  // Lists show 10, 20, 50 or 100 rows a page; anything else is refused rather than trusted.
+  const pageSize = filters.pageSize === undefined ? 10 : Number(filters.pageSize);
+  if (!PAGE_SIZES.includes(pageSize)) throw new Error('INVALID_PAGE');
+  return { sql:clauses.join(' AND '),values,page,pageSize };
 }
 // The statistics page range: defaults to the last 30 days, at most a year.
 export function reportRange(filters = {}) {
@@ -93,8 +106,8 @@ export class PgOperationsRepository {
   async list(session,filters={}) {
     const f=buildFilter(session,filters);
     const {rows:[{total}]}=await this.pool.query(`SELECT count(*)::int AS total FROM operation_events WHERE ${f.sql}`,f.values);
-    const {rows}=await this.pool.query(`SELECT ${columns} FROM operation_events WHERE ${f.sql} ORDER BY occurred_at DESC,event_id DESC LIMIT 10 OFFSET $${f.values.length+1}`,[...f.values,(f.page-1)*10]);
-    return {records:rows,total,page:f.page,pageSize:10};
+    const {rows}=await this.pool.query(`SELECT ${columns} FROM operation_events WHERE ${f.sql} ORDER BY occurred_at DESC,event_id DESC LIMIT ${f.pageSize} OFFSET $${f.values.length+1}`,[...f.values,(f.page-1)*f.pageSize]);
+    return {records:rows,total,page:f.page,pageSize:f.pageSize};
   }
   // One row per task: steps of the same operation join the task it produced; pages count tasks, not steps.
   async listTasks(session,filters={}) {
@@ -102,11 +115,11 @@ export class PgOperationsRepository {
     const base=`WITH base AS (SELECT *, coalesce(task_id, max(task_id) OVER (PARTITION BY owner_user_id, operation_id), operation_id::text) AS task_key FROM operation_events WHERE occurred_at >= now() - interval '180 days'),
       hit AS (SELECT owner_user_id, task_key, max(occurred_at) AS last_at FROM base WHERE ${f.sql} GROUP BY owner_user_id, task_key)`;
     const {rows:[{total}]}=await this.pool.query(`${base} SELECT count(*)::int AS total FROM hit`,f.values);
-    const {rows}=await this.pool.query(`${base}, page AS (SELECT * FROM hit ORDER BY last_at DESC, task_key DESC LIMIT 10 OFFSET $${f.values.length+1})
-      SELECT ${columns}, base.task_key AS "taskKey" FROM base JOIN page USING (owner_user_id, task_key) ORDER BY page.last_at DESC, base.task_key, base.occurred_at, base.event_id`,[...f.values,(f.page-1)*10]);
+    const {rows}=await this.pool.query(`${base}, page AS (SELECT * FROM hit ORDER BY last_at DESC, task_key DESC LIMIT ${f.pageSize} OFFSET $${f.values.length+1})
+      SELECT ${columns}, base.task_key AS "taskKey" FROM base JOIN page USING (owner_user_id, task_key) ORDER BY page.last_at DESC, base.task_key, base.occurred_at, base.event_id`,[...f.values,(f.page-1)*f.pageSize]);
     const groups=new Map();
     for(const row of rows){const key=`${row.userId}:${row.taskKey}`;delete row.taskKey;row.time=row.time.toISOString?.()??row.time;if(!groups.has(key))groups.set(key,[]);groups.get(key).push(row);}
-    return {tasks:[...groups].map(([key,events])=>summarizeTask(key,events)),total,page:f.page,pageSize:10};
+    return {tasks:[...groups].map(([key,events])=>summarizeTask(key,events)),total,page:f.page,pageSize:f.pageSize};
   }
   async statistics(session,filters={}) {
     const f=buildFilter(session,filters);

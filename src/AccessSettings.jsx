@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Dropdown } from "./Dropdown.jsx";
 import { ArrowsClockwise } from "@phosphor-icons/react";
 import { ConfirmDialog } from "./ConfirmDialog.jsx";
 import { getSession } from "./session.js";
@@ -34,9 +35,10 @@ function departmentTree(departments) {
 }
 
 function descendants(departments, id) {
-  const result = new Set([id]);
+  // Ids compare as text: the select gives a string, the directory may hold numbers.
+  const result = new Set([String(id)]);
   let grew = true;
-  while (grew) { grew = false; for (const d of departments) if (result.has(d.parentId) && !result.has(d.id)) { result.add(d.id); grew = true; } }
+  while (grew) { grew = false; for (const d of departments) if (d.parentId != null && result.has(String(d.parentId)) && !result.has(String(d.id))) { result.add(String(d.id)); grew = true; } }
   return result;
 }
 
@@ -93,7 +95,7 @@ export default function AccessSettings({ onBack }) {
     if (!data) return [];
     const scope = department ? descendants(data.departments, department) : null;
     const text = query.trim().toLowerCase();
-    return data.members.filter(m => (!scope || m.departmentIds.some(id => scope.has(id))) && (!text || m.name.toLowerCase().includes(text) || m.userId.toLowerCase().includes(text)));
+    return data.members.filter(m => (!scope || m.departmentIds.some(id => scope.has(String(id)))) && (!text || m.name.toLowerCase().includes(text) || m.userId.toLowerCase().includes(text)));
   }, [data, department, query]);
   const pages = Math.max(1, Math.ceil(matches.length / PAGE_SIZE));
   const currentPage = Math.min(page, pages);
@@ -128,7 +130,7 @@ export default function AccessSettings({ onBack }) {
           </div>
           <div className="access-filters">
             <label>搜索姓名或账号<input type="search" value={query} onChange={e => { setQuery(e.target.value); setPage(1); }} /></label>
-            <label>部门<select value={department} onChange={e => { setDepartment(e.target.value); setPage(1); }}><option value="">全部部门</option>{tree.map(d => <option key={d.id} value={d.id}>{"　".repeat(d.depth)}{d.name}</option>)}</select></label>
+            <div className="field"><span>部门</span><Dropdown label="部门" value={department} onChange={next => { setDepartment(next); setPage(1); }} options={[{ value: "", label: "全部部门" }, ...tree.map(d => ({ value: String(d.id), label: d.name, depth: d.depth }))]} /></div>
           </div>
           {data.members.length === 0 ? <p className="access-empty" role="status">{syncing ? "正在从企业微信读取通讯录…" : "通讯录为空，请先同步。"}</p> : <>
             <ul className="access-list">{matches.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE).map(member => <li key={member.userId}>

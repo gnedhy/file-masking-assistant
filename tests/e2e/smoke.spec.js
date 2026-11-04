@@ -27,7 +27,7 @@ test("中文多工作表的字段标签独立关联，替换方式说明明确�
   await drawer.locator(".column-selection__copy").filter({ hasText: "A 列 · 公司名称" }).click();
   await expect(department).toBeChecked();
   await expect(company).not.toBeChecked();
-  await expect(drawer.getByRole("combobox", { name: "部门的替换方式" })).toHaveValue("whole");
+  await expect(drawer.getByRole("combobox", { name: "部门的替换方式" })).toHaveAttribute("data-value", "whole");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
@@ -166,7 +166,7 @@ test("CSV 文件选择、任务抽屉和失败关闭可用", async ({ page }) =>
   await page.getByRole("button", { name: /确认替换列/ }).click();
   const safetyDialog = page.getByRole("dialog", { name: /替换列|替换内容|检查详情/ });
   await expect(safetyDialog.getByRole("checkbox", { name: /F 列 · 业务员反馈/ })).toBeChecked();
-  await expect(safetyDialog.getByRole("combobox", { name: "业务员反馈的替换方式" })).toHaveValue("inline");
+  await expect(safetyDialog.getByRole("combobox", { name: "业务员反馈的替换方式" })).toHaveAttribute("data-value", "inline");
   await safetyDialog.getByRole("button", { name: "关闭详情" }).click();
   await page.getByRole("button", { name: /生成脱敏文件/ }).click();
   await expect(page.getByRole("heading", { name: "脱敏文件可以下载" })).toBeVisible();

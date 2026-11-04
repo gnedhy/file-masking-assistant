@@ -145,8 +145,20 @@ export async function createAccess({ repository, auth, directorySource, origin }
     try { return JSON.parse(text); } catch { throw fail("INVALID_REQUEST", 400); }
   }
 
+  // A department filter covers the department and every department under it.
+  async function departmentUserIds(departmentId) {
+    const { departments, members } = await repository.overview();
+    const ids = new Set([String(departmentId)]);
+    for (let grew = true; grew;) {
+      grew = false;
+      for (const d of departments) if (d.parentId != null && ids.has(String(d.parentId)) && !ids.has(String(d.id))) { ids.add(String(d.id)); grew = true; }
+    }
+    return members.filter(m => m.departmentIds.some(id => ids.has(String(id)))).map(m => m.userId);
+  }
+
   return {
     authenticate,
+    departmentUserIds,
     start: request => auth.start(request),
     callback: request => auth.callback(request),
     // Runs before /api/v1/session answers, so the very first visitor sees themself as admin straight away.

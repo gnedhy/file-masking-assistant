@@ -39,6 +39,27 @@ test('failed events keep a well-formed error code only',()=>{
   assert.equal(validateEvent({...event(),result:'failed',errorCode:'NO_VALUES'}).errorCode,'NO_VALUES');
   for(const extra of [{result:'success',errorCode:'NO_VALUES'},{result:'failed',errorCode:'所选列没有内容'},{result:'failed',errorCode:'x'.repeat(41)},{result:'failed',errorCode:42}])assert.throws(()=>validateEvent({...event(),...extra}));
 });
+test('department scope is for admins only and turns into a list of people',async()=>{
+  const seen=[];const repo={ready:async()=>{},append:async()=>'accepted',listTasks:async(s,f)=>{buildFilter(s,f);seen.push(f);return{tasks:[],total:0,page:1,pageSize:10};}};
+  const origin='http://127.0.0.1:4175';
+  const handler=createOperationsHandler({repository:repo,origin,auth:{...auth,departmentUserIds:async id=>id==='2'?['test-alice','test-bob']:[]}});
+  const get=(path,user)=>handler(new Request(origin+path,{headers:{cookie:'session='+user}}));
+  assert.equal((await get('/api/v1/operation-tasks?department=2','admin')).status,200);
+  assert.deepEqual(seen.at(-1).userIds,['test-alice','test-bob']);assert.equal(seen.at(-1).department,undefined);
+  assert.equal((await get('/api/v1/operation-tasks?department=2','alice')).status,403);
+  assert.equal((await get('/api/v1/operation-tasks?department=x1','admin')).status,400);
+  assert.equal((await get('/api/v1/operation-tasks?department=','admin')).status,200);
+  assert.equal(seen.at(-1).userIds,undefined);
+  const f=buildFilter(TEST_USERS.admin,{userIds:['test-bob'],files:'1'});
+  assert.ok(f.sql.includes('owner_user_id = ANY($1::text[])'));assert.deepEqual(f.values[0],['test-bob']);assert.ok(f.sql.includes("NOT IN ('view_all_records','export_records')"));
+  assert.throws(()=>buildFilter(TEST_USERS.alice,{userIds:['test-bob']}),/FORBIDDEN/);
+  for(const bad of [{userIds:'test-bob'},{userIds:[1]},{files:'yes'}])assert.throws(()=>buildFilter(TEST_USERS.admin,bad),/INVALID_FILTER/);
+});
+test('lists accept 10, 20, 50 or 100 rows a page and nothing else',()=>{
+  assert.equal(buildFilter(TEST_USERS.alice,{}).pageSize,10);
+  for(const size of ['10','20','50','100'])assert.equal(buildFilter(TEST_USERS.alice,{pageSize:size}).pageSize,Number(size));
+  for(const size of ['30','0','101','1e3','abc'])assert.throws(()=>buildFilter(TEST_USERS.alice,{pageSize:size}),/INVALID_PAGE/);
+});
 test('filters always scope ordinary users and parameterize literal search',()=>{
   assert.throws(()=>buildFilter(TEST_USERS.alice,{user:'test-bob'}),/FORBIDDEN/);
   const f=buildFilter(TEST_USERS.alice,{query:"%' OR TRUE --",from:'2026-10-01',to:'2026-10-28'});

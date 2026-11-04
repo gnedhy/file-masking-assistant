@@ -121,3 +121,12 @@ test("PostgreSQL 权限表：首个登录、并发抢占、授予、取消与通
     assert.ok(overview.syncedAt);
   } finally { await clear(); await repository.close(); }
 });
+
+test("按部门筛选时包含下级部门的人，编号按文本比较", async () => {
+  const { access, call } = await setup();
+  await access.claimFirst(new Request(origin, { headers: { cookie: "session=zhang" } }));
+  assert.equal((await call("zhang", "/api/v1/access/sync", { method: "POST" })).status, 200);
+  assert.deepEqual((await access.departmentUserIds("1")).sort(), ["li", "zhang"]);
+  assert.deepEqual(await access.departmentUserIds("2"), ["li"]);
+  assert.deepEqual(await access.departmentUserIds("999"), []);
+});
