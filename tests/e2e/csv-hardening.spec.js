@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import fs from "node:fs/promises";
+import { openMoreColumns } from "./drawer-helper.js";
 
 test("CSV 特殊字符和短值残留不保存任务，调整后可往返且每操作仅读取一次", async ({ page }) => {
   await page.goto("/");
@@ -69,15 +70,16 @@ test("短实体残留可在详情调整为整格替换并下载实名文件", as
   const input = page.locator('input[type="file"]:not([accept=".json"])');
   await input.setInputFiles({ name: "短名称.csv", mimeType: "text/csv", buffer: Buffer.from("销售人员,备注\n李,负责人：李") });
   await page.getByRole("button", { name: /生成脱敏文件/ }).click();
-  await expect(page.getByRole("heading", { name: "脱敏后仍发现真实内容" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "还有真实名称没有替换掉" })).toBeVisible();
   await expect(page.getByRole("link", { name: "下载脱敏文件" })).toHaveCount(0);
-  await page.getByRole("button", { name: "查看技术详情" }).click();
-  const diagnosis = page.getByRole("dialog", { name: "技术详情" });
+  await page.getByRole("button", { name: "查看详细信息" }).click();
+  const diagnosis = page.getByRole("dialog", { name: "详细信息" });
   await expect(diagnosis.getByText(/主要位于 第 2 行，第 2 列/)).toBeVisible();
   await expect(diagnosis.getByText(/仅调整字段时无需重新上传/)).toBeVisible();
   await diagnosis.getByRole("button", { name: "关闭详情" }).click();
   await page.getByRole("button", { name: "调整选择字段" }).click();
   const drawer = page.getByRole("dialog", { name: /替换列|替换内容|检查详情/ });
+  await openMoreColumns(drawer);
   await drawer.getByRole("checkbox", { name: /B 列 · 备注/ }).check();
   await drawer.getByRole("combobox", { name: "备注的替换方式" }).click();
   await drawer.getByRole("option", { name: "整个单元格" }).click();

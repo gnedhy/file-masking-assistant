@@ -3,6 +3,7 @@ import ExcelJS from "exceljs";
 import JSZip from "jszip";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { openMoreColumns } from "./drawer-helper.js";
 
 const ASSETS = "tests/output/validation-assets";
 // Restored files must contain neither the new short tokens nor the older bracket tokens.
@@ -111,7 +112,6 @@ for (const { format, file, without } of CASES) {
       const generate = page.getByRole("button", { name: "生成脱敏文件" });
       await expect(generate).toBeVisible({ timeout: 20000 });
       await generate.click();
-      if (file === FULL_WORKBOOK) await page.getByRole("button", { name: /^加入这 \d+ 列并重新生成$/ }).click();
       await expect(page.getByRole("link", { name: "下载脱敏文件" })).toBeVisible({ timeout: 30000 });
 
       const masked = await download(page, "下载脱敏文件");
@@ -166,18 +166,17 @@ for (const { format, file } of [
   });
 }
 
-test("XLSX 默认选择被拦截时列出还有真实值的列，一键加入后完成", async ({ page }) => {
+// The selected columns define the names; the same names on other sheets and in narrative columns are replaced
+// too, so the default selection goes straight through and the result says where else names were replaced.
+test("XLSX 默认勾选即可完成，所选列以外相同的名称也一并替换并说明位置", async ({ page }) => {
   await page.goto("/");
   await fileInput(page).setInputFiles(FULL_WORKBOOK);
   await page.getByRole("button", { name: "生成脱敏文件" }).click();
-  await expect(page.getByRole("heading", { name: "脱敏后仍发现真实内容" })).toBeVisible({ timeout: 30000 });
-  const columns = page.locator(".error-issues li");
-  await expect(columns.filter({ hasText: "业务员反馈" })).toHaveCount(1);
-  await expect(columns.filter({ hasText: "测试说明" })).toHaveCount(1);
-  await expect(page.getByRole("link", { name: "下载脱敏文件" })).toHaveCount(0);
-  const count = await columns.count();
-  await page.getByRole("button", { name: `加入这 ${count} 列并重新生成` }).click();
   await expect(page.getByRole("link", { name: "下载脱敏文件" })).toBeVisible({ timeout: 30000 });
+  // The example sheet and the unselected narrative columns (备注, 业务员反馈) on the data sheet.
+  await expect(page.locator(".state-description")).toContainText(/除了所选的列，还在「测试说明」「销售测试数据」 2 个工作表里替换了 \d+ 处相同的名称/);
+  await page.getByRole("button", { name: "查看检查详情" }).click();
+  await expect(page.getByRole("dialog", { name: "检查详情" })).toContainText(/所选列以外\s*测试说明 \d+ 处、销售测试数据 \d+ 处/);
 });
 
 test("CSV 列内残留可一键加入，短值不提供一键加入", async ({ page }) => {
@@ -186,6 +185,7 @@ test("CSV 列内残留可一键加入，短值不提供一键加入", async ({ p
   await page.getByRole("button", { name: "生成脱敏文件" }).waitFor();
   await page.getByRole("button", { name: /确认替换列/ }).click();
   const drawer = page.getByRole("dialog");
+  await openMoreColumns(drawer);
   const notes = drawer.getByRole("checkbox", { name: /跟进记录/ });
   if (await notes.isChecked()) await notes.uncheck();
   await drawer.getByLabel("关闭详情").click();
@@ -199,19 +199,20 @@ test("CSV 列内残留可一键加入，短值不提供一键加入", async ({ p
   await fileInput(page).setInputFiles({ name: "短值.csv", mimeType: "text/csv", buffer: Buffer.from("客户名称,跟进记录\n李,联系了李\n") });
   await page.getByRole("button", { name: "生成脱敏文件" }).waitFor();
   await page.getByRole("button", { name: /确认替换列/ }).click();
+  await openMoreColumns(drawer);
   const shortNotes = drawer.getByRole("checkbox", { name: /跟进记录/ });
   if (await shortNotes.isChecked()) await shortNotes.uncheck();
   await drawer.getByLabel("关闭详情").click();
   await expect(drawer).toHaveCount(0);
   await page.getByRole("button", { name: "生成脱敏文件" }).click();
-  await expect(page.getByRole("heading", { name: "脱敏后仍发现真实内容" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "还有真实名称没有替换掉" })).toBeVisible();
   await expect(page.getByRole("button", { name: /并重新生成$/ })).toHaveCount(0);
 });
 
 test("CSV 公式型字段指明行列和内容，且不生成输出", async ({ page }) => {
   await page.goto("/");
   await fileInput(page).setInputFiles(PHONE_CSV);
-  await expect(page.getByRole("heading", { name: "CSV 里有疑似公式的内容" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "有些格子会被 Excel 当成公式" })).toBeVisible();
   await expect(page.locator(".error-issues li").first()).toContainText(/第 \d+ 行 · .+：\+86-/);
   await expect(page.getByRole("button", { name: "生成脱敏文件" })).toHaveCount(0);
 });

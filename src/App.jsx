@@ -1,7 +1,7 @@
 import { Fragment, lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { randomId } from "./randomId.js";
 import { isEmptyColumn } from "./xlsxCore.js";
-import { ERROR_PRESENTATION } from "./errorPresentation.js";
+import { ERROR_PRESENTATION, residualPlace } from "./errorPresentation.js";
 import { Dropdown } from "./Dropdown.jsx";
 import { TaskDetails } from "./TaskDetails.jsx";
 import { THEME_OPTIONS, ThemeSwitcher } from "./ThemeSwitcher.jsx";
@@ -360,7 +360,7 @@ function SelectedFile({ file, onRemove }) {
 }
 
 function ReadyState({ mode, file, analysis, selectedIds, fieldModes = {}, restoreInspection, regenerationNotice, detailsOpen, onRemove, onPrimary, onDetails }) {
-  const selectedCandidates = analysis?.kind === "text" ? analysis.candidates.filter((candidate) => selectedIds.includes(candidate.id)) : [];
+  const selectedCandidates = (analysis?.candidates ?? []).filter((candidate) => selectedIds.includes(candidate.id));
   const selectedColumns = (analysis?.columns ?? [])
     .filter((column) => selectedIds.includes(column.id))
     .map((column) => ({ ...column, processingMode: fieldModes[column.id] ?? column.recommendedMode ?? "whole" }));
@@ -376,7 +376,7 @@ function ReadyState({ mode, file, analysis, selectedIds, fieldModes = {}, restor
   const summary = mode === "protect"
     ? analysis?.kind === "text"
       ? `已选择 ${selectedCandidates.length} 项敏感内容，共出现 ${selectedCandidates.reduce((sum, item) => sum + item.count, 0)} 处`
-      : `已选择 ${selectedColumns.length} 列，将检查 ${valueCount} ${valueUnit}`
+      : `已选择 ${selectedColumns.length} 列，将检查 ${valueCount} ${valueUnit}${selectedCandidates.length ? `；另有 ${selectedCandidates.length} 个名称会在整个文件里替换` : ""}`
     : `已识别 ${restoreInspection.formatLabel} · 发现 ${restoreInspection.occurrences} 处代号 · 使用 ${restoreInspection.usedMappings} 条还原记录`;
 
   return (
@@ -424,19 +424,28 @@ function ReadyState({ mode, file, analysis, selectedIds, fieldModes = {}, restor
           </span>
         </div>
       )}
+      {mode === "protect" && mediaPhrase(analysis?.media) && (
+        <div className="task-change-banner" role="status">
+          <WarningCircle weight="bold" aria-hidden="true" />
+          <span>
+            <strong>文件里有 {mediaPhrase(analysis.media)}，系统只处理表格文字</strong>
+            <small>{[analysis.media.images ? "图片会原样保留，但图片里的公司名、人名不会被替换，会随文件交给 AI，必要时请先删除图片" : "", analysis.media.attachments ? "嵌入的附件（PDF、Word 等）不会放进脱敏文件" : ""].filter(Boolean).join("；")}。原文件不受影响。</small>
+          </span>
+        </div>
+      )}
       {mode === "protect" ? (
         // The header and the preview share one card so the sizes read as one block.
         <div className="replacement-card">
           <button className="evidence-trigger" type="button" onClick={onDetails} aria-expanded={detailsOpen} aria-controls="security-details">
-            <span><ShieldCheck weight="bold" /><strong>{analysis?.kind === "text" ? "确认替换内容" : "确认替换列"}</strong></span>
+            <span><ShieldCheck weight="bold" /><strong>{analysis?.kind === "text" || selectedCandidates.length ? "确认替换内容" : "确认替换列"}</strong></span>
             <span className="evidence-trigger__action">查看并调整<CaretRight weight="bold" /></span>
           </button>
           <ReplacementPreview items={analysis?.kind === "text"
             ? selectedCandidates.map((item) => ({ key: item.id, title: item.value, detail: `${item.label} · ${item.count} 处` }))
-            : selectedColumns.map((column) => ({ key: column.id, title: column.header, detail: `${column.processingMode === "whole" ? "整个单元格" : "仅文中已选内容"} · ${column.valueCount} 个值` }))} />
+            : [...selectedColumns.map((column) => ({ key: column.id, title: column.header, detail: `${column.processingMode === "whole" ? "整个单元格" : "仅文中已选内容"} · ${column.valueCount} 个值` })), ...selectedCandidates.map((item) => ({ key: item.id, title: item.value, detail: `${item.label} · ${item.count} 处` }))]} />
         </div>
       ) : null}
-      <button className="primary-button" type="button" onClick={onPrimary} disabled={mode === "protect" ? (!(analysis?.kind === "text" ? selectedCandidates.length : selectedColumns.length) || hasOnlyInlineFields) : false}>
+      <button className="primary-button" type="button" onClick={onPrimary} disabled={mode === "protect" ? (!(analysis?.kind === "text" ? selectedCandidates.length : selectedColumns.length + selectedCandidates.length) || hasOnlyInlineFields) : false}>
         {MODE_COPY[mode].primary}<ArrowRight weight="bold" />
       </button>
       <div className="trust-line" aria-label="处理边界">
@@ -547,6 +556,20 @@ function AiHandoff({ taskId, marker }) {
   );
 }
 
+// "除了所选的列，还在「月度」「回款」2 个工作表里替换了 4 处相同的名称。"
+// "3 张图片和 1 个附件"
+function mediaPhrase(media) {
+  const parts = [media?.images ? `${media.images} 张图片` : "", media?.attachments ? `${media.attachments} 个附件` : ""].filter(Boolean);
+  return parts.join("和 ");
+}
+
+function elsewhereSentence(elsewhere) {
+  if (!elsewhere?.cells) return "";
+  const sheets = elsewhere.sheets.map(item => `「${item.sheet}」`);
+  const where = sheets.length > 3 ? `${sheets.slice(0, 3).join("")}等 ${sheets.length} 个工作表` : `${sheets.join("")}${sheets.length > 1 ? ` ${sheets.length} 个工作表` : "工作表"}`;
+  return `除了所选的列，还在${where}里替换了 ${elsewhere.cells} 处相同的名称。`;
+}
+
 function SuccessState({ mode, result, sourceFile, downloadRequested, detailsOpen, onDetails, onDownloadRequested, onAdjust, onNext, onReset }) {
   const protect = mode === "protect";
   const count = protect ? result.replacedCells : result.restoredOccurrences;
@@ -568,7 +591,7 @@ function SuccessState({ mode, result, sourceFile, downloadRequested, detailsOpen
       {((protect && !handoff) || result.partialRestore || hasContentLoss) && <p className="state-description">{protect
         ? handoff
           ? ""
-          : "已选内容已替换为代号。交给 AI 前请复核其余内容，并点击下方按钮下载。"
+          : `已选内容已替换为代号。${elsewhereSentence(result.elsewhere)}${result.removedMedia?.images ? `${result.removedMedia.images} 张图片原样保留，图片里的文字未替换。` : ""}${result.removedMedia?.attachments ? `${result.removedMedia.attachments} 个附件没有放进脱敏文件。` : ""}交给 AI 前请复核其余内容，并点击下方按钮下载。`
         : result.partialRestore
           ? `另有 ${result.unresolvedOccurrences.length} 处被改写的代号未还原并原样保留，请下载后复核。`
           : hasContentLoss
@@ -628,11 +651,13 @@ function formulaIssueLabel(issue) {
 
 function ErrorState({ mode, error, canAdjustFields, residualColumns = [], onAddResidualColumns, onAdjustFields, onReset, onDetails, onBackToProtect }) {
   const copy = ERROR_PRESENTATION[error?.code] ?? {
-    title: error?.message || "文件暂时无法处理",
-    description: "安全检查没有通过，因此系统没有继续生成输出文件。",
-    guidance: "请重新选择文件；如需定位原因，可以查看技术详情。",
+    title: "这个文件暂时处理不了",
+    description: "安全检查没有通过，所以系统没有生成文件，原文件没有受影响。",
+    guidance: "可以点“查看详细信息”看看原因；需要帮助时，可以点右上角“反馈”把情况告诉管理员。",
   };
   const formulaIssues = error?.code === "CSV_FORMULA_INJECTION" ? (error.details ?? []).filter((detail) => detail?.value) : [];
+  // Where the leftover names are, in words people can find in their file.
+  const residualPlaces = error?.code === "SENSITIVE_RESIDUALS" && !residualColumns.length ? [...new Set((error.details ?? []).map(residualPlace))] : [];
   return (
     <div className="error-state" role="alert">
       <span className="error-state__seal" aria-hidden="true"><WarningCircle weight="duotone" /></span>
@@ -646,11 +671,18 @@ function ErrorState({ mode, error, canAdjustFields, residualColumns = [], onAddR
           <ul>{residualColumns.map((column) => <li key={column.id}>{column.sheetName === "CSV" ? "" : `${column.sheetName} · `}{spreadsheetColumnLabel(column.columnNumber)} 列 · {column.header}</li>)}</ul>
         </div>
       ) : <p className="error-guidance">{copy.guidance}</p>}
+      {residualPlaces.length > 0 && (
+        <div className="error-issues">
+          <p>需要处理的位置：</p>
+          <ul>{residualPlaces.slice(0, ISSUE_PREVIEW_LIMIT).map((place) => <li key={place}>{place}</li>)}</ul>
+          {residualPlaces.length > ISSUE_PREVIEW_LIMIT && <small>还有 {residualPlaces.length - ISSUE_PREVIEW_LIMIT} 处，可在详细信息中查看</small>}
+        </div>
+      )}
       {formulaIssues.length > 0 && (
         <div className="error-issues">
           <p>需要修改的位置：</p>
           <ul>{formulaIssues.slice(0, ISSUE_PREVIEW_LIMIT).map((issue) => <li key={issue.location}>{formulaIssueLabel(issue)}</li>)}</ul>
-          {formulaIssues.length > ISSUE_PREVIEW_LIMIT && <small>还有 {formulaIssues.length - ISSUE_PREVIEW_LIMIT} 处，可在技术详情中查看</small>}
+          {formulaIssues.length > ISSUE_PREVIEW_LIMIT && <small>还有 {formulaIssues.length - ISSUE_PREVIEW_LIMIT} 处，可在详细信息中查看</small>}
         </div>
       )}
       <div className="action-row error-actions">
@@ -658,7 +690,7 @@ function ErrorState({ mode, error, canAdjustFields, residualColumns = [], onAddR
         {canAdjustFields && <button className={residualColumns.length > 0 ? "secondary-button" : "primary-button primary-button--compact"} type="button" onClick={onAdjustFields}>调整选择字段</button>}
         <button className={canAdjustFields ? "secondary-button" : "primary-button primary-button--compact"} type="button" onClick={onReset}>重新选择文件</button>
         {mode === "restore" && <button className="secondary-button" type="button" onClick={onBackToProtect}>返回制作脱敏文件</button>}
-        <button className="text-button error-details-button" type="button" onClick={onDetails}>查看技术详情</button>
+        <button className="text-button error-details-button" type="button" onClick={onDetails}>查看详细信息</button>
       </div>
     </div>
   );
@@ -722,14 +754,16 @@ function buildErrorDiagnosis(error) {
   };
 }
 
-function TextCandidateSelection({ analysis, selectedIds, onToggle, onAdd, onRemove, onSetSelection }) {
+function TextCandidateSelection({ analysis, selectedIds, onToggle, onAdd, onRemove, onSetSelection, title = "需要替换的敏感内容", hint = "系统只提出候选，最终由你确认；替换时会匹配文件中的完整文字", compact = false }) {
+  const candidates = analysis.candidates ?? [];
+  const showTools = !compact || candidates.length > 8;
   const [query, setQuery] = useState("");
   const [manualValue, setManualValue] = useState("");
   const [manualError, setManualError] = useState("");
   const normalizedQuery = query.trim().toLocaleLowerCase("zh-CN");
   const visible = normalizedQuery
-    ? analysis.candidates.filter((item) => `${item.value} ${item.label} ${item.contexts.join(" ")}`.toLocaleLowerCase("zh-CN").includes(normalizedQuery))
-    : analysis.candidates;
+    ? candidates.filter((item) => `${item.value} ${item.label} ${item.contexts.join(" ")}`.toLocaleLowerCase("zh-CN").includes(normalizedQuery))
+    : candidates;
 
   const submitManual = () => {
     const value = manualValue.trim();
@@ -744,34 +778,34 @@ function TextCandidateSelection({ analysis, selectedIds, onToggle, onAdd, onRemo
   };
 
   return (
-    <section className="text-candidates" aria-labelledby="text-candidates-title">
-      <div className="protection-section__head"><div><h3 id="text-candidates-title">需要替换的敏感内容</h3><p>系统只提出候选，最终由你确认；替换时会匹配文件中的完整文字</p></div></div>
-      <div className="text-candidates__tools">
+    <section className={compact ? "text-candidates text-candidates--compact" : "text-candidates"} aria-labelledby="text-candidates-title">
+      <div className="protection-section__head"><div><h3 id="text-candidates-title">{title}</h3><p>{hint}</p></div></div>
+      {showTools && <div className="text-candidates__tools">
         <label><span>搜索候选</span><input type="search" value={query} placeholder="名称、编码或上下文" onChange={(event) => setQuery(event.target.value)} /></label>
         <div><button type="button" onClick={() => onSetSelection([...new Set([...selectedIds, ...visible.map((item) => item.id)])])}>选择当前结果</button><button type="button" onClick={() => onSetSelection(selectedIds.filter((id) => !visible.some((item) => item.id === id)))}>取消当前结果</button></div>
-      </div>
+      </div>}
       <div className="text-candidate-list">
         {visible.map((item) => {
           const inputId = `candidate-${item.id.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
           return (
             <article className="text-candidate" key={item.id}>
               <input id={inputId} type="checkbox" checked={selectedIds.includes(item.id)} onChange={() => onToggle(item.id)} />
-              <label htmlFor={inputId}><strong>{item.value}</strong><small>{item.label} · 出现 {item.count} 次</small><span>{item.contexts[0]}</span></label>
+              <label htmlFor={inputId} title={compact ? item.contexts[0] : undefined}><strong>{item.value}</strong><small>{item.label} · 出现 {item.count} 次</small>{!compact && <span>{item.contexts[0]}</span>}</label>
               {item.manual && <button type="button" aria-label={`移除 ${item.value}`} onClick={() => onRemove(item.id)}><Trash /></button>}
             </article>
           );
         })}
-        {!visible.length && <p className="text-candidates__empty">没有匹配的候选；可以清除搜索或手动添加文件中的完整文字。</p>}
+        {!visible.length && <p className="text-candidates__empty">{candidates.length ? "没有匹配的候选；可以清除搜索或手动添加文件中的完整文字。" : "没有在表单里找到其他名称；有需要可以在下面手动添加。"}</p>}
       </div>
       <div className="text-candidates__manual">
         <label htmlFor="manual-sensitive-value">手动添加</label>
         <div><input id="manual-sensitive-value" value={manualValue} placeholder="粘贴文件中需要替换的完整文字" onChange={(event) => setManualValue(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); submitManual(); } }} /><button type="button" onClick={submitManual}>添加</button></div>
         {manualError && <small role="alert">{manualError}</small>}
       </div>
-      <p className="drawer-note"><Info weight="bold" />{analysis.format === "docx"
+      {analysis.kind === "text" && <p className="drawer-note"><Info weight="bold" />{analysis.format === "docx"
         ? "Word 处理正文、普通表格、页眉页脚和文本框；图片文字不扫描，复杂结构会停止生成。"
         : analysis.format === "md" ? "Markdown 按纯文本处理，不渲染或执行 HTML、脚本；代码块、链接和 Front Matter 中的已选完整文字也会替换。"
-          : "TXT 按纯文本处理，匹配已选完整文字并保留原换行与 BOM。"}</p>
+          : "TXT 按纯文本处理，匹配已选完整文字并保留原换行与 BOM。"}</p>}
     </section>
   );
 }
@@ -791,12 +825,30 @@ function SecurityDrawer({ mode, status, analysis, selectedIds, fieldModes = {}, 
   const detailRows = mode === "restore" && restoreInspection
       ? [["文件格式", restoreInspection.formatLabel], ["匹配任务", restoreInspection.taskName], ["任务编号", restoreInspection.taskId], ["发现代号", `${restoreInspection.occurrences} 处`], ["使用还原记录", `${restoreInspection.usedMappings} 条`], ...(restoreInspection.occurrenceComparison ? [["原始 / 返回", `${restoreInspection.occurrenceComparison.original} / ${restoreInspection.occurrenceComparison.returned} 处`], ["缺失 / 新增", `${restoreInspection.occurrenceComparison.missing} / ${restoreInspection.occurrenceComparison.added} 处`]] : [])]
       : result
-        ? [["任务编号", result.taskId], [mode === "protect" ? "已替换" : "已还原", `${mode === "protect" ? result.replacedCells : result.restoredOccurrences} 处`], ...(mode === "restore" ? [["使用还原记录", `${result.usedMappings} 条`], ...(result.partialRestore ? [["未还原", `${result.unresolvedOccurrences.length} 处（已原样保留）`]] : [])] : []), ["输出状态", result.partialRestore ? "部分还原" : "已通过"]]
+        ? [["任务编号", result.taskId], [mode === "protect" ? "已替换" : "已还原", `${mode === "protect" ? result.replacedCells : result.restoredOccurrences} 处`], ...(mode === "protect" && result.elsewhere?.cells ? [["所选列以外", result.elsewhere.sheets.map(item => `${item.sheet} ${item.cells} 处`).join("、")]] : []), ...(mode === "restore" ? [["使用还原记录", `${result.usedMappings} 条`], ...(result.partialRestore ? [["未还原", `${result.unresolvedOccurrences.length} 处（已原样保留）`]] : [])] : []), ["输出状态", result.partialRestore ? "部分还原" : "已通过"]]
         : [];
+
+  const renderColumns = (columns) => (
+    <>
+      {columns.map((column) => {
+              const checked = selectedIds.includes(column.id);
+              const empty = isEmptyColumn(column);
+              const inputId = `column-${encodeURIComponent(column.id)}`;
+              return (
+                <div className={empty ? "column-selection column-selection--empty" : "column-selection"} key={column.id}>
+                  <input id={inputId} type="checkbox" checked={checked} disabled={empty && !checked} onChange={() => onToggleColumn(column.id)} />
+                  <label className="column-selection__copy" htmlFor={inputId}><strong>{spreadsheetColumnLabel(column.columnNumber)} 列 · {column.header}</strong><small>{column.sheetName} · {empty ? "这一列没有内容，无需替换" : <>{column.valueCount} 个值{column.samples[0] ? ` · 示例 ${column.samples[0]}` : ""}</>}</small></label>
+                  <div className="column-selection__method"><span>替换方式</span><Dropdown className="column-selection__mode" label={`${column.header}的替换方式`} value={fieldModes[column.id] ?? column.recommendedMode ?? "whole"} disabled={!checked} onChange={(next) => onModeChange(column.id, next)} options={REPLACE_MODES} /></div>
+                  <em>{empty ? "无内容" : column.suggested ? "自动建议" : "可自定义"}</em>
+                </div>
+              );
+            })}
+    </>
+  );
 
   return (
     <aside className="security-drawer" id="security-details" ref={drawerRef} role={modal ? "dialog" : undefined} aria-modal={modal || undefined} aria-labelledby="security-details-title">
-      <div className="drawer-head"><h2 id="security-details-title">{error ? "技术详情" : mode === "protect" && status === "ready" ? analysis?.kind === "text" ? "替换内容" : "替换列" : "检查详情"}</h2><button ref={closeButtonRef} className="icon-button" type="button" onClick={onClose} aria-label="关闭详情"><X /></button></div>
+      <div className="drawer-head"><h2 id="security-details-title">{error ? "详细信息" : mode === "protect" && status === "ready" ? analysis?.kind === "text" || analysis?.candidates?.length ? "替换内容" : "替换列" : "检查详情"}</h2><button ref={closeButtonRef} className="icon-button" type="button" onClick={onClose} aria-label="关闭详情"><X /></button></div>
       <div className="drawer-body">
       {!(mode === "protect" && status === "ready") && <div className={`drawer-summary ${error ? "drawer-summary--warning" : status === "success" ? "" : "drawer-summary--pending"}`}>
         {error ? <WarningCircle weight="fill" /> : status === "success" ? <CheckCircle weight="fill" /> : <Info weight="fill" />}
@@ -879,20 +931,14 @@ function SecurityDrawer({ mode, status, analysis, selectedIds, fieldModes = {}, 
         <section className="protection-section" aria-labelledby="protection-title">
           <div className="protection-section__head"><div><h3 id="protection-title">需要替换的列</h3><p>勾选需要保护的列；替换方式按列名自动推荐，可手动调整。</p></div></div>
           <div className="column-selection-list">
-            {analysis.columns.map((column) => {
-              const checked = selectedIds.includes(column.id);
-              const empty = isEmptyColumn(column);
-              const inputId = `column-${encodeURIComponent(column.id)}`;
-              return (
-                <div className={empty ? "column-selection column-selection--empty" : "column-selection"} key={column.id}>
-                  <input id={inputId} type="checkbox" checked={checked} disabled={empty && !checked} onChange={() => onToggleColumn(column.id)} />
-                  <label className="column-selection__copy" htmlFor={inputId}><strong>{spreadsheetColumnLabel(column.columnNumber)} 列 · {column.header}</strong><small>{column.sheetName} · {empty ? "这一列没有内容，无需替换" : <>{column.valueCount} 个值{column.samples[0] ? ` · 示例 ${column.samples[0]}` : ""}</>}</small></label>
-                  <div className="column-selection__method"><span>替换方式</span><Dropdown className="column-selection__mode" label={`${column.header}的替换方式`} value={fieldModes[column.id] ?? column.recommendedMode ?? "whole"} disabled={!checked} onChange={(next) => onModeChange(column.id, next)} options={REPLACE_MODES} /></div>
-                  <em>{empty ? "无内容" : column.suggested ? "自动建议" : "可自定义"}</em>
-                </div>
-              );
-            })}
+            {renderColumns(analysis.columns.filter((column) => selectedIds.includes(column.id) || column.suggested))}
           </div>
+          {analysis.columns.some((column) => !selectedIds.includes(column.id) && !column.suggested) && (
+            <details className="column-more">
+              <summary>其他 {analysis.columns.filter((column) => !selectedIds.includes(column.id) && !column.suggested).length} 列<small>通常不需要替换，有需要时展开勾选</small></summary>
+              <div className="column-selection-list">{renderColumns(analysis.columns.filter((column) => !selectedIds.includes(column.id) && !column.suggested))}</div>
+            </details>
+          )}
           <p className="drawer-note drawer-note--method"><Info weight="bold" /><span><strong>整个单元格</strong>：整格换成一个代号。<strong>仅文中已选内容</strong>：只替换其他已选整格列中确认的内容，保留句子，不猜测陌生名称。</span></p>
           {selectedColumns.length > 0 && wholeColumnCount === 0 && (
             <p className="drawer-note drawer-note--warning"><WarningCircle weight="bold" /><span>当前全部选为“仅文中已选内容”。请至少把一列客户、产品、人员或自定义实体设为“整个单元格”，作为文中识别依据。</span></p>
@@ -908,6 +954,10 @@ function SecurityDrawer({ mode, status, analysis, selectedIds, fieldModes = {}, 
             <p className="drawer-note"><Info weight="bold" />金额、日期等分析指标不会自动勾选；如确有需要，可由你手动加入。</p>
           )}
         </section>
+      )}
+      {mode === "protect" && analysis && analysis.kind !== "text" && status === "ready" && (
+        <TextCandidateSelection compact analysis={analysis} selectedIds={selectedIds} onToggle={onToggleColumn} onAdd={onAddCandidate} onRemove={onRemoveCandidate} onSetSelection={onSetSelection}
+          title={`其他名称${analysis.candidates?.length ? `（${analysis.candidates.length}）` : ""}`} hint="表单、说明文字里找到的公司名和人名，勾选的会在整个文件里替换。系统认不全简称和昵称（如“马总”），请手动添加。" />
       )}
 
       <div className="task-token-note"><ShieldCheck weight="bold" /><p><strong>处理边界</strong>未选内容、上下文和图片仍可能含敏感信息。</p></div>
@@ -1201,7 +1251,7 @@ export function App() {
       if (mode === "protect") {
         const nextAnalysis = await inspectProtectionFile(selected);
         setAnalysis(nextAnalysis);
-        setSelectedIds(nextAnalysis.kind === "text" ? nextAnalysis.suggestedCandidateIds : nextAnalysis.suggestedColumnIds);
+        setSelectedIds(nextAnalysis.kind === "text" ? nextAnalysis.suggestedCandidateIds : [...nextAnalysis.suggestedColumnIds, ...(nextAnalysis.suggestedCandidateIds ?? [])]);
         setFieldModes(nextAnalysis.kind === "text" ? {} : Object.fromEntries(nextAnalysis.columns.map((column) => [column.id, column.recommendedMode ?? "whole"])));
       } else {
         const inspection = await inspectRestoreFile(selected);
@@ -1262,7 +1312,7 @@ export function App() {
           : analysis.columns
             .filter((column) => ids.includes(column.id))
             .map((column) => ({ ...column, processingMode: modes[column.id] ?? column.recommendedMode ?? "whole" }));
-        output = await createSafeFile(file, selection);
+        output = await createSafeFile(file, selection, analysis.kind === "text" ? undefined : { candidates: (analysis.candidates ?? []).filter((candidate) => ids.includes(candidate.id)) });
       } else {
         output = await restoreSafeFile(file, restoreInspection.taskId);
       }

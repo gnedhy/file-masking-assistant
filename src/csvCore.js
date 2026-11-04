@@ -1,4 +1,4 @@
-import { classifyHeader, findKnownShortTokens, isEmptyColumn, recommendedProcessingMode } from "./xlsxCore.js";
+import { classifyHeader, findKnownShortTokens, isEmptyColumn, isPlaceholderValue, recommendedProcessingMode } from "./xlsxCore.js";
 import { createEntityToken, parseEntityToken, tokenPattern, tokenOccurrence } from "./tokenFormat.js";
 
 const DELIMITER_CANDIDATES = [",", "\t", ";"];
@@ -301,7 +301,7 @@ export function tokenizeCsv(document, selectedColumns, taskId) {
     for (let rowIndex = column.headerRow; rowIndex < document.rows.length; rowIndex += 1) {
       const row = document.rows[rowIndex];
       const value = row[columnIndex] ?? "";
-      if (!String(value).trim()) continue;
+      if (!String(value).trim() || isPlaceholderValue(value)) continue;
       if (tokenPattern("").test(String(value))) {
         warnings.push({ location: `第 ${rowIndex + 1} 行，第 ${column.columnNumber} 列`, reason: "原文件已含本工具代号" });
         continue;

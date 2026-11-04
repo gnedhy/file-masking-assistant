@@ -12,7 +12,7 @@
     "test:operations": "node scripts/test-operations.mjs",
     "build": "vite build",
     "test": "npm run test:unit && npm run test:validation && npm run build",
-    "test:unit": "node --test tests/operation-reports.test.mjs tests/operation-tasks.test.mjs tests/token-format.test.mjs tests/xlsx-core.test.mjs tests/xlsx-package.test.mjs tests/csv-core.test.mjs tests/text-core.test.mjs tests/multi-fixture-roundtrip.test.mjs tests/office-openxml.test.mjs tests/html-core.test.mjs tests/file-preflight.test.mjs tests/file-safety.test.mjs tests/enterprise-vault.test.mjs tests/wecom-session.test.mjs tests/access.test.mjs tests/feedback.test.mjs",
+    "test:unit": "node --test tests/operation-reports.test.mjs tests/operation-tasks.test.mjs tests/token-format.test.mjs tests/xlsx-core.test.mjs tests/xlsx-package.test.mjs tests/xlsx-workbook-wide.test.mjs tests/workbook-candidates.test.mjs tests/csv-core.test.mjs tests/text-core.test.mjs tests/multi-fixture-roundtrip.test.mjs tests/office-openxml.test.mjs tests/html-core.test.mjs tests/file-preflight.test.mjs tests/file-safety.test.mjs tests/enterprise-vault.test.mjs tests/wecom-session.test.mjs tests/access.test.mjs tests/feedback.test.mjs",
     "test:e2e": "playwright test",
     "generate:validation": "node scripts/generate-validation-assets.mjs tests/output/validation-assets",
     "generate:performance": "node scripts/generate-performance-assets.mjs tests/output/performance-assets",

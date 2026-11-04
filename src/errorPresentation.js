@@ -1,94 +1,57 @@
-// What each stopped operation means to the user. The titles also explain failed rows in the operation records.
+// What each stopped operation means to the user, in everyday words: what happened (title), why (description),
+// and what to do (guidance). The titles also explain failed rows in the operation records.
 export const ERROR_PRESENTATION = {
-  VAULT_TASK_EXISTS: { title: "任务编号已存在", description: "原还原记录未改动，本次没有生成可下载文件。", guidance: "请重新生成脱敏文件，系统会分配新任务编号。" },
-  NO_COLUMNS: {
-    title: "还没有选择脱敏字段",
-    description: "当前没有可用于生成脱敏文件的已选字段。",
-    guidance: "可以直接返回字段选择，勾选至少一个需要替换的字段。",
-  },
-  NO_VALUES: {
-    title: "所选字段没有可替换内容",
-    description: "整格字段中没有可替换值，或文中替换字段里没有出现已经确认的实体。",
-    guidance: "请至少把一个客户、产品或人员字段设为“整个单元格”。",
-  },
-  UNSUPPORTED_CELLS: {
-    title: "所选字段包含暂不支持的单元格",
-    description: "所选范围中包含公式、富文本、链接或其他结构化单元格，为避免破坏文件结构，系统已停止生成。",
-    guidance: "请调整选择字段，或先在副本中把这些单元格转成普通值。",
-  },
-  NO_TOKENS: {
-    title: "这个文件无法自动还原",
-    description: "没有识别到本工具生成的代号。它可能不是脱敏文件，或者 AI 改变了代号格式。",
-    guidance: "请选择 AI 处理后的脱敏文件；代号被改写时需重新制作。",
-  },
-  VAULT_NOT_FOUND: {
-    title: "找不到这个文件的还原记录",
-    description: "文件中的任务编号不在你的任务里。记录可能已被删除，或文件是其他同事生成的。",
-    guidance: "请确认文件是你自己生成的；记录删除后无法恢复，需要用原文件重新制作。",
-  },
-  NO_TEXT_CANDIDATES: {
-    title: "还没有选择敏感内容",
-    description: "当前没有可用于生成脱敏文件的已选文字。",
-    guidance: "返回候选列表，勾选自动识别的内容，或手动添加文件中的完整文字。",
-  },
-  VAULT_SAVE_FAILED: {
-    title: "还原记录没有保存成功",
-    description: "公司服务器没有保存成功，因此没有生成无法还原的脱敏文件。",
-    guidance: "请稍后重试；持续失败请联系管理员。",
-  },
-  VAULT_SERVICE_UNAVAILABLE: {
-    title: "暂时连不上公司服务器",
-    description: "脱敏和还原都需要读取或保存还原记录，服务器不可用时已停止处理。",
-    guidance: "请检查网络后重试；持续失败请联系管理员。",
-  },
-  VAULT_SERVICE_FAILED: {
-    title: "公司服务器暂时不可用",
-    description: "服务器没有完成请求，系统已停止处理，原文件不受影响。",
-    guidance: "请稍后重试；持续失败请联系管理员。",
-  },
-  AUTH_REQUIRED: {
-    title: "登录已过期",
-    description: "需要重新确认身份才能读取或保存还原记录。",
-    guidance: "请刷新页面重新进入应用，再选择文件。",
-  },
-  MIXED_TASKS: {
-    title: "文件中混入了不同任务的代号",
-    description: "系统无法确认每个代号应该使用哪一份还原记录，因此已停止还原。",
-    guidance: "请使用同一次任务生成的处理文件，不要合并来自不同脱敏文件的内容。",
-  },
-  UNRESOLVED_TOKENS: {
-    title: "有些代号无法安全还原",
-    description: "系统发现未知代号，或代号出现在暂不支持自动改写的位置。",
-    guidance: "可以查看技术详情定位问题；修正文件后重新选择，系统会再次完整检查。",
-  },
-  UNSUPPORTED_FILE: {
-    title: "当前还不能处理这种文件",
-    description: "制作脱敏文件支持 XLSX、CSV、TXT、MD、DOCX；还原支持标准 XLSX、CSV、TXT、MD、DOCX、PPTX 和安全静态 HTML。",
-    guidance: "请选择支持的标准文件。宏、加密文件和复杂嵌入对象暂不处理。",
-  },
-  INVALID_CSV: { title: "无法安全读取这个 CSV", description: "文件可能包含二进制内容、损坏的引号或异常分隔结构。", guidance: "请从 Excel 重新另存为 UTF-8 CSV 后再试。" },
-  INVALID_CSV_ENCODING: { title: "无法识别 CSV 文字编码", description: "当前文件不是可识别的 UTF-8 或 GB18030 编码。", guidance: "请将文件另存为 UTF-8 CSV 后再试。" },
-  INVALID_TEXT: { title: "无法安全读取这个文本文件", description: "文件包含二进制内容或空字符，不是标准纯文本。", guidance: "请另存为 UTF-8 的 TXT 或 MD 文件后再试。" },
-  INVALID_TEXT_ENCODING: { title: "无法识别文本编码", description: "TXT/MD 仅支持标准 UTF-8 或 UTF-8 BOM。", guidance: "请用文本编辑器另存为 UTF-8 后再试。" },
-  TEXT_TOO_LARGE: { title: "文本文件超过安全大小限制", description: "TXT/MD 文件不能超过 10 MB。", guidance: "请拆分文件后重试。" },
-  CSV_TOO_LARGE: { title: "CSV 超过当前安全限制", description: "CSV 文件不能超过 10 MB。", guidance: "请按月份、业务单元或数据范围拆分后重试。" },
-  CSV_LIMIT_EXCEEDED: { title: "CSV 表格规模超过安全限制", description: "文件的行数、列数或字段总量过大，系统已停止处理。", guidance: "请按月份、业务单元或工作表拆分后重试。" },
-  CSV_FORMULA_INJECTION: { title: "CSV 里有疑似公式的内容", description: "以 =、+、-、@ 开头的内容，在 Excel 等表格软件里可能被当作公式运行，因此没有生成输出文件。", guidance: "请在原文件中修改这些位置后重新选择文件，例如把 +86-138… 写成 86-138…；工具不会自动改写原值。" },
-  SUSPICIOUS_TEXT: { title: "文件中包含不可见控制字符", description: "这些字符可能隐藏内容或改变代号识别，系统已停止处理。", guidance: "请用纯文本编辑器显示并移除不可见字符后重试。" },
-  EXTERNAL_RELATIONSHIPS: { title: "文件包含外部链接或远程连接", description: "为避免文件打开时连接外部资源，系统已停止处理。", guidance: "请在 Office 中断开外部链接并另存为标准文件。" },
-  SENSITIVE_RESIDUALS: { title: "脱敏后仍发现真实内容", description: "已选真实值仍出现在文件的其他位置，因此没有生成脱敏文件。", guidance: "请返回调整选择：叙述列可选“仅文中已选内容”，或把相关列设为整格替换。" },
-  INVALID_OFFICE_PACKAGE: { title: "无法安全读取这个 Office 文件", description: "文件可能已损坏、加密，或不是标准 DOCX/PPTX。", guidance: "请从 Word 或 PowerPoint 重新另存为标准文件后再试。" },
-  UNSUPPORTED_DOCX_STRUCTURE: { title: "这个 Word 文件包含暂时无法完整脱敏的结构", description: "检测到脚注、尾注、修订、内容控件、域或批注。为避免静默遗漏，系统已停止生成。", guidance: "请处理修订，移除批注、域、脚注或内容控件后另存为标准 DOCX。" },
-  INVALID_HTML: { title: "无法安全读取这个 HTML 文件", description: "文件不是有效的 UTF-8 静态 HTML，或包含无法识别的二进制内容。", guidance: "请让 AI 导出为 UTF-8 的单文件 HTML 后再试。" },
-  FORMAT_MISMATCH: { title: "文件扩展名与内部格式不一致", description: "为避免把伪装文件当作 Office 文件处理，系统已停止输出。", guidance: "请用原应用重新另存文件，不要只修改扩展名。" },
-  EMBEDDED_OBJECTS: { title: "文件包含暂不处理的嵌入内容", description: "检测到宏、OLE、ActiveX 或嵌入包，系统已停止输出。", guidance: "请移除嵌入对象并另存为标准 DOCX/PPTX 后再试。" },
-  FILE_TOO_LARGE: { title: "文件超过当前安全限制", description: "Office 文件不能超过 20 MB，HTML 不能超过 10 MB。", guidance: "请拆分文件或压缩图片后重试。" },
-  PACKAGE_TOO_LARGE: { title: "文件内部结构超过安全限制", description: "解包总量或内部文件项过多，系统已停止处理。", guidance: "请精简文件后重试。" },
-  ALTERED_TOKENS: { title: "有些代号已被改写或截断", description: "系统只还原完整且能由还原记录确认的代号。", guidance: "请让 AI 保留完整代号，或重新生成处理文件。" },
-  UNSUPPORTED_CONTENT: { title: "代号出现在不安全或暂不处理的位置", description: "Office 的 SmartArt、批注、自定义属性、嵌入内容，或 HTML 的外部脚本、样式、链接、事件属性中发现代号，因此已停止输出。具体位置见下方明细。", guidance: "请把代号放回普通文字、表格或图表后再试。" },
+  VAULT_TASK_EXISTS: { title: "这次没有生成成功", description: "系统给这次任务分配的编号刚好被占用了，原来的记录没有受影响。", guidance: "直接再点一次“生成脱敏文件”就可以，系统会换一个编号。" },
+  NO_COLUMNS: { title: "还没有选择要替换的内容", description: "要先告诉系统哪些列或名称需要换成代号。", guidance: "点“查看并调整”，勾选至少一列或一个名称后再生成。" },
+  NO_VALUES: { title: "选中的列里没有可以替换的内容", description: "勾选的列是空的，或者里面只有“/”“无”这类没有实际内容的值。", guidance: "点“调整选择字段”，换成有客户名、人名或产品名的列。" },
+  UNSUPPORTED_CELLS: { title: "选中的列里有暂时处理不了的格子", description: "这些格子里放的是图片、控件或特殊对象，不是普通文字。为了不把文件弄坏，系统没有生成。", guidance: "可以先不选这一列；或者复制一份文件，把这些格子改成普通文字后再试。" },
+  NO_TABLE: { title: "没有找到需要保护的内容", description: "文件里没有认出表格的表头，也没有找到公司名、人名这类名称。", guidance: "如果文件里确实有要保护的名称，可以在“查看并调整”里手动添加。" },
+  NO_TOKENS: { title: "这个文件里没有找到代号", description: "还原要用本工具生成的脱敏文件（里面有“客户-K7M4-01”这样的代号）。这个文件可能是原文件，或者 AI 把代号改掉了。", guidance: "请选择 AI 处理后返回的文件。如果代号被改掉了，需要让 AI 保留代号重新处理。" },
+  VAULT_NOT_FOUND: { title: "找不到这个文件的还原记录", description: "文件里的任务编号不在你的任务里：可能是别的同事生成的，或者记录已经被删除。", guidance: "请确认是你自己生成的文件。记录删除后无法找回，需要用原文件重新制作。" },
+  NO_TEXT_CANDIDATES: { title: "还没有选择要替换的内容", description: "要先勾选需要换成代号的文字。", guidance: "在候选列表里勾选，或者手动添加文件里的完整文字。" },
+  VAULT_SAVE_FAILED: { title: "还原记录没有保存成功", description: "没能把还原记录存到公司服务器。为了避免生成一个以后无法还原的文件，系统没有继续。", guidance: "稍等一会儿再试；一直不行请联系管理员。" },
+  VAULT_SERVICE_UNAVAILABLE: { title: "暂时连不上公司服务器", description: "脱敏和还原都要用到存在公司服务器上的还原记录，现在连不上。", guidance: "检查一下网络后再试；一直不行请联系管理员。" },
+  VAULT_SERVICE_FAILED: { title: "公司服务器暂时出了点问题", description: "服务器这次没有处理完，原文件没有受影响。", guidance: "稍等一会儿再试；一直不行请联系管理员。" },
+  AUTH_REQUIRED: { title: "登录已过期", description: "需要重新确认你的身份，才能读取或保存还原记录。", guidance: "刷新页面，或者从企业微信工作台重新打开应用。" },
+  MIXED_TASKS: { title: "文件里混进了不同任务的代号", description: "一个文件里出现了两次以上脱敏任务的代号，系统分不清该用哪一份记录还原。", guidance: "请分别还原每次生成的文件，不要把几份脱敏文件的内容拼在一起交给 AI。" },
+  UNRESOLVED_TOKENS: { title: "有些代号对不上", description: "文件里有些代号在你的还原记录里找不到，可能被 AI 改过。", guidance: "点“查看详细信息”看看是哪些代号；改正后重新选择文件，或让 AI 保留原代号重新处理。" },
+  UNSUPPORTED_FILE: { title: "暂时不支持这种文件", description: "制作脱敏文件支持 Excel（XLSX）、CSV、TXT、Markdown、Word（DOCX）；还原还支持 PowerPoint（PPTX）和网页（HTML）。", guidance: "旧版 .xls、.doc，以及 PDF 请先另存为新版格式再试。" },
+  INVALID_CSV: { title: "这个 CSV 读不出来", description: "文件可能已经损坏，或者引号、分隔符不完整。", guidance: "用 Excel 打开后“另存为 CSV UTF-8”，再重新选择。" },
+  INVALID_CSV_ENCODING: { title: "这个 CSV 的文字编码识别不了", description: "文字可能显示成乱码，系统没法准确替换。", guidance: "用 Excel 打开后“另存为 CSV UTF-8”，再重新选择。" },
+  INVALID_TEXT: { title: "这个文本文件读不出来", description: "文件里有不是文字的内容，可能不是普通的文本文件。", guidance: "用记事本打开后另存为 UTF-8 编码，再重新选择。" },
+  INVALID_TEXT_ENCODING: { title: "这个文本文件的文字编码识别不了", description: "文字可能显示成乱码，系统没法准确替换。", guidance: "用记事本打开，“另存为”时编码选 UTF-8，再重新选择。" },
+  TEXT_TOO_LARGE: { title: "文件太大了", description: "文本文件不能超过 10 MB。", guidance: "把文件拆成几份，分别处理。" },
+  CSV_TOO_LARGE: { title: "文件太大了", description: "CSV 文件不能超过 10 MB。", guidance: "按月份或部门拆成几份，分别处理。" },
+  CSV_LIMIT_EXCEEDED: { title: "表格太大了", description: "行数、列数太多，超出了一次能处理的范围。", guidance: "按月份或部门拆成几份，分别处理。" },
+  CSV_FORMULA_INJECTION: { title: "有些格子会被 Excel 当成公式", description: "以 =、+、-、@ 开头的内容，在 Excel 里打开时可能被当成公式运行，不安全，所以没有生成。", guidance: "按下面列出的位置修改原文件，例如把“+86-138…”写成“86-138…”，再重新选择。" },
+  SUSPICIOUS_TEXT: { title: "文件里有看不见的特殊字符", description: "这些字符可能藏着内容，或者打乱代号的识别。", guidance: "复制一份文件，把内容粘贴到记事本里重新保存后再试。" },
+  EXTERNAL_RELATIONSHIPS: { title: "文件里有指向外部的链接", description: "文件打开时会去连接外部网址或其他文件，可能带出信息。", guidance: "在 Excel 或 Word 里“断开链接”后另存一份，再重新选择。" },
+  SENSITIVE_RESIDUALS: { title: "还有真实名称没有替换掉", description: "已选的真实名称还出现在没有选中的列里，或者出现在系统不能安全改写的地方（例如工作表名称、批注、图表、下拉选项、公式）。为了不把它们交给 AI，系统没有生成。", guidance: "按下面列出的位置处理：可以把那一列也加入替换，或者在原文件副本里改掉、删掉这些名称（例如重命名工作表、删除批注），再重新选择。" },
+  MEDIA_LEFT: { title: "附件没能去掉", description: "文件里嵌入的附件没能从脱敏文件里去掉，为了安全没有生成。", guidance: "在原文件副本里删除嵌入的附件后再试。" },
+  INVALID_OFFICE_PACKAGE: { title: "这个 Office 文件读不出来", description: "文件可能已经损坏、设置了密码，或者不是标准格式。", guidance: "用 Word 或 PowerPoint 打开，去掉密码后另存一份，再重新选择。" },
+  UNSUPPORTED_DOCX_STRUCTURE: { title: "这个 Word 文件里有暂时处理不了的内容", description: "文件里有修订记录、批注、脚注或特殊控件，系统没法保证这些地方都替换干净。", guidance: "复制一份文件，接受全部修订、删除批注和脚注后再试。" },
+  INVALID_HTML: { title: "这个网页文件读不出来", description: "文件不是普通的网页格式，或者文字编码识别不了。", guidance: "让 AI 重新导出成一个单独的 HTML 文件后再试。" },
+  FORMAT_MISMATCH: { title: "文件的类型和后缀名对不上", description: "比如一个 Word 文件被改成了 .xlsx 后缀，系统不能确定它是什么文件。", guidance: "用原来的软件打开后另存为正确的格式，不要只改文件名后缀。" },
+  EMBEDDED_OBJECTS: { title: "文件里有宏或控件", description: "宏和控件可能自动运行程序，为了安全暂时不处理这类文件。", guidance: "复制一份文件，另存为不带宏的普通格式（例如 .xlsx、.docx）后再试。" },
+  FILE_TOO_LARGE: { title: "文件太大了", description: "Office 文件不能超过 20 MB，网页文件不能超过 10 MB。", guidance: "把文件拆成几份，或者压缩里面的图片后再试。" },
+  PACKAGE_TOO_LARGE: { title: "文件内容太多了", description: "文件里的工作表或内部内容太多，超出了一次能处理的范围。", guidance: "把文件拆成几份，分别处理。" },
+  ALTERED_TOKENS: { title: "有些代号被 AI 改动过", description: "代号被改写或截断后，系统没法确认它原来对应哪个名称。", guidance: "让 AI 原样保留代号重新处理；“复制 AI 处理说明”里已经写了这个要求。" },
+  UNSUPPORTED_CONTENT: { title: "代号出现在系统不能还原的地方", description: "代号出现在了批注、特殊图形、网页脚本或链接这类地方，系统不能安全地改回去。", guidance: "按“查看详细信息”里的位置，把代号挪回普通文字或表格里，再重新选择。" },
 };
 
 // The short reason shown next to a failed record; unknown codes show nothing rather than a raw code.
 export function failureReason(code) {
   return (code && ERROR_PRESENTATION[code]?.title) || "";
+}
+
+// One leftover position in words: "「销售明细表」第 5 行 B 列" for a cell, "批注里的「某某公司」" for other places.
+export function residualPlace(detail) {
+  if (detail && typeof detail === "object" && detail.sheetName && detail.row) {
+    let column = "", n = detail.columnNumber;
+    while (n > 0) { const r = (n - 1) % 26; column = String.fromCharCode(65 + r) + column; n = Math.floor((n - 1) / 26); }
+    return detail.sheetName === "CSV" ? `第 ${detail.row} 行第 ${detail.columnNumber} 列` : `「${detail.sheetName}」第 ${detail.row} 行 ${column} 列`;
+  }
+  const text = String(detail ?? "");
+  const split = text.indexOf("：");
+  return split > 0 ? `${text.slice(0, split)}里的「${text.slice(split + 1)}」` : text;
 }

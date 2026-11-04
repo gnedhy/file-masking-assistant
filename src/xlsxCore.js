@@ -5,9 +5,9 @@ export { tokenPattern };
 const NARRATIVE_HEADER_PATTERN = /(反馈|备注|说明|描述|原因|计划|进展|推进|意见|要求|情况|feedback|notes?|remarks?|comments?|description|followup|progress|plan)/i;
 
 const CATEGORY_RULES = [
-  { category: "customer", prefix: "C", pattern: /^(?:客户(?:名称|姓名|编码|编号|简称|k码|名|单位|公司)?|经销商(?:名称)?|供应商(?:名称)?|公司名称|竞品厂家|customer(?:name|id|code)?|client(?:name|id|code)?|account(?:name|id|code)?)$/i },
+  { category: "customer", prefix: "C", pattern: /^(?:客户(?:中文|英文)?(?:名称|全称|全名|姓名|编码|编号|简称|k码|名|单位|公司)?|经销商(?:名称|全称)?|供应商(?:名称|全称)?|公司(?:名称|全称)|企业(?:名称|全称)|单位(?:名称|全称)|往来单位|竞品厂家|customer(?:name|id|code)?|client(?:name|id|code)?|account(?:name|id|code)?)$/i },
   { category: "product", prefix: "P", pattern: /^(?:(?:推荐)?产品(?:内部)?(?:名称|编码|编号|型号|内编|对外名称)?|物料(?:名称|编码|编号)?|sku|大货编码|品名|货号|product(?:name|code|id|model)?|item(?:name|code|id)?|material(?:name|code|id)?)$/i },
-  { category: "sales", prefix: "S", pattern: /^(?:销售(?:人员|员|代表|负责人)|业务(?:员|代表|负责人)|客户经理|实验员|产品经理|跟进人|sales(?:rep|representative|owner|person)?|accountmanager)$/i },
+  { category: "sales", prefix: "S", pattern: /^(?:销售(?:人员|员|代表|负责人)|业务(?:员|代表|负责人|经理)|客户经理|区域经理|负责人|对接人|经办人|跟单(?:员|人)?|联系人|姓名|实验员|产品经理|跟进人|sales(?:rep|representative|owner|person)?|accountmanager)$/i },
 ];
 
 function normalizeHeader(header) {
@@ -26,6 +26,32 @@ export function findKnownShortTokens(text, knownShortTokens) {
     if (knownShortTokens.has(match[2])) findings.push(match[2]);
   }
   return findings;
+}
+
+// Cells that only say "nothing here" (/, -, 无, N/A …) are not names: they stay as they are and are never
+// treated as real values, otherwise the leftover check finds "/" all over the file.
+export function isPlaceholderValue(value) {
+  const text = String(value ?? "").normalize("NFKC").trim();
+  if (!text) return true;
+  if (/^[\p{P}\p{S}\s]+$/u.test(text)) return true;
+  return /^(?:无|空|暂无|未知|不详|待定|n\/?a|none|null|nil)$/i.test(text);
+}
+
+// How a selected value is looked for when checking that nothing real is left behind. Numbers and short codes
+// (100, 2026, A1, K) occur all over a workbook by chance, so they only count when a whole text equals them;
+// names and longer codes count wherever they appear inside a text.
+export function residualMatches(text, value) {
+  const needle = String(value ?? "").trim();
+  if (!needle) return false;
+  const haystack = String(text ?? "");
+  const exactOnly = /^[\d\s.,%+\-]+$/.test(needle) || (/^[\x00-\x7F]+$/.test(needle) && needle.length < 4) || needle.length < 2;
+  return exactOnly ? haystack.trim() === needle : haystack.includes(needle);
+}
+
+// A cell that names a field rather than holding a value (业务员, 姓名, 序号 …).
+function looksLikeFieldLabel(value) {
+  const text = normalizeHeader(value);
+  return Boolean(text) && (classifyHeader(value).category !== "custom" || /^(?:序号|姓名|职位|职务|部门|角色|身份|岗位|项目经理|负责人|联系人|电话|手机|微信|邮箱|地址|日期|备注)$/.test(text));
 }
 
 export function classifyHeader(header) {
@@ -136,6 +162,7 @@ export function analyzeWorkbook(workbook) {
       const samples = [];
       let valueCount = 0;
       let complexCount = 0;
+      let labelCount = 0;
 
       for (let rowNumber = headerRow + 1; rowNumber <= worksheet.rowCount; rowNumber += 1) {
         const value = worksheet.getRow(rowNumber).getCell(columnNumber).value;
@@ -150,6 +177,7 @@ export function analyzeWorkbook(workbook) {
           continue;
         }
         valueCount += 1;
+        if (typeof value === "string" && looksLikeFieldLabel(value)) labelCount += 1;
         if (samples.length < 3) samples.push(valueAsText(value));
       }
 
@@ -161,7 +189,7 @@ export function analyzeWorkbook(workbook) {
         header,
         category: classification.category,
         prefix: classification.prefix,
-        suggested: classification.category !== "custom",
+        suggested: classification.category !== "custom" && labelCount * 10 < Math.max(1, valueCount) * 3,
         recommendedMode: recommendedProcessingMode(header),
         valueCount,
         complexCount,
@@ -252,7 +280,8 @@ function replaceKnownEntities(text, dictionary) {
   return { text: segments.map((segment) => segment.text).join(""), replacements };
 }
 
-export function tokenizeWorkbook(workbook, selectedColumns, taskId) {
+// candidates: names confirmed from forms and text (see workbookCandidates.js), each { value, label, category, prefix }.
+export function tokenizeWorkbook(workbook, selectedColumns, taskId, candidates = []) {
   const counters = { C: 0, P: 0, S: 0, X: 0 };
   const tokenByValue = new Map();
   const mapping = {};
@@ -260,6 +289,7 @@ export function tokenizeWorkbook(workbook, selectedColumns, taskId) {
   const notices = [];
   const dictionaryBySource = new Map();
   let replacedCells = 0;
+  const handled = new Set();
 
   const columnsByMode = {
     whole: selectedColumns.filter((column) => (column.processingMode || "whole") === "whole"),
@@ -275,6 +305,9 @@ export function tokenizeWorkbook(workbook, selectedColumns, taskId) {
 
     for (let rowNumber = column.headerRow + 1; rowNumber <= worksheet.rowCount; rowNumber += 1) {
       const cell = worksheet.getRow(rowNumber).getCell(column.columnNumber);
+      // Only the top-left cell of a merged area holds the value; the others just show it.
+      if (cell.isMerged && cell.master !== cell) continue;
+      handled.add(`${worksheet.name}!${cell.address}`);
       const value = cell.value;
       if (value == null || value === "") continue;
       if (formulaCellValue(value)) {
@@ -292,7 +325,7 @@ export function tokenizeWorkbook(workbook, selectedColumns, taskId) {
       }
 
       const visibleValue = richTextCellValue(value) ? valueAsText(value) : value;
-      if (visibleValue === "") continue;
+      if (visibleValue === "" || (typeof visibleValue === "string" && isPlaceholderValue(visibleValue))) continue;
       if (typeof visibleValue === "string" && tokenPattern("").test(visibleValue)) {
         warnings.push({ location: `${worksheet.name}!${cell.address}`, reason: "原文件已含本工具代号，未重复处理" });
         continue;
@@ -318,7 +351,26 @@ export function tokenizeWorkbook(workbook, selectedColumns, taskId) {
     }
   }
 
-  const dictionary = Array.from(dictionaryBySource, ([source, token]) => ({ source, token }))
+  // Confirmed names get their own alias unless a selected column already gave them one; the user picked them,
+  // so they are replaced across the workbook whatever their length.
+  const forced = new Set();
+  const tokenByText = new Map(Object.entries(mapping).map(([token, entry]) => [String(entry.value?.text ?? entry.value?.value ?? ""), token]));
+  for (const item of candidates) {
+    const source = String(item.value ?? "").trim();
+    if (!source || isPlaceholderValue(source)) continue;
+    let token = tokenByText.get(source);
+    if (!token) {
+      const prefix = item.prefix || "X";
+      counters[prefix] += 1;
+      token = createEntityToken({ label: item.label, category: item.category, prefix, sequence: counters[prefix], taskId });
+      mapping[token] = { value: { type: "string", value: source }, category: item.category, header: item.label };
+      tokenByText.set(source, token);
+    }
+    dictionaryBySource.set(source, token);
+    forced.add(source);
+  }
+
+  const dictionary = Array.from(dictionaryBySource, ([source, token]) => ({ source, token, force: forced.has(source) }))
     .sort((left, right) => right.source.length - left.source.length);
 
   for (const column of columnsByMode.inline) {
@@ -329,6 +381,9 @@ export function tokenizeWorkbook(workbook, selectedColumns, taskId) {
     }
     for (let rowNumber = column.headerRow + 1; rowNumber <= worksheet.rowCount; rowNumber += 1) {
       const cell = worksheet.getRow(rowNumber).getCell(column.columnNumber);
+      // Only the top-left cell of a merged area holds the value; the others just show it.
+      if (cell.isMerged && cell.master !== cell) continue;
+      handled.add(`${worksheet.name}!${cell.address}`);
       const value = cell.value;
       if (value == null || value === "") continue;
       if (formulaCellValue(value)) {
@@ -359,7 +414,63 @@ export function tokenizeWorkbook(workbook, selectedColumns, taskId) {
     }
   }
 
-  return { mapping, replacedCells, uniqueValues: Object.keys(mapping).length, warnings, notices };
+  const elsewhere = replaceAcrossWorkbook(workbook, dictionary, handled, notices);
+  replacedCells += elsewhere.cells;
+
+  return { mapping, replacedCells, uniqueValues: Object.keys(mapping).length, warnings, notices, elsewhere };
+}
+
+// People pick the columns that hold names; the names themselves must not reach the AI wherever they appear.
+// So every cell outside the selected columns, on every sheet (headers, summaries, cross tables, notes), is checked:
+// a cell that is exactly one of the names becomes its alias, longer text has the names replaced in place, and a
+// formula whose cached result shows a name loses that cache (Excel recalculates on opening).
+// Only names and longer codes are in the dictionary (see inlineDictionaryEligible): numbers and short codes stay
+// in their own columns so a quantity that happens to equal a code is never touched.
+// Only names (any Chinese) and letter-bearing codes of four or more characters (K5204) are looked for outside
+// the selected columns; plain numbers and short codes could equal a quantity or a grade by chance.
+export function spreadsAcrossWorkbook(source) {
+  const text = String(source ?? "").trim();
+  if (/[^\x00-\x7F]/.test(text)) return text.length >= 2 && !/^[\d\s.,%+\-]+$/.test(text);
+  return text.length >= 4 && /[A-Za-z]/.test(text);
+}
+
+function replaceAcrossWorkbook(workbook, allEntries, handled, notices) {
+  const elsewhere = { cells: 0, sheets: new Map() };
+  const dictionary = allEntries.filter(({ source, force }) => force || spreadsAcrossWorkbook(source));
+  if (!dictionary.length) return elsewhere;
+  const tokenBySource = new Map(dictionary.map(({ source, token }) => [source, token]));
+  const count = sheetName => { elsewhere.cells += 1; elsewhere.sheets.set(sheetName, (elsewhere.sheets.get(sheetName) ?? 0) + 1); };
+  workbook.eachSheet(worksheet => {
+    if (worksheet.name === "__AI安全任务") return;
+    worksheet.eachRow({ includeEmpty: false }, row => {
+      row.eachCell({ includeEmpty: false }, cell => {
+        if (cell.isMerged && cell.master !== cell) return;
+        if (handled.has(`${worksheet.name}!${cell.address}`)) return;
+        const value = cell.value;
+        if (formulaCellValue(value)) {
+          const cached = value.result;
+          if (typeof cached === "string" && dictionary.some(({ source }) => cached.includes(source))) {
+            const { result, ...formulaOnly } = value;
+            cell.value = formulaOnly;
+            notices.push({ location: `${worksheet.name}!${cell.address}`, reason: "公式结果里有已选名称，缓存结果已清除，打开时重新计算" });
+            count(worksheet.name);
+          }
+          return;
+        }
+        if (!plainCellValue(value) && !richTextCellValue(value)) return;
+        if (!richTextCellValue(value) && typeof value !== "string") return;
+        const text = valueAsText(value);
+        if (typeof text !== "string" || !text || tokenPattern("").test(text)) return;
+        const exact = tokenBySource.get(text.trim());
+        if (exact) { cell.value = exact; count(worksheet.name); return; }
+        const replaced = replaceKnownEntities(text, dictionary);
+        if (!replaced.replacements) return;
+        cell.value = replaced.text;
+        count(worksheet.name);
+      });
+    });
+  });
+  return { cells: elsewhere.cells, sheets: [...elsewhere.sheets].map(([sheet, cells]) => ({ sheet, cells })) };
 }
 
 export function findWorkbookResiduals(workbook, values) {
@@ -372,7 +483,7 @@ export function findWorkbookResiduals(workbook, values) {
         const value = cell.value;
         const raw = formulaCellValue(value) ? `${value.formula ?? ""} ${value.result ?? ""}` : valueAsText(value);
         const text = raw.replace(tokenPattern(), " ");
-        const matched = sources.filter((source) => text.includes(source));
+        const matched = sources.filter((source) => residualMatches(text, source) || (formulaCellValue(value) && residualMatches(String(value.result ?? ""), source)));
         if (!matched.length) return;
         findings.push({
           location: `${worksheet.name}!${cell.address}`,

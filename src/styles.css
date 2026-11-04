@@ -6589,3 +6589,21 @@ input {
 @media (max-width: 640px), (max-width: 1000px) and (max-height: 500px) {
   .local-status .audit-trigger, .guide-trigger { width: 44px; min-height: 44px; }
 }
+
+/* Drawer for workbooks: columns first, unused columns folded, then a compact one-line list of other names. */
+.column-more { margin-top: 10px; border: 1px dashed var(--line); border-radius: var(--radius-md); }
+.column-more > summary { display: flex; align-items: baseline; gap: 8px; padding: 10px 12px; color: var(--ink); cursor: pointer; font-size: var(--fs-sm); font-weight: var(--fw-semibold); list-style: none; }
+.column-more > summary::-webkit-details-marker { display: none; }
+.column-more > summary::before { content: "▸"; color: var(--muted); font-size: 11px; transition: transform 160ms ease; }
+.column-more[open] > summary::before { transform: rotate(90deg); }
+.column-more > summary small { color: var(--muted); font-size: var(--fs-xs); font-weight: 400; }
+.column-more > .column-selection-list { padding: 0 10px 10px; }
+.text-candidates--compact { margin-top: var(--sp-5); padding-top: var(--sp-5); border-top: 1px solid var(--line); }
+.text-candidates--compact .text-candidate-list { gap: 0; max-height: 320px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface-raised); }
+.text-candidates--compact .text-candidate { align-items: center; padding: 9px 12px; border: 0; border-radius: 0; background: transparent; }
+.text-candidates--compact .text-candidate + .text-candidate { border-top: 1px solid var(--line); }
+.text-candidates--compact .text-candidate:has(input:checked) { background: transparent; }
+.text-candidates--compact .text-candidate > label { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.text-candidates--compact .text-candidate > label strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.text-candidates--compact .text-candidate > label small { flex: 0 0 auto; margin: 0; }
+.text-candidates--compact .text-candidates__empty { padding: 12px; }

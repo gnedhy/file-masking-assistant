@@ -252,3 +252,31 @@ test("完全没有内容的列不会被默认勾选，并能被识别为空列",
   assert.equal(isEmptyColumn(analysis.columns.find((column) => column.header === "客户名称")), false);
   assert.deepEqual(analysis.suggestedColumnIds, [analysis.columns.find((column) => column.header === "客户名称").id]);
 });
+
+test("占位符（/、-、无、N/A）不当作真实值，原样保留", async () => {
+  const { isPlaceholderValue } = await import("../src/xlsxCore.js");
+  for (const value of ["/", "／", "-", "—", "无", "暂无", "N/A", "n/a", "*"]) assert.equal(isPlaceholderValue(value), true, value);
+  for (const value of ["K5204", "张三", "0", "x", "A1"]) assert.equal(isPlaceholderValue(value), false, value);
+  const workbook = new ExcelJS.Workbook();
+  workbook.addWorksheet("表").addRows([["客户简称", "金额"], ["K5204", 1], ["/", 2], ["无", 3]]);
+  const column = analyzeWorkbook(workbook).columns.find(c => c.header === "客户简称");
+  const result = tokenizeWorkbook(workbook, [{ ...column, processingMode: "whole" }], "AB12CD34");
+  assert.equal(result.replacedCells, 1);
+  assert.deepEqual(Object.values(result.mapping).map(entry => entry.value.value), ["K5204"]);
+  assert.equal(workbook.getWorksheet("表").getCell("A3").value, "/");
+});
+
+test("合并单元格的客户名只替换一次，不误报“已含代号”", () => {
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet("表");
+  sheet.addRows([["客户名称", "产品"], ["虚构星河化工", "甲"], [null, "乙"], ["虚构东骏纺织", "丙"]]);
+  sheet.mergeCells("A2:A3");
+  const column = analyzeWorkbook(workbook).columns.find(c => c.header === "客户名称");
+  const result = tokenizeWorkbook(workbook, [{ ...column, processingMode: "whole" }], "AB12CD34");
+  assert.deepEqual(result.warnings, []);
+  assert.equal(result.replacedCells, 2);
+});
+
+test("客户全称、公司全称、企业名称、单位名称默认识别为客户列", () => {
+  for (const header of ["客户全称", "客户全名", "公司全称", "企业名称", "单位名称", "往来单位", "供应商全称"]) assert.equal(classifyHeader(header).category, "customer", header);
+});

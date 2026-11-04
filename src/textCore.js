@@ -36,11 +36,12 @@ function contextAt(text, index, length) {
   return text.slice(start, endIndex < 0 ? text.length : endIndex).trim().slice(0, 180);
 }
 
-function candidate(value, label, text, manual = false) {
+// kind overrides the category guessed from the label (form labels such as 法人 are not column headers).
+export function buildTextCandidate(value, label, text, manual = false, kind = null) {
   const normalized = String(value).trim();
   const indexes = occurrenceIndexes(text, normalized);
   if (!normalized || !indexes.length || tokenPattern("").test(normalized)) return null;
-  const classification = manual ? { category: "custom", prefix: "X" } : classifyHeader(label);
+  const classification = kind ?? (manual ? { category: "custom", prefix: "X" } : classifyHeader(label));
   return {
     id: `TEXT::${encodeURIComponent(normalized)}`,
     value: normalized,
@@ -57,7 +58,7 @@ function candidate(value, label, text, manual = false) {
 export function analyzeText(text, format) {
   const found = new Map();
   const add = (value, label) => {
-    const item = candidate(value, label, text);
+    const item = buildTextCandidate(value, label, text);
     if (item && !found.has(item.value)) found.set(item.value, item);
   };
   const lines = text.split(/\r\n|\r|\n/);
@@ -89,7 +90,7 @@ export function analyzeText(text, format) {
 }
 
 export function addManualCandidate(analysis, value) {
-  const item = candidate(value, "手动添加", analysis.sourceText, true);
+  const item = buildTextCandidate(value, "手动添加", analysis.sourceText, true);
   if (!item) throw Object.assign(new Error("文件中没有找到这段完整文字。"), { code: "TEXT_VALUE_NOT_FOUND" });
   if (analysis.candidates.some((entry) => entry.value === item.value)) {
     throw Object.assign(new Error("这段内容已经在候选列表中。"), { code: "TEXT_VALUE_EXISTS" });

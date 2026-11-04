@@ -78,7 +78,9 @@ test("完整 XLSX 样本可完成脱敏、序列化和实名还原", async () =>
   assert.equal(selected.length, 13);
   const protectedResult = tokenizeWorkbook(source, selected, "7F2A9C4D");
   assert.equal(protectedResult.warnings.length, 0);
-  assert.equal(protectedResult.replacedCells, 163);
+  // 163 in the selected columns plus 9 example values on the 测试说明 sheet, replaced workbook-wide.
+  assert.equal(protectedResult.replacedCells, 172);
+  assert.deepEqual(protectedResult.elsewhere.sheets, [{ sheet: "测试说明", cells: 9 }]);
   assert.equal(protectedResult.uniqueValues, 99);
   addTaskMarker(source, { taskId: "7F2A9C4D", taskName: "完整销售数据", createdAt: "2026-08-14T00:00:00.000Z" });
 
@@ -86,11 +88,12 @@ test("完整 XLSX 样本可完成脱敏、序列化和实名还原", async () =>
   await protectedWorkbook.xlsx.load(await source.xlsx.writeBuffer());
   const inspection = inspectWorkbookTokens(protectedWorkbook);
   assert.deepEqual(inspection.taskIds, ["7F2A9C4D"]);
-  assert.equal(inspection.occurrences.length, 163);
+  // Two of those cells hold two names each, so 174 aliases in all.
+  assert.equal(inspection.occurrences.length, 174);
 
   const restored = restoreWorkbookValues(protectedWorkbook, protectedResult.mapping);
   assert.equal(restored.unresolved.length, 0);
-  assert.equal(restored.restoredOccurrences, 163);
+  assert.equal(restored.restoredOccurrences, 174);
   removeTaskMarker(protectedWorkbook);
 
   const restoredWorkbook = new ExcelJS.Workbook();

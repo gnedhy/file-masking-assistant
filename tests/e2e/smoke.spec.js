@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import JSZip from "jszip";
 import { chooseTheme } from "./theme-helper.js";
+import { openMoreColumns } from "./drawer-helper.js";
 
 const SHORT_TOKEN = /(客户|产品|人员|信息)-[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{4}-\d{2,}/;
 
@@ -17,6 +18,8 @@ test("中文多工作表的字段标签独立关联，替换方式说明明确�
   await page.getByRole("button", { name: /确认替换列/ }).click();
   const drawer = page.getByRole("dialog", { name: "替换列", exact: true });
   await expect(drawer.getByText("勾选需要保护的列；替换方式按列名自动推荐，可手动调整。")).toBeVisible();
+  // 部门 is not a name column, so it sits in the folded "其他 N 列".
+  await openMoreColumns(drawer);
   const department = drawer.getByRole("checkbox", { name: /^A 列 · 部门 / });
   const company = drawer.getByRole("checkbox", { name: /^A 列 · 公司名称 / });
   await expect(department).not.toBeChecked();
@@ -180,9 +183,9 @@ test("CSV 文件选择、任务抽屉和失败关闭可用", async ({ page }) =>
   await expect(page.getByRole("heading", { name: "让文件安全进入 AI 工作流" })).toBeVisible();
   await expect(page.locator(".empty-state__title")).toContainText("待脱敏");
   await input.setInputFiles(path.resolve("tests/fixtures/05_异常_未闭合引号.csv"));
-  await expect(page.getByRole("heading", { name: "无法安全读取这个 CSV" })).toBeVisible();
-  await page.getByRole("button", { name: "查看技术详情" }).click();
-  await expect(page.getByRole("dialog", { name: "技术详情" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "这个 CSV 读不出来" })).toBeVisible();
+  await page.getByRole("button", { name: "查看详细信息" }).click();
+  await expect(page.getByRole("dialog", { name: "详细信息" })).toBeVisible();
 });
 
 test("CSV 取消叙述列时阻止真实值残留，可原地调整后重试", async ({ page }) => {
@@ -195,7 +198,7 @@ test("CSV 取消叙述列时阻止真实值残留，可原地调整后重试", a
   await safetyDialog.getByRole("button", { name: "关闭详情" }).click();
 
   await page.getByRole("button", { name: /生成脱敏文件/ }).click();
-  await expect(page.getByRole("heading", { name: "脱敏后仍发现真实内容" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "还有真实名称没有替换掉" })).toBeVisible();
   await expect(page.getByText("没有生成输出文件")).toBeVisible();
   await page.getByRole("button", { name: "调整选择字段" }).click();
 
@@ -213,8 +216,8 @@ test("超限文件在读取前停止并显示拆分建议", async ({ page }) => 
     mimeType: "text/csv",
     buffer: Buffer.alloc(10 * 1024 * 1024 + 1),
   });
-  await expect(page.getByRole("heading", { name: "CSV 超过当前安全限制" })).toBeVisible();
-  await expect(page.getByText("请按月份、业务单元或数据范围拆分后重试。")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "文件太大了" })).toBeVisible();
+  await expect(page.getByText("按月份或部门拆成几份，分别处理。")).toBeVisible();
 });
 
 test("连不上公司服务器时不生成脱敏文件", async ({ page }) => {
@@ -238,7 +241,7 @@ test("HTML 同时含完整与改写代号时停止输出", async ({ page }) => {
 
   await page.getByRole("button", { name: "还原处理文件" }).click();
   await page.locator('input[type="file"]:not([accept=".json"])').setInputFiles(path.join(assets, "05_HTML样本", "异常_残缺代号_A14F2026.html"));
-  await expect(page.getByRole("heading", { name: "有些代号已被改写或截断" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "有些代号被 AI 改动过" })).toBeVisible();
   await expect(page.getByText("没有生成输出文件")).toBeVisible();
   await expect(page.getByRole("link", { name: "下载还原文件" })).toHaveCount(0);
 });

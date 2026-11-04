@@ -10,7 +10,8 @@ import {
 } from "./xlsxCore.js";
 import { deleteVault, listVaultSummaries, loadVault, saveVault } from "./vaultStore.js";
 import { createProtectionIdentity, protectionTokenIdentity, protectionResult, resolveRestoreVault, taskEvidence } from "./taskIdentity.js";
-import { assertNoSensitiveValuesInXlsxPackage, mappingText, preflightXlsxPackage } from "./xlsxPackageCore.js";
+import { assertNoAttachmentsInXlsxPackage, assertNoSensitiveValuesInXlsxPackage, mappingText, preflightXlsxPackage } from "./xlsxPackageCore.js";
+import { findWorkbookCandidates } from "./workbookCandidates.js";
 import { highRiskTextFindings, occurrenceBaseline, occurrenceComparison, protectedOutputName, restoredOutputName } from "./fileSafety.js";
 
 export class SafeFileError extends Error {
@@ -46,8 +47,9 @@ async function loadWorkbook(file) {
   const workbook = new ExcelJS.Workbook();
   try {
     const buffer = await file.arrayBuffer();
-    await preflightXlsxPackage(buffer);
+    const preflight = await preflightXlsxPackage(buffer);
     await workbook.xlsx.load(buffer);
+    workbook.fileMedia = preflight.media;
   } catch (error) {
     if (error?.code) throw new SafeFileError(error.code, error.message, error.details || []);
     throw new SafeFileError("INVALID_XLSX", "无法读取这个 XLSX。它可能已损坏、加密或不是标准 XLSX 文件。", [String(error.message || error)]);
@@ -82,24 +84,40 @@ function baseName(filename) {
 export async function inspectProtectionFile(file) {
   const workbook = await loadWorkbook(file);
   const analysis = analyzeWorkbook(workbook);
-  if (!analysis.columns.length) {
-    throw new SafeFileError("NO_TABLE", "没有识别到可处理的表头，请确认文件中包含普通表格。");
+  // Names already covered by the suggested columns are not listed again.
+  const covered = new Set();
+  for (const column of analysis.columns.filter((item) => analysis.suggestedColumnIds.includes(item.id))) {
+    const sheet = workbook.getWorksheet(column.sheetName);
+    for (let row = column.headerRow + 1; row <= sheet.rowCount; row += 1) {
+      const value = sheet.getRow(row).getCell(column.columnNumber).value;
+      if (typeof value === "string") covered.add(value.trim());
+    }
+  }
+  // Header rows of tables with a suggested column are read as column names; form rows are still read as labels.
+  const headerRows = new Map();
+  for (const column of analysis.columns.filter((item) => analysis.suggestedColumnIds.includes(item.id))) {
+    if (!headerRows.has(column.sheetName)) headerRows.set(column.sheetName, new Set());
+    headerRows.get(column.sheetName).add(column.headerRow);
+  }
+  const named = findWorkbookCandidates(workbook, covered, headerRows);
+  if (!analysis.columns.length && !named.candidates.length) {
+    throw new SafeFileError("NO_TABLE", "没有识别到表格或需要保护的名称。");
   }
   const text = [];
   workbook.eachSheet((worksheet) => worksheet.eachRow({ includeEmpty: false }, (row) => row.eachCell({ includeEmpty: false }, (cell) => {
     if (typeof cell.text === "string") text.push(cell.text);
   })));
-  return { ...analysis, riskFindings: highRiskTextFindings(text.join("\n")) };
+  return { ...analysis, ...named, media: workbook.fileMedia, riskFindings: highRiskTextFindings(text.join("\n")) };
 }
 
 export async function createSafeWorkbook(file, selectedColumns, options) {
-  if (!selectedColumns.length) throw new SafeFileError("NO_COLUMNS", "请至少选择一列需要替换的内容。");
+  if (!selectedColumns.length && !options?.candidates?.length) throw new SafeFileError("NO_COLUMNS", "请至少选择一列或一个名称。");
   const workbook = await loadWorkbook(file);
   const identity = await createProtectionIdentity(options, JSON.stringify(workbook.model));
   const id = identity.taskId;
   const createdAt = new Date().toISOString();
   const taskName = baseName(file.name);
-  const result = tokenizeWorkbook(workbook, selectedColumns, protectionTokenIdentity(identity));
+  const result = tokenizeWorkbook(workbook, selectedColumns, protectionTokenIdentity(identity), options?.candidates ?? []);
   if (!result.replacedCells) {
     throw new SafeFileError("NO_VALUES", "所选列中没有找到可替换值，或文中替换列没有出现已确认实体。", result.warnings);
   }
@@ -111,11 +129,14 @@ export async function createSafeWorkbook(file, selectedColumns, options) {
     );
   }
 
+  // Pictures stay where they are and are not read; attached files (embedded PDF, Word …) are never written back
+  // by the workbook library, so they are left out of the protected copy.
   addTaskMarker(workbook, { taskId: id, taskName, createdAt });
   scrubWorkbookMetadata(workbook);
   workbook.calcProperties.fullCalcOnLoad = true;
   workbook.calcProperties.forceFullCalc = true;
   const buffer = await workbook.xlsx.writeBuffer();
+  await assertNoAttachmentsInXlsxPackage(buffer);
   try {
     await assertNoSensitiveValuesInXlsxPackage(buffer, result.mapping);
   } catch (error) {
@@ -144,6 +165,8 @@ export async function createSafeWorkbook(file, selectedColumns, options) {
     taskName,
     replacedCells: result.replacedCells,
     uniqueValues: result.uniqueValues,
+    elsewhere: result.elsewhere,
+    removedMedia: workbook.fileMedia,
     warnings: result.warnings,
     notices: result.notices,
   };
