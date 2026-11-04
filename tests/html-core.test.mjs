@@ -104,3 +104,24 @@ test("HTML inspection reports removals without executing the page", () => {
   assert.equal(inspection.removed.elements, 1);
   assert.equal(inspection.keptScripts, 1);
 });
+
+// The sanitizer drops <meta> and could keep <style>; the restored page must still declare UTF-8 and the phone
+// viewport, and carry the page's styles exactly once.
+test("还原后的静态 HTML 只保留一份样式，并补回编码和手机适配声明", () => {
+  const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>.kpi{color:red}</style></head><body><p class="kpi">${C}</p></body></html>`;
+  const page = new JSDOM(restoreHtmlText(html, window, mapping).html).window.document;
+  assert.equal(page.querySelectorAll("style").length, 1);
+  assert.match(page.querySelector("style").textContent, /\.kpi\{color:red\}/);
+  assert.equal(page.querySelectorAll("meta[charset]").length, 1);
+  assert.equal(page.querySelector('meta[name="viewport"]').content, "width=device-width, initial-scale=1");
+  assert.equal(page.head.firstElementChild.getAttribute("charset"), "utf-8");
+});
+
+test("带图表脚本的还原页外层同样有手机适配声明", () => {
+  const html = `<html><head><style>p{margin:0}</style></head><body><p>${C}</p><script>const labels=['${C}']</script></body></html>`;
+  const wrapper = new JSDOM(restoreHtmlText(html, window, mapping).html).window.document;
+  assert.ok(wrapper.querySelector('meta[name="viewport"]'));
+  const inner = new JSDOM(wrapper.querySelector("iframe").getAttribute("srcdoc")).window.document;
+  assert.equal(inner.querySelectorAll("style").length, 1);
+  assert.ok(inner.querySelector('meta[name="viewport"]'));
+});

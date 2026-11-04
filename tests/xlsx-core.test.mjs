@@ -240,3 +240,15 @@ test("短英文数字编码仅在独立出现时进行文中替换", () => {
   restoreWorkbookValues(workbook, result.mapping);
   assert.equal(sheet.getCell("B2").value, "A1 已通过，XA12 不应被部分替换");
 });
+
+test("完全没有内容的列不会被默认勾选，并能被识别为空列", async () => {
+  const { isEmptyColumn } = await import("../src/xlsxCore.js");
+  const workbook = new ExcelJS.Workbook();
+  workbook.addWorksheet("表").addRows([["客户名称", "销售人员"], ["虚构客户甲", null], ["虚构客户乙", ""]]);
+  const analysis = analyzeWorkbook(workbook);
+  const empty = analysis.columns.find((column) => column.header === "销售人员");
+  assert.equal(empty.suggested, true);
+  assert.equal(isEmptyColumn(empty), true);
+  assert.equal(isEmptyColumn(analysis.columns.find((column) => column.header === "客户名称")), false);
+  assert.deepEqual(analysis.suggestedColumnIds, [analysis.columns.find((column) => column.header === "客户名称").id]);
+});

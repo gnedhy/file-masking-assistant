@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { RecordFilters, RecordList, RecordFilename, activeFilterCount } from "./OperationViews.jsx";
 import { DownloadSimple, FunnelSimple, X } from "@phosphor-icons/react";
 import { bucketActivity, localDay } from "./operationReports.js";
+import { failureReason } from "./errorPresentation.js";
 import { OPERATION_LABELS, OPERATION_RESULTS } from "./operationLog.js";
 import { OutcomeCard, RankBars, StatTile, TrendChart } from "./UsageCharts.jsx";
 import { useOperationSync } from "./CentralOperations.jsx";
@@ -148,7 +149,7 @@ export default function UsageStats({ onBack }) {
       {detailData.error ? <p role="alert">{detailData.error}</p>
         : detailData.loading ? <p role="status">正在读取明细…</p>
         : !detailData.total ? <p role="status">没有符合条件的记录。</p>
-        : <><div className="usage-table"><table><thead><tr>{[admin ? "用户 / 时间" : "时间", "任务", "输入 / 输出文件", "格式", "操作", "结果"].map(h => <th key={h}>{h}</th>)}</tr></thead><tbody>{detailData.records.map(r => <tr key={r.id}><td>{admin ? <>{r.userName}<small>{new Date(r.time).toLocaleString("zh-CN")}</small></> : new Date(r.time).toLocaleString("zh-CN")}</td><td title={r.taskId || undefined}>{r.marker || r.taskId?.slice(0, 8) || "—"}</td><td><RecordFilename label="输入" name={r.inputName} /><RecordFilename label="输出" name={r.outputName} /></td><td>{r.format?.toUpperCase() || "—"}</td><td>{OPERATION_LABELS[r.action]}</td><td>{OPERATION_RESULTS[r.result]}</td></tr>)}</tbody></table></div><div className="usage-mobile"><RecordList records={detailData.records} /></div></>}
+        : <><div className="usage-table"><table><thead><tr>{[admin ? "用户 / 时间" : "时间", "任务", "输入 / 输出文件", "格式", "操作", "结果"].map(h => <th key={h}>{h}</th>)}</tr></thead><tbody>{detailData.records.map(r => <tr key={r.id}><td>{admin ? <>{r.userName}<small>{new Date(r.time).toLocaleString("zh-CN")}</small></> : new Date(r.time).toLocaleString("zh-CN")}</td><td title={r.taskId || undefined}>{r.marker || r.taskId?.slice(0, 8) || "—"}</td><td><RecordFilename label="输入" name={r.inputName} /><RecordFilename label="输出" name={r.outputName} /></td><td>{r.format?.toUpperCase() || "—"}</td><td>{OPERATION_LABELS[r.action]}</td><td>{OPERATION_RESULTS[r.result]}{r.result === "failed" && failureReason(r.errorCode) && <small>{failureReason(r.errorCode)}</small>}</td></tr>)}</tbody></table></div><div className="usage-mobile"><RecordList records={detailData.records} /></div></>}
       {detailData.total > 0 && <nav className="record-pagination" aria-label="操作明细分页"><span role="status">第 {page} / {pageCount} 页 · 共 {detailData.total} 条</span><div><button type="button" className="secondary-button" disabled={page === 1} onClick={() => setPage(page - 1)}>上一页</button><button type="button" className="secondary-button" disabled={page === pageCount} onClick={() => setPage(page + 1)}>下一页</button></div></nav>}
     </details>
     </>}

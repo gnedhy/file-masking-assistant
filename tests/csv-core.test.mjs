@@ -225,3 +225,8 @@ test("CSV 识别可能被 Excel 执行的公式型字段", () => {
   assert.match(findings[0].value, /^=/);
   assert.match(findings[1].value, /^\+/);
 });
+
+test("CSV 空列不会被默认勾选", () => {
+  const analysis = analyzeCsv(parseCsvText("客户名称,销售人员\r\n虚构客户甲,\r\n虚构客户乙,\r\n"));
+  assert.deepEqual(analysis.suggestedColumnIds, [analysis.columns.find((column) => column.header === "客户名称").id]);
+});

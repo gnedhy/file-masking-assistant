@@ -3,6 +3,7 @@ import JSZip from 'jszip';
 import { PassThrough } from 'node:stream';
 import { OPERATION_LABELS, OPERATION_RESULTS } from '../src/operationLog.js';
 import { bucketActivity } from '../src/operationReports.js';
+import { failureReason } from '../src/errorPresentation.js';
 
 // The records export, laid out like the statistics page:
 //   统计分析 — header, metric cards, a trend chart and ranking charts on a paper background;
@@ -228,7 +229,7 @@ const COLUMNS = [
   { header: '输出文件名', key: 'output', width: 38 },
   { header: '格式', key: 'format', width: 9 },
   { header: '操作', key: 'action', width: 18 },
-  { header: '结果', key: 'result', width: 14 },
+  { header: '结果', key: 'result', width: 30 },
 ];
 const CENTERED = new Set([3, 6, 8]);
 
@@ -252,7 +253,7 @@ async function writeDetail(book, batches, pageSetup) {
       const row = sheet.addRow({
         time: beijingDate(r.time), user: r.userName, task: r.marker || r.taskId?.slice(0, 8) || '—',
         input: r.inputName || '未记录', output: r.outputName || '未记录', format: r.format?.toUpperCase() || '—',
-        action: OPERATION_LABELS[r.action], result: OPERATION_RESULTS[r.result],
+        action: OPERATION_LABELS[r.action], result: r.result === 'failed' && failureReason(r.errorCode) ? `${OPERATION_RESULTS[r.result]}：${failureReason(r.errorCode)}` : OPERATION_RESULTS[r.result],
       });
       const banded = index++ % 2 === 1;
       row.height = 20;

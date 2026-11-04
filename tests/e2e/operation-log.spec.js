@@ -47,6 +47,11 @@ test("操作记录覆盖往返、下载、删除和失败，不留敏感内容",
   await expect(drawer.locator(".operation-tasks > li").first()).toBeVisible();
   // Newest first: the rejected PDF import is on the first page (records in the same second may share the top spot).
   await expect(drawer.locator(".operation-tasks")).toContainText("不支持.pdf", { timeout: 15000 });
+  // A failure says why, from its error code only.
+  expect((await serverRecords(page)).find(r => r.inputName === "不支持.pdf" && r.result === "failed").errorCode).toBe("UNSUPPORTED_FILE");
+  const rejected = drawer.locator(".operation-tasks > li").filter({ hasText: "不支持.pdf" }).first();
+  await rejected.locator(".operation-tasks__steps > summary").click();
+  await expect(rejected.getByText("原因：当前还不能处理这种文件")).toBeVisible();
   await drawer.evaluate(async el => Promise.all(el.getAnimations().map(a => a.finished)));
   await page.screenshot({ path: path.join(os.tmpdir(), `masking-audit-records-${testInfo.project.name}.png`) });
 });

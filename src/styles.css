@@ -373,6 +373,7 @@ a {
 .operation-list__head [data-result="warning"],
 .operation-list__head [data-result="waiting"] { color: var(--ink); font-weight: var(--fw-bold); }
 .operation-list time, .operation-list p { display: block; margin: 6px 0 0; font-size: var(--fs-xs); color: var(--muted); overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.operation-list .operation-list__reason { color: var(--ink); }
 .operation-empty { display: grid; justify-items: center; gap: 12px; padding: 40px 16px; text-align: center; color: var(--muted); }
 .operation-empty strong { color: var(--ink); }
 .operation-empty p { margin: 0; font-size: var(--fs-sm); line-height: 1.7; }
@@ -2236,6 +2237,24 @@ a {
   font-size: var(--fs-xs);
   font-style: normal;
   font-weight: var(--fw-bold);
+}
+
+.column-selection--empty {
+  cursor: default;
+  border-style: dashed;
+  background: transparent;
+}
+
+.column-selection--empty .column-selection__copy {
+  cursor: default;
+}
+
+.column-selection--empty .column-selection__copy strong {
+  color: var(--muted);
+}
+
+.column-selection--empty input:disabled {
+  cursor: not-allowed;
 }
 
 .column-selection:has(input:checked) em {

@@ -212,6 +212,15 @@ function ensureSecurityEnvelope(document, scripts) {
   csp.setAttribute("http-equiv", "Content-Security-Policy");
   csp.setAttribute("content", scripts.length ? SCRIPT_POLICY : STATIC_POLICY);
   document.head.prepend(csp);
+  // The sanitizer drops every <meta>; put back the two a page needs to read Chinese and fit a phone screen.
+  for (const existing of [...document.head.querySelectorAll('meta[charset], meta[name="viewport" i]')]) existing.remove();
+  const charset = document.createElement("meta");
+  charset.setAttribute("charset", "utf-8");
+  const viewport = document.createElement("meta");
+  viewport.setAttribute("name", "viewport");
+  viewport.setAttribute("content", "width=device-width, initial-scale=1");
+  document.head.prepend(charset);
+  csp.after(viewport);
   if (scripts.length) {
     const prelude = document.createElement("script");
     prelude.textContent = SCRIPT_PRELUDE;
@@ -227,7 +236,7 @@ function ensureSecurityEnvelope(document, scripts) {
 }
 
 function sandboxedPage(document, parser) {
-  const wrapper = parser.parseFromString("<!doctype html><html><head><meta charset=\"utf-8\"></head><body></body></html>", "text/html");
+  const wrapper = parser.parseFromString("<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"></head><body></body></html>", "text/html");
   wrapper.documentElement.lang = document.documentElement.lang;
   const csp = wrapper.createElement("meta");
   csp.setAttribute("http-equiv", "Content-Security-Policy");
@@ -293,6 +302,8 @@ export function restoreHtmlText(html, window, mapping) {
     ADD_ATTR: ["style"],
   });
   const postDocument = parser.parseFromString(sanitized, "text/html");
+  // The sanitizer may or may not keep <style>; put back exactly one copy of the cleaned styles.
+  for (const style of [...postDocument.querySelectorAll("style")]) style.remove();
   if (safeStyles) {
     const style = postDocument.createElement("style");
     style.textContent = safeStyles;

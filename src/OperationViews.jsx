@@ -1,3 +1,4 @@
+import { failureReason } from "./errorPresentation.js";
 import { OPERATION_LABELS, OPERATION_RESULTS } from "./operationLog.js";
 import { isFileTask } from "./operationTasks.js";
 
@@ -32,6 +33,7 @@ export function RecordFilename({ label, name }) {
 export function RecordList({ records, compact = false, withinTask = false }) {
   return <ol className="operation-list">{records.map(r => <li key={r.id}>
     <div className="operation-list__head"><strong>{OPERATION_LABELS[r.action] || "操作"}</strong><span data-result={r.result}>{OPERATION_RESULTS[r.result] || "未知状态"}</span></div>
+    {r.result === "failed" && failureReason(r.errorCode) && <p className="operation-list__reason">原因：{failureReason(r.errorCode)}</p>}
     {!compact && !/credential|mapping|export_records|view_all_records|rate_|feedback/.test(r.action) && <><RecordFilename label="输入" name={r.inputName} />{(r.outputName || /^(protect|restore|download_)/.test(r.action)) && <RecordFilename label="输出" name={r.outputName} />}</>}
     <time dateTime={r.time}>{new Date(r.time).toLocaleString("zh-CN", { hour12: false })}</time>
     {!compact && !withinTask && <p>{[r.userName, r.format?.toUpperCase(), r.taskId && `任务 ${r.marker || r.taskId}`].filter(Boolean).join(" · ")}</p>}

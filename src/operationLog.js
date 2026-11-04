@@ -21,6 +21,7 @@ function safeRecord(action, result, metadata) {
   if (/^(?:[A-F0-9]{8}|[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12})$/i.test(metadata.taskId ?? "")) record.taskId = metadata.taskId;
   if (/^[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{4}$/.test(metadata.marker ?? "")) record.marker = metadata.marker;
   if (["xlsx", "csv", "txt", "md", "docx", "pptx", "html"].includes(metadata.format)) record.format = metadata.format;
+  if (result === "failed" && /^[A-Z][A-Z0-9_]{1,39}$/.test(metadata.errorCode ?? "")) record.errorCode = metadata.errorCode;
   if (!action.includes("credential")) for (const key of ["inputName", "outputName"]) {
     if (typeof metadata[key] === "string") record[key] = metadata[key].split(/[\\/]/).pop().replace(/[\u0000-\u001f\u007f]/g, "").slice(0, 512);
   }

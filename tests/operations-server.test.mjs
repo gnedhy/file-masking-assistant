@@ -34,6 +34,11 @@ test('event whitelist, task formats, timestamps and basename protection',()=>{
   assert.equal(validateEvent({...event(),taskId:randomUUID()}).taskId.length,36);
   for(const extra of [{mapping:{}},{userId:'forged'},{inputName:'a'.repeat(513)},{version:2},{time:'invalid'},{action:'import_credential',inputName:'x'},{taskId:'DEMO0001'}])assert.throws(()=>validateEvent({...event(),...extra}));
 });
+// Failures carry an error code so the records can say why; never free text, which could quote file content.
+test('failed events keep a well-formed error code only',()=>{
+  assert.equal(validateEvent({...event(),result:'failed',errorCode:'NO_VALUES'}).errorCode,'NO_VALUES');
+  for(const extra of [{result:'success',errorCode:'NO_VALUES'},{result:'failed',errorCode:'所选列没有内容'},{result:'failed',errorCode:'x'.repeat(41)},{result:'failed',errorCode:42}])assert.throws(()=>validateEvent({...event(),...extra}));
+});
 test('filters always scope ordinary users and parameterize literal search',()=>{
   assert.throws(()=>buildFilter(TEST_USERS.alice,{user:'test-bob'}),/FORBIDDEN/);
   const f=buildFilter(TEST_USERS.alice,{query:"%' OR TRUE --",from:'2026-10-01',to:'2026-10-28'});

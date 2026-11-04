@@ -4,7 +4,7 @@ import { summarizeTask } from '../src/operationTasks.js';
 import { ISSUE_RESULTS, daySpan, localDay, operationReport, previousRange } from '../src/operationReports.js';
 
 const uuid = /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i;
-const fields = ['eventId','operationId','version','time','action','result','taskId','marker','format','inputName','outputName'];
+const fields = ['eventId','operationId','version','time','action','result','taskId','marker','format','inputName','outputName','errorCode'];
 const formats = ['xlsx','csv','txt','md','docx','pptx','html'];
 export function validateEvent(event, now = Date.now()) {
   if (!event || typeof event !== 'object' || Array.isArray(event) || Object.keys(event).some(k => !fields.includes(k))) throw new Error('INVALID_EVENT');
@@ -14,6 +14,8 @@ export function validateEvent(event, now = Date.now()) {
   if (event.taskId !== undefined && (typeof event.taskId !== 'string' || !(/^[a-f0-9]{8}$/i.test(event.taskId) || uuid.test(event.taskId)))) throw new Error('INVALID_TASK');
   if (event.marker !== undefined && (typeof event.marker !== 'string'||!/^[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{4}$/.test(event.marker))) throw new Error('INVALID_MARKER');
   if (event.format !== undefined && !formats.includes(event.format)) throw new Error('INVALID_FORMAT');
+  // Only an error code, never a message: messages can quote file content.
+  if (event.errorCode !== undefined && (event.result !== 'failed' || typeof event.errorCode !== 'string' || !/^[A-Z][A-Z0-9_]{1,39}$/.test(event.errorCode))) throw new Error('INVALID_ERROR_CODE');
   const result = {};
   for (const key of fields) if (event[key] !== undefined) result[key] = event[key];
   result.time = new Date(time).toISOString();
@@ -64,7 +66,7 @@ export function exportRange(filters = {}) {
   const start = new Date(); start.setDate(start.getDate() - 179);
   return reportRange({ from: filters.from || localDay(start), to: filters.to });
 }
-const columns = `event_id AS "eventId", event_id AS id, operation_id AS "operationId", owner_user_id AS "userId", user_name AS "userName", occurred_at AS time, received_at AS "receivedAt", action,result,task_id AS "taskId",marker,format,input_name AS "inputName",output_name AS "outputName",version`;
+const columns = `event_id AS "eventId", event_id AS id, operation_id AS "operationId", owner_user_id AS "userId", user_name AS "userName", occurred_at AS time, received_at AS "receivedAt", action,result,task_id AS "taskId",marker,format,input_name AS "inputName",output_name AS "outputName",version,payload->>'errorCode' AS "errorCode"`;
 const business = "action IN ('import_protect','import_restore','inspect_protect','inspect_restore','download_protect','download_restore','protect','restore')";
 const aggregates = `count(DISTINCT owner_user_id) FILTER (WHERE ${business})::int AS users,
  count(DISTINCT (owner_user_id,task_id)) FILTER (WHERE action='protect' AND result='success' AND task_id IS NOT NULL)::int AS protected,

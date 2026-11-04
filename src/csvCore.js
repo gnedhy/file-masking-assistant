@@ -1,4 +1,4 @@
-import { classifyHeader, findKnownShortTokens, recommendedProcessingMode } from "./xlsxCore.js";
+import { classifyHeader, findKnownShortTokens, isEmptyColumn, recommendedProcessingMode } from "./xlsxCore.js";
 import { createEntityToken, parseEntityToken, tokenPattern, tokenOccurrence } from "./tokenFormat.js";
 
 const DELIMITER_CANDIDATES = [",", "\t", ";"];
@@ -175,7 +175,7 @@ export function analyzeCsv(document) {
     format: "csv",
     sheets: [{ name: "CSV", headerRow, rowCount: document.rows.length, columns: suggestedColumns.length }],
     columns: suggestedColumns,
-    suggestedColumnIds: suggestedColumns.filter((column) => column.suggested).map((column) => column.id),
+    suggestedColumnIds: suggestedColumns.filter((column) => column.suggested && !isEmptyColumn(column)).map((column) => column.id),
   };
 }
 

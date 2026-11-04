@@ -33,6 +33,11 @@ export function classifyHeader(header) {
   return match ? { category: match.category, prefix: match.prefix } : { category: "custom", prefix: "X" };
 }
 
+// A column with no values at all (not even unsupported cells) has nothing to replace.
+export function isEmptyColumn(column) {
+  return column.valueCount === 0 && !column.complexCount;
+}
+
 export function recommendedProcessingMode(header) {
   const normalized = String(header).trim();
   const primaryHeader = normalizeHeader(normalized);
@@ -172,7 +177,8 @@ export function analyzeWorkbook(workbook) {
   return {
     sheets,
     columns,
-    suggestedColumnIds: columns.filter((column) => column.suggested).map((column) => column.id),
+    // An empty column has nothing to replace, so it is never pre-selected.
+    suggestedColumnIds: columns.filter((column) => column.suggested && !isEmptyColumn(column)).map((column) => column.id),
   };
 }
 
