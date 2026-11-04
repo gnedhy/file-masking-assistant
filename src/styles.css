@@ -6584,3 +6584,8 @@ input {
   .app-header .brand { flex: 0 1 auto; min-width: 0; }
   .app-header:has(.access-trigger) .brand > div { display: none; }
 }
+
+/* Phones keep 44px touch targets for every top-bar button. */
+@media (max-width: 640px), (max-width: 1000px) and (max-height: 500px) {
+  .local-status .audit-trigger, .guide-trigger { width: 44px; min-height: 44px; }
+}
