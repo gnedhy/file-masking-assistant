@@ -11,7 +11,8 @@ async function readJson(request) {
   while(true) { const {done,value}=await reader.read(); if(done) break; size+=value.byteLength; if(size>256*1024) { await reader.cancel(); throw Object.assign(new Error('REQUEST_TOO_LARGE'),{status:413}); } parts.push(value); }
   try { return JSON.parse(Buffer.concat(parts).toString('utf8')); } catch { throw new Error('INVALID_JSON'); }
 }
-export function createOperationsHandler({repository,origin,auth}) {
+// requestsPerMinute caps each signed-in user; the dev server raises it because parallel browser tests share accounts.
+export function createOperationsHandler({repository,origin,auth,requestsPerMinute=120}) {
   if(!origin||!auth)throw new Error('Operations origin and auth required');
   const rates=new Map();
   // An admin reading other people's records leaves one event per 10 minutes, so filter changes do not flood the log.
@@ -30,7 +31,7 @@ export function createOperationsHandler({repository,origin,auth}) {
     const {department,...rest}=filters;
     return {...rest,userIds:await auth.departmentUserIds(department)};
   };
-  const limit=key=>{const now=Date.now();let r=rates.get(key);if(!r||r.until<now)r={n:0,until:now+60000};r.n++;rates.set(key,r);if(rates.size>10000)for(const[k,v]of rates)if(v.until<now)rates.delete(k);if(r.n>120)throw Object.assign(new Error('RATE_LIMITED'),{status:429});};
+  const limit=key=>{const now=Date.now();let r=rates.get(key);if(!r||r.until<now)r={n:0,until:now+60000};r.n++;rates.set(key,r);if(rates.size>10000)for(const[k,v]of rates)if(v.until<now)rates.delete(k);if(r.n>requestsPerMinute)throw Object.assign(new Error('RATE_LIMITED'),{status:429});};
   return async request=>{
     const url=new URL(request.url),path=url.pathname;
     try {

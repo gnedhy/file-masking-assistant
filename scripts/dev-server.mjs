@@ -151,7 +151,8 @@ if (process.env.DATABASE_URL) {
   feedbackRepository = new PgFeedbackRepository({ connectionString: process.env.DATABASE_URL, masterKey: Buffer.alloc(32, 7) });
   await feedbackRepository.initialize(await readFile(new URL("../server/feedback-schema.sql", import.meta.url), "utf8"));
 }
-const handle = createAppHandler({ vaultRepository, operationsRepository, feedbackRepository, access, origin });
+// Four browsers run the tests at once with the same test accounts, so the per-user limit is raised here only.
+const handle = createAppHandler({ vaultRepository, operationsRepository, feedbackRepository, access, origin, requestsPerMinute: 5000 });
 
 const server = createServer(async (req, res) => {
   if (!API_PATHS.test(new URL(req.url, origin).pathname)) { vite.middlewares(req, res); return; }

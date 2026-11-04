@@ -4,8 +4,8 @@ import { createFeedbackHandler } from "./feedback.mjs";
 
 // One service, one session: access and operation routes answer first and hand everything else to the Vault routes.
 // `access` wraps the sign-in provider, so every handler sees isAdmin from the admin list.
-export function createAppHandler({ vaultRepository, operationsRepository, feedbackRepository, access, origin }) {
-  const operations = createOperationsHandler({ repository: operationsRepository, auth: access, origin });
+export function createAppHandler({ vaultRepository, operationsRepository, feedbackRepository, access, origin, requestsPerMinute }) {
+  const operations = createOperationsHandler({ repository: operationsRepository, auth: access, origin, requestsPerMinute });
   const vault = createVaultHandler({ repository: vaultRepository, auth: access });
   const feedback = feedbackRepository ? createFeedbackHandler({ repository: feedbackRepository, auth: access, origin }) : async () => null;
   return async request => {
