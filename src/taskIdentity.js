@@ -1,3 +1,4 @@
+import { randomId } from "./randomId.js";
 import { SHORT_MARKER_ALPHABET } from "./tokenFormat.js";
 import { VaultStoreError, getMarkerOwner, loadVault, reserveTaskMarker } from "./vaultStore.js";
 
@@ -5,7 +6,7 @@ const fail = (code, message) => { throw new VaultStoreError(code, message); };
 
 // Every new task uses short tokens; the server keeps marker → task so restore needs no extra file.
 export async function createProtectionIdentity(_options = {}, sourceText = "") {
-  const taskId = crypto.randomUUID();
+  const taskId = randomId();
   for (let attempt = 0; attempt < 256; attempt += 1) {
     // Rejection sampling keeps the 32-character alphabet unbiased.
     let marker = "";

@@ -1,4 +1,5 @@
 import { clearSession, getSession } from "./session.js";
+import { randomId } from "./randomId.js";
 
 const DB_NAME = "file-masking-assistant-v2-operation-outbox";
 const LIMIT = 5000;
@@ -142,7 +143,7 @@ async function flush() {
 
 export async function enqueueOperation(record) {
   if (!state.session && !await session().catch(() => false)) return false;
-  const event = { version: 1, eventId: crypto.randomUUID(), operationId: record.operationId || crypto.randomUUID() };
+  const event = { version: 1, eventId: randomId(), operationId: record.operationId || randomId() };
   for (const key of ["time", "action", "result", "taskId", "marker", "format", "inputName", "outputName"]) if (record[key] !== undefined) event[key] = record[key];
   const row = { eventId: event.eventId, owner: state.session.userId, status: "pending", event };
   row.bytes = new TextEncoder().encode(JSON.stringify(row)).byteLength;

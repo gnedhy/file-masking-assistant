@@ -1,4 +1,5 @@
 import { Fragment, lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { randomId } from "./randomId.js";
 import { TaskDetails } from "./TaskDetails.jsx";
 import { THEME_OPTIONS, ThemeSwitcher } from "./ThemeSwitcher.jsx";
 import { ConfirmDialog } from "./ConfirmDialog.jsx";
@@ -497,6 +498,18 @@ function WorkbookDownloadLink({ mode, result, requested, secondary = false, onRe
   );
 }
 
+// The Clipboard API is HTTPS-only; on the plain-HTTP intranet fall back to the legacy copy command.
+async function copyText(text) {
+  if (navigator.clipboard?.writeText) return navigator.clipboard.writeText(text);
+  const field = Object.assign(document.createElement("textarea"), { value: text, readOnly: true });
+  field.style.cssText = "position:fixed;top:0;left:0;opacity:0";
+  document.body.append(field);
+  field.select();
+  const copied = document.execCommand("copy");
+  field.remove();
+  if (!copied) throw new Error("COPY_FAILED");
+}
+
 function AiHandoff({ taskId, marker }) {
   const [copyState, setCopyState] = useState("idle");
   const instruction = marker
@@ -504,7 +517,7 @@ function AiHandoff({ taskId, marker }) {
     : `文件中的 [[字段名称:P001@${taskId}]] 等是已脱敏的业务实体代号，请当作对应对象分析。引用时必须完整原样保留代号，不要删除、缩写或改写，也不要猜测真实身份。`;
   const copyInstruction = async () => {
     try {
-      await navigator.clipboard.writeText(instruction);
+      await copyText(instruction);
       setCopyState("copied");
     } catch {
       setCopyState("manual");
@@ -1244,7 +1257,7 @@ export function App() {
   };
 
   const inspectFile = async (selected) => {
-    operationIdRef.current = crypto.randomUUID();
+    operationIdRef.current = randomId();
     dragDepthRef.current = 0; setIsDraggingFile(false);
     const format = fileFormatFromName(selected.name);
     recordFileOperation(`import_${mode}`, "requested", { inputName: selected.name, format });
