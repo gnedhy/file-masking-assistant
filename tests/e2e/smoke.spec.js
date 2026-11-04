@@ -15,8 +15,8 @@ test("中文多工作表的字段标签独立关联，不再提供替换方式�
   await page.goto("/");
   await page.locator('input[type="file"]:not([accept=".json"])').setInputFiles({ name: "虚构多表.xlsx", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", buffer: Buffer.from(await workbook.xlsx.writeBuffer()) });
   await expect(page.getByText("代号格式")).toHaveCount(0);
-  await page.getByRole("button", { name: /确认替换列/ }).click();
-  const drawer = page.getByRole("dialog", { name: "替换列", exact: true });
+  await page.getByRole("button", { name: /确认替换内容/ }).click();
+  const drawer = page.getByRole("dialog", { name: "替换内容", exact: true });
   await expect(drawer.getByText("勾选里面是公司名、人名、编号的列，这些内容会换成代号；备注这类长文字列会自动只替换句子里的名称。")).toBeVisible();
   // 部门 is not a name column, so it sits in the folded "其他 N 列".
   await openMoreColumns(drawer);
@@ -166,8 +166,8 @@ test("CSV 文件选择、任务抽屉和失败关闭可用", async ({ page }) =>
   const input = page.locator('input[type="file"]:not([accept=".json"])');
 
   await input.setInputFiles(path.resolve("tests/fixtures/01_标准销售数据_UTF8.csv"));
-  await expect(page.getByText("确认替换列")).toBeVisible();
-  await page.getByRole("button", { name: /确认替换列/ }).click();
+  await expect(page.getByText("确认替换内容")).toBeVisible();
+  await page.getByRole("button", { name: /确认替换内容/ }).click();
   const safetyDialog = page.getByRole("dialog", { name: /替换列|替换内容|检查详情/ });
   await expect(safetyDialog.getByRole("checkbox", { name: /F 列 · 业务员反馈/ })).toBeChecked();
   // A long-text column is handled automatically: the sentence stays, only the names in it are replaced.
@@ -195,7 +195,7 @@ test("CSV 没勾选的叙述列里的名称也会自动替换，并说明替换�
   await page.goto("/");
   const input = page.locator('input[type="file"]:not([accept=".json"])');
   await input.setInputFiles(path.resolve("tests/fixtures/01_标准销售数据_UTF8.csv"));
-  await page.getByRole("button", { name: /确认替换列/ }).click();
+  await page.getByRole("button", { name: /确认替换内容/ }).click();
   const safetyDialog = page.getByRole("dialog", { name: /替换列|替换内容|检查详情/ });
   await safetyDialog.getByRole("checkbox", { name: /F 列 · 业务员反馈/ }).uncheck();
   await safetyDialog.getByRole("button", { name: "关闭详情" }).click();
@@ -220,7 +220,7 @@ test("连不上公司服务器时不生成脱敏文件", async ({ page }) => {
   await page.goto("/");
   await page.route("**/api/v1/vault-markers", route => route.abort());
   await page.locator('input[type="file"]:not([accept=".json"])').setInputFiles(path.resolve("tests/fixtures/01_标准销售数据_UTF8.csv"));
-  await expect(page.getByText("确认替换列")).toBeVisible();
+  await expect(page.getByText("确认替换内容")).toBeVisible();
   await page.getByRole("button", { name: /生成脱敏文件/ }).click();
   await expect(page.getByRole("heading", { name: "暂时连不上公司服务器" })).toBeVisible();
   await expect(page.getByText("没有生成输出文件")).toBeVisible();

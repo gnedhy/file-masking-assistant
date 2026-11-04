@@ -376,7 +376,7 @@ function ReadyState({ mode, file, analysis, selectedIds, fieldModes = {}, restor
   const summary = mode === "protect"
     ? analysis?.kind === "text"
       ? `已选择 ${selectedCandidates.length} 项敏感内容，共出现 ${selectedCandidates.reduce((sum, item) => sum + item.count, 0)} 处`
-      : `已选择 ${selectedColumns.length} 列，将检查 ${valueCount} ${valueUnit}${selectedCandidates.length ? `；另有 ${selectedCandidates.length} 个名称会在整个文件里替换` : ""}`
+      : `已选择 ${[selectedColumns.length ? `${selectedColumns.length} 列` : "", selectedCandidates.length ? `${selectedCandidates.length} 个关键词` : ""].filter(Boolean).join("、") || "0 列"}${selectedColumns.length ? `，将检查 ${valueCount} ${valueUnit}` : ""}`
     : `已识别 ${restoreInspection.formatLabel} · 发现 ${restoreInspection.occurrences} 处代号 · 使用 ${restoreInspection.usedMappings} 条还原记录`;
 
   return (
@@ -446,7 +446,7 @@ function ReadyState({ mode, file, analysis, selectedIds, fieldModes = {}, restor
         // The header and the preview share one card so the sizes read as one block.
         <div className="replacement-card">
           <button className="evidence-trigger" type="button" onClick={onDetails} aria-expanded={detailsOpen} aria-controls="security-details">
-            <span><ShieldCheck weight="bold" /><strong>{analysis?.kind === "text" || selectedCandidates.length ? "确认替换内容" : "确认替换列"}</strong></span>
+            <span><ShieldCheck weight="bold" /><strong>确认替换内容</strong></span>
             <span className="evidence-trigger__action">查看并调整<CaretRight weight="bold" /></span>
           </button>
           <ReplacementPreview items={analysis?.kind === "text"
@@ -810,7 +810,7 @@ function TextCandidateSelection({ analysis, selectedIds, onToggle, onAdd, onRemo
             </article>
           );
         })}
-        {!visible.length && <p className="text-candidates__empty">{candidates.length ? "没有匹配的候选；可以清除搜索或手动添加文件中的完整文字。" : "没有在表单里找到其他名称；有需要可以在下面手动添加。"}</p>}
+        {!visible.length && <p className="text-candidates__empty">{candidates.length ? "没有匹配的候选；可以清除搜索或手动添加文件中的完整文字。" : "系统没有找到需要补充的名称；有需要可以在下面手动添加。"}</p>}
       </div>
       <div className="text-candidates__manual">
         <label htmlFor="manual-sensitive-value">手动添加</label>
@@ -833,6 +833,15 @@ function SecurityDrawer({ mode, status, analysis, selectedIds, fieldModes = {}, 
   const selectedMetricColumns = selectedColumns.filter((column) => column.processingMode === "whole" && METRIC_HEADER_PATTERN.test(column.header));
   const wholeColumnCount = selectedColumns.filter((column) => column.processingMode === "whole").length;
   const selectedCandidateCount = (analysis?.candidates ?? []).filter((candidate) => selectedIds.includes(candidate.id)).length;
+  // Tables are replaced by column, everything else by keyword; only the parts that exist in this file are shown.
+  const candidateList = analysis?.candidates ?? [];
+  const tableSheets = new Set((analysis?.columns ?? []).filter((column) => column.suggested || selectedIds.includes(column.id)).map((column) => column.sheetName));
+  const plainSheets = [...new Set(candidateList.flatMap((item) => (item.locations ?? []).map((place) => place.sheet)))].filter((sheet) => sheet !== "CSV" && !tableSheets.has(sheet));
+  const keywordSection = !analysis || analysis.kind === "text" ? null
+    : !analysis.columns.length ? { title: "需要替换的关键词", hint: "这个文件没有表格，按关键词替换：勾选的名称会在整个文件里替换。系统认不全简称和昵称（如“马总”），可以在下面补充。" }
+      : plainSheets.length ? { title: "需要替换的关键词", hint: `以下工作表不是表格，按关键词替换：${plainSheets.join("、")}。勾选的名称会在整个文件里替换。系统认不全简称和昵称（如“马总”），可以在下面补充。` }
+        : candidateList.length ? { title: "没勾选的列里还有这些名称", hint: "例如写在备注里；勾选的会一起替换。系统认不全简称和昵称（如“马总”），可以在下面补充。" }
+          : { title: "补充关键词", hint: "系统认不全简称和昵称（如“马总”），可以在这里补充，会在整个文件里替换。" };
   const errorDiagnosis = error ? buildErrorDiagnosis(error) : null;
   const comparison = result?.occurrenceComparison ?? restoreInspection?.occurrenceComparison;
   const changedTokens = comparison?.byToken?.filter((item) => item.missing || item.added) ?? [];
@@ -862,7 +871,7 @@ function SecurityDrawer({ mode, status, analysis, selectedIds, fieldModes = {}, 
 
   return (
     <aside className="security-drawer" id="security-details" ref={drawerRef} role={modal ? "dialog" : undefined} aria-modal={modal || undefined} aria-labelledby="security-details-title">
-      <div className="drawer-head"><h2 id="security-details-title">{error ? "详细信息" : mode === "protect" && status === "ready" ? analysis?.kind === "text" || analysis?.candidates?.length ? "替换内容" : "替换列" : "检查详情"}</h2><button ref={closeButtonRef} className="icon-button" type="button" onClick={onClose} aria-label="关闭详情"><X /></button></div>
+      <div className="drawer-head"><h2 id="security-details-title">{error ? "详细信息" : mode === "protect" && status === "ready" ? "替换内容" : "检查详情"}</h2><button ref={closeButtonRef} className="icon-button" type="button" onClick={onClose} aria-label="关闭详情"><X /></button></div>
       <div className="drawer-body">
       {!(mode === "protect" && status === "ready") && <div className={`drawer-summary ${error ? "drawer-summary--warning" : status === "success" ? "" : "drawer-summary--pending"}`}>
         {error ? <WarningCircle weight="fill" /> : status === "success" ? <CheckCircle weight="fill" /> : <Info weight="fill" />}
@@ -968,9 +977,9 @@ function SecurityDrawer({ mode, status, analysis, selectedIds, fieldModes = {}, 
           )}
         </section>
       )}
-      {mode === "protect" && analysis && analysis.kind !== "text" && status === "ready" && (
-        <TextCandidateSelection compact analysis={analysis} selectedIds={selectedIds} onToggle={onToggleColumn} onAdd={onAddCandidate} onRemove={onRemoveCandidate} onSetSelection={onSetSelection}
-          title={`其他名称${analysis.candidates?.length ? `（${analysis.candidates.length}）` : ""}`} hint="表单、说明文字里找到的公司名和人名，勾选的会在整个文件里替换。系统认不全简称和昵称（如“马总”），请手动添加。" />
+      {mode === "protect" && analysis && analysis.kind !== "text" && status === "ready" && keywordSection && (
+        <TextCandidateSelection compact={analysis.columns.length > 0} analysis={analysis} selectedIds={selectedIds} onToggle={onToggleColumn} onAdd={onAddCandidate} onRemove={onRemoveCandidate} onSetSelection={onSetSelection}
+          title={keywordSection.title} hint={keywordSection.hint} />
       )}
 
       <div className="task-token-note"><ShieldCheck weight="bold" /><p><strong>处理边界</strong>未选内容、上下文和图片仍可能含敏感信息。</p></div>

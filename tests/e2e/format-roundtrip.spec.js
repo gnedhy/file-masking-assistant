@@ -183,7 +183,7 @@ test("CSV 没勾选的列里的名称自动替换；短值不自动替换，停�
   await page.goto("/");
   await fileInput(page).setInputFiles({ name: "残留.csv", mimeType: "text/csv", buffer: Buffer.from("客户名称,跟进记录\n星河科技,已联系星河科技\n") });
   await page.getByRole("button", { name: "生成脱敏文件" }).waitFor();
-  await page.getByRole("button", { name: /确认替换列/ }).click();
+  await page.getByRole("button", { name: /确认替换内容/ }).click();
   const drawer = page.getByRole("dialog");
   await openMoreColumns(drawer);
   const notes = drawer.getByRole("checkbox", { name: /跟进记录/ });
@@ -197,7 +197,7 @@ test("CSV 没勾选的列里的名称自动替换；短值不自动替换，停�
   await page.goto("/");
   await fileInput(page).setInputFiles({ name: "短值.csv", mimeType: "text/csv", buffer: Buffer.from("客户名称,跟进记录\n李,联系了李\n") });
   await page.getByRole("button", { name: "生成脱敏文件" }).waitFor();
-  await page.getByRole("button", { name: /确认替换列/ }).click();
+  await page.getByRole("button", { name: /确认替换内容/ }).click();
   await openMoreColumns(drawer);
   const shortNotes = drawer.getByRole("checkbox", { name: /跟进记录/ });
   if (await shortNotes.isChecked()) await shortNotes.uncheck();
