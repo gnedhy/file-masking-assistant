@@ -179,7 +179,7 @@ test("XLSX 默认勾选即可完成，所选列以外相同的名称也一并替
   await expect(page.getByRole("dialog", { name: "检查详情" })).toContainText(/所选列以外\s*测试说明 \d+ 处、销售测试数据 \d+ 处/);
 });
 
-test("CSV 列内残留可一键加入，短值不提供一键加入", async ({ page }) => {
+test("CSV 没勾选的列里的名称自动替换；短值不自动替换，停下并指明位置", async ({ page }) => {
   await page.goto("/");
   await fileInput(page).setInputFiles({ name: "残留.csv", mimeType: "text/csv", buffer: Buffer.from("客户名称,跟进记录\n星河科技,已联系星河科技\n") });
   await page.getByRole("button", { name: "生成脱敏文件" }).waitFor();
@@ -191,9 +191,8 @@ test("CSV 列内残留可一键加入，短值不提供一键加入", async ({ p
   await drawer.getByLabel("关闭详情").click();
   await expect(drawer).toHaveCount(0);
   await page.getByRole("button", { name: "生成脱敏文件" }).click();
-  await expect(page.locator(".error-issues li")).toHaveText(["B 列 · 跟进记录"]);
-  await page.getByRole("button", { name: "加入这 1 列并重新生成" }).click();
   await expect(page.getByRole("link", { name: "下载脱敏文件" })).toBeVisible();
+  await expect(page.locator(".state-description")).toContainText("除了所选的列，还在「跟进记录」列里替换了 1 处相同的名称");
 
   await page.goto("/");
   await fileInput(page).setInputFiles({ name: "短值.csv", mimeType: "text/csv", buffer: Buffer.from("客户名称,跟进记录\n李,联系了李\n") });
@@ -206,6 +205,7 @@ test("CSV 列内残留可一键加入，短值不提供一键加入", async ({ p
   await expect(drawer).toHaveCount(0);
   await page.getByRole("button", { name: "生成脱敏文件" }).click();
   await expect(page.getByRole("heading", { name: "还有真实名称没有替换掉" })).toBeVisible();
+  await expect(page.locator(".error-issues li")).toHaveText(["第 2 行第 2 列"]);
   await expect(page.getByRole("button", { name: /并重新生成$/ })).toHaveCount(0);
 });
 

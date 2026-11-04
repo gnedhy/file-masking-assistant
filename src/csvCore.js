@@ -1,4 +1,4 @@
-import { classifyHeader, findKnownShortTokens, isEmptyColumn, isPlaceholderValue, recommendedProcessingMode } from "./xlsxCore.js";
+import { classifyHeader, findKnownShortTokens, isEmptyColumn, isPlaceholderValue, recommendedProcessingMode, spreadsAcrossWorkbook } from "./xlsxCore.js";
 import { createEntityToken, parseEntityToken, tokenPattern, tokenOccurrence } from "./tokenFormat.js";
 
 const DELIMITER_CANDIDATES = [",", "\t", ";"];
@@ -176,6 +176,9 @@ export function analyzeCsv(document) {
     sheets: [{ name: "CSV", headerRow, rowCount: document.rows.length, columns: suggestedColumns.length }],
     columns: suggestedColumns,
     suggestedColumnIds: suggestedColumns.filter((column) => column.suggested && !isEmptyColumn(column)).map((column) => column.id),
+    // Keywords added by hand are looked up in the file's text.
+    candidates: [],
+    sourceText: document.rows.map((row) => row.join("\n")).join("\n"),
   };
 }
 
@@ -283,12 +286,15 @@ function replaceKnownEntities(text, entityIndex) {
   return { text: segments.map((segment) => segment.text).join(""), replacements };
 }
 
-export function tokenizeCsv(document, selectedColumns, taskId) {
+// candidates: names the user confirmed or added by hand, each { value, label, category, prefix }.
+export function tokenizeCsv(document, selectedColumns, taskId, candidates = []) {
   const counters = { C: 0, P: 0, S: 0, X: 0 };
   const tokenByValue = new Map();
   const mapping = {};
   const warnings = [];
   const dictionaryBySource = new Map();
+  // Cells (row:column) that a selected column already handled; the workbook-wide pass leaves them alone.
+  const handled = new Set();
   let replacedCells = 0;
 
   const columnsByMode = {
@@ -300,6 +306,7 @@ export function tokenizeCsv(document, selectedColumns, taskId) {
     const columnIndex = column.columnNumber - 1;
     for (let rowIndex = column.headerRow; rowIndex < document.rows.length; rowIndex += 1) {
       const row = document.rows[rowIndex];
+      handled.add(`${rowIndex}:${columnIndex}`);
       const value = row[columnIndex] ?? "";
       if (!String(value).trim() || isPlaceholderValue(value)) continue;
       if (tokenPattern("").test(String(value))) {
@@ -328,12 +335,33 @@ export function tokenizeCsv(document, selectedColumns, taskId) {
     }
   }
 
-  const entityIndex = buildEntityIndex(Array.from(dictionaryBySource, ([source, token], order) => ({ source, token, order })));
+  // Names confirmed by hand get their own alias unless a selected column already gave them one; they are
+  // replaced everywhere, whatever their length.
+  const forced = new Set();
+  const tokenByText = new Map(Object.entries(mapping).map(([token, entry]) => [String(entry.value?.value ?? ""), token]));
+  for (const item of candidates) {
+    const source = String(item.value ?? "").trim();
+    if (!source || isPlaceholderValue(source)) continue;
+    let token = tokenByText.get(source);
+    if (!token) {
+      const prefix = item.prefix || "X";
+      counters[prefix] += 1;
+      token = createEntityToken({ label: item.label, category: item.category, prefix, sequence: counters[prefix], taskId });
+      mapping[token] = { value: { type: "string", value: source }, category: item.category, header: item.label };
+      tokenByText.set(source, token);
+    }
+    dictionaryBySource.set(source, token);
+    forced.add(source);
+  }
+
+  const dictionaryEntries = Array.from(dictionaryBySource, ([source, token], order) => ({ source, token, order }));
+  const entityIndex = buildEntityIndex(dictionaryEntries);
 
   for (const column of columnsByMode.inline) {
     const columnIndex = column.columnNumber - 1;
     for (let rowIndex = column.headerRow; rowIndex < document.rows.length; rowIndex += 1) {
       const row = document.rows[rowIndex];
+      handled.add(`${rowIndex}:${columnIndex}`);
       const value = row[columnIndex] ?? "";
       if (!String(value).trim()) continue;
       if (tokenPattern("").test(String(value))) {
@@ -348,7 +376,41 @@ export function tokenizeCsv(document, selectedColumns, taskId) {
     }
   }
 
-  return { mapping, replacedCells, uniqueValues: Object.keys(mapping).length, warnings, notices: [] };
+  // People pick the columns that hold names; the same names in every other column (notes, follow-up text, a
+  // second name column) are replaced too. Only names and longer codes are looked for there: a quantity that
+  // happens to equal a short code is never touched (see spreadsAcrossWorkbook).
+  const elsewhere = replaceAcrossCsv(document, dictionaryEntries.filter(({ source }) => forced.has(source) || spreadsAcrossWorkbook(source)), handled, selectedColumns[0]?.headerRow - 1);
+  replacedCells += elsewhere.cells;
+
+  return { mapping, replacedCells, uniqueValues: Object.keys(mapping).length, warnings, notices: [], elsewhere };
+}
+
+function replaceAcrossCsv(document, entries, handled, headerIndex) {
+  const result = { cells: 0, sheets: [], unit: "列" };
+  if (!entries.length) return result;
+  const exactToken = new Map(entries.map(({ source, token }) => [source, token]));
+  const index = buildEntityIndex(entries);
+  const perColumn = new Map();
+  document.rows.forEach((row, rowIndex) => {
+    if (rowIndex === headerIndex) return;
+    row.forEach((value, columnIndex) => {
+      if (handled.has(`${rowIndex}:${columnIndex}`)) return;
+      const text = String(value ?? "");
+      if (!text.trim() || isPlaceholderValue(text) || tokenPattern("").test(text)) return;
+      let next = exactToken.get(text.trim()) ?? null;
+      if (next == null) {
+        const replaced = replaceKnownEntities(text, index);
+        if (replaced.replacements) next = replaced.text;
+      }
+      if (next == null) return;
+      row[columnIndex] = next;
+      result.cells += 1;
+      perColumn.set(columnIndex, (perColumn.get(columnIndex) ?? 0) + 1);
+    });
+  });
+  const headers = document.rows[headerIndex] ?? [];
+  result.sheets = [...perColumn].sort((a, b) => a[0] - b[0]).map(([columnIndex, cells]) => ({ sheet: String(headers[columnIndex] ?? "").trim() || `第 ${columnIndex + 1} 列`, cells }));
+  return result;
 }
 
 export function inspectCsvTokens(document) {

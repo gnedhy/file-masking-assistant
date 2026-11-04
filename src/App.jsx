@@ -2,7 +2,6 @@ import { Fragment, lazy, Suspense, useCallback, useEffect, useRef, useState } fr
 import { randomId } from "./randomId.js";
 import { isEmptyColumn } from "./xlsxCore.js";
 import { ERROR_PRESENTATION, residualPlace } from "./errorPresentation.js";
-import { Dropdown } from "./Dropdown.jsx";
 import { TaskDetails } from "./TaskDetails.jsx";
 import { THEME_OPTIONS, ThemeSwitcher } from "./ThemeSwitcher.jsx";
 import { ConfirmDialog } from "./ConfirmDialog.jsx";
@@ -365,7 +364,7 @@ function ReadyState({ mode, file, analysis, selectedIds, fieldModes = {}, restor
     .filter((column) => selectedIds.includes(column.id))
     .map((column) => ({ ...column, processingMode: fieldModes[column.id] ?? column.recommendedMode ?? "whole" }));
   const wholeColumnCount = selectedColumns.filter((column) => column.processingMode === "whole").length;
-  const hasOnlyInlineFields = mode === "protect" && analysis?.kind !== "text" && selectedColumns.length > 0 && wholeColumnCount === 0;
+  const hasOnlyInlineFields = mode === "protect" && analysis?.kind !== "text" && selectedColumns.length > 0 && wholeColumnCount === 0 && selectedCandidates.length === 0;
   const valueCount = selectedColumns.reduce((sum, column) => sum + column.valueCount, 0);
   const valueUnit = fileFormatFromName(file.name) === "csv" ? "个字段值" : "个单元格";
   const comparison = restoreInspection?.occurrenceComparison;
@@ -419,8 +418,8 @@ function ReadyState({ mode, file, analysis, selectedIds, fieldModes = {}, restor
         <div className="task-change-banner" role="alert">
           <WarningCircle weight="bold" aria-hidden="true" />
           <span>
-            <strong>请先保留至少一列“整个单元格”</strong>
-            <small>“仅文中已选内容”需要以客户、产品或人员等完整字段作为准确依据，不能自行猜测备注里哪些文字需要替换。</small>
+            <strong>请再勾选一列公司名、人名或编号</strong>
+            <small>现在勾选的都是备注这类长文字列。系统要先知道有哪些名称（例如客户名称、业务员列），才能把长文字里的这些名称换成代号。</small>
           </span>
         </div>
       )}
@@ -442,7 +441,7 @@ function ReadyState({ mode, file, analysis, selectedIds, fieldModes = {}, restor
           </button>
           <ReplacementPreview items={analysis?.kind === "text"
             ? selectedCandidates.map((item) => ({ key: item.id, title: item.value, detail: `${item.label} · ${item.count} 处` }))
-            : [...selectedColumns.map((column) => ({ key: column.id, title: column.header, detail: `${column.processingMode === "whole" ? "整个单元格" : "仅文中已选内容"} · ${column.valueCount} 个值` })), ...selectedCandidates.map((item) => ({ key: item.id, title: item.value, detail: `${item.label} · ${item.count} 处` }))]} />
+            : [...selectedColumns.map((column) => ({ key: column.id, title: column.header, detail: `${column.processingMode === "whole" ? "" : "长文字 · "}${column.valueCount} 个值` })), ...selectedCandidates.map((item) => ({ key: item.id, title: item.value, detail: `${item.label} · ${item.count} 处` }))]} />
         </div>
       ) : null}
       <button className="primary-button" type="button" onClick={onPrimary} disabled={mode === "protect" ? (!(analysis?.kind === "text" ? selectedCandidates.length : selectedColumns.length + selectedCandidates.length) || hasOnlyInlineFields) : false}>
@@ -566,7 +565,8 @@ function mediaPhrase(media) {
 function elsewhereSentence(elsewhere) {
   if (!elsewhere?.cells) return "";
   const sheets = elsewhere.sheets.map(item => `「${item.sheet}」`);
-  const where = sheets.length > 3 ? `${sheets.slice(0, 3).join("")}等 ${sheets.length} 个工作表` : `${sheets.join("")}${sheets.length > 1 ? ` ${sheets.length} 个工作表` : "工作表"}`;
+  const unit = elsewhere.unit ?? "工作表";
+  const where = sheets.length > 3 ? `${sheets.slice(0, 3).join("")}等 ${sheets.length} 个${unit}` : `${sheets.join("")}${sheets.length > 1 ? ` ${sheets.length} 个${unit}` : unit}`;
   return `除了所选的列，还在${where}里替换了 ${elsewhere.cells} 处相同的名称。`;
 }
 
@@ -746,7 +746,7 @@ function buildErrorDiagnosis(error) {
     analysis: preset?.analysis || defaultCopy?.description || error?.message || "当前文件未通过安全检查，系统已停止输出。",
     suggestions: preset?.suggestions || [
       defaultCopy?.guidance || "根据问题概要检查文件内容或任务状态。",
-      code === "SENSITIVE_RESIDUALS" ? "仅调整字段时无需重新上传，关闭详情后点击“调整选择字段”并重新生成；修改了源文件才需要重新导入。" : "修正后重新导入文件；不要绕过安全拦截。",
+      code === "SENSITIVE_RESIDUALS" ? "名称太短时（例如只有 1 个字），系统不会自动在句子里替换，以免误伤其他内容。关闭详情后点击“调整选择字段”，用“手动添加”把这个名称加进去再重新生成，不需要重新上传；也可以在原文件里把名称写完整后重新导入。" : "修正后重新导入文件；不要绕过安全拦截。",
     ],
     summary: details.length
       ? `共发现 ${details.length} 项问题，主要位于 ${summarizeIssueLocations(details)}。`
@@ -810,15 +810,14 @@ function TextCandidateSelection({ analysis, selectedIds, onToggle, onAdd, onRemo
   );
 }
 
-const REPLACE_MODES = [{ value: "whole", label: "整个单元格" }, { value: "inline", label: "仅文中已选内容" }];
-
-function SecurityDrawer({ mode, status, analysis, selectedIds, fieldModes = {}, restoreInspection, result, error, modal, drawerRef, closeButtonRef, onClose, onToggleColumn, onModeChange, onAddCandidate, onRemoveCandidate, onSetSelection }) {
+function SecurityDrawer({ mode, status, analysis, selectedIds, fieldModes = {}, restoreInspection, result, error, modal, drawerRef, closeButtonRef, onClose, onToggleColumn, onAddCandidate, onRemoveCandidate, onSetSelection }) {
   const [issuesExpanded, setIssuesExpanded] = useState(false);
   const selectedColumns = (analysis?.columns ?? [])
     .filter((column) => selectedIds.includes(column.id))
     .map((column) => ({ ...column, processingMode: fieldModes[column.id] ?? column.recommendedMode ?? "whole" }));
   const selectedMetricColumns = selectedColumns.filter((column) => column.processingMode === "whole" && METRIC_HEADER_PATTERN.test(column.header));
   const wholeColumnCount = selectedColumns.filter((column) => column.processingMode === "whole").length;
+  const selectedCandidateCount = (analysis?.candidates ?? []).filter((candidate) => selectedIds.includes(candidate.id)).length;
   const errorDiagnosis = error ? buildErrorDiagnosis(error) : null;
   const comparison = result?.occurrenceComparison ?? restoreInspection?.occurrenceComparison;
   const changedTokens = comparison?.byToken?.filter((item) => item.missing || item.added) ?? [];
@@ -838,7 +837,7 @@ function SecurityDrawer({ mode, status, analysis, selectedIds, fieldModes = {}, 
                 <div className={empty ? "column-selection column-selection--empty" : "column-selection"} key={column.id}>
                   <input id={inputId} type="checkbox" checked={checked} disabled={empty && !checked} onChange={() => onToggleColumn(column.id)} />
                   <label className="column-selection__copy" htmlFor={inputId}><strong>{spreadsheetColumnLabel(column.columnNumber)} 列 · {column.header}</strong><small>{column.sheetName} · {empty ? "这一列没有内容，无需替换" : <>{column.valueCount} 个值{column.samples[0] ? ` · 示例 ${column.samples[0]}` : ""}</>}</small></label>
-                  <div className="column-selection__method"><span>替换方式</span><Dropdown className="column-selection__mode" label={`${column.header}的替换方式`} value={fieldModes[column.id] ?? column.recommendedMode ?? "whole"} disabled={!checked} onChange={(next) => onModeChange(column.id, next)} options={REPLACE_MODES} /></div>
+                  {checked && (fieldModes[column.id] ?? column.recommendedMode ?? "whole") === "inline" && <p className="column-selection__method">长文字列：保留句子，只替换其中的名称</p>}
                   <em>{empty ? "无内容" : column.suggested ? "自动建议" : "可自定义"}</em>
                 </div>
               );
@@ -929,7 +928,7 @@ function SecurityDrawer({ mode, status, analysis, selectedIds, fieldModes = {}, 
 
       {mode === "protect" && analysis && analysis.kind !== "text" && status === "ready" && (
         <section className="protection-section" aria-labelledby="protection-title">
-          <div className="protection-section__head"><div><h3 id="protection-title">需要替换的列</h3><p>勾选需要保护的列；替换方式按列名自动推荐，可手动调整。</p></div></div>
+          <div className="protection-section__head"><div><h3 id="protection-title">需要替换的列</h3><p>勾选里面是公司名、人名、编号的列，这些内容会换成代号；备注这类长文字列会自动只替换句子里的名称。</p></div></div>
           <div className="column-selection-list">
             {renderColumns(analysis.columns.filter((column) => selectedIds.includes(column.id) || column.suggested))}
           </div>
@@ -939,9 +938,8 @@ function SecurityDrawer({ mode, status, analysis, selectedIds, fieldModes = {}, 
               <div className="column-selection-list">{renderColumns(analysis.columns.filter((column) => !selectedIds.includes(column.id) && !column.suggested))}</div>
             </details>
           )}
-          <p className="drawer-note drawer-note--method"><Info weight="bold" /><span><strong>整个单元格</strong>：整格换成一个代号。<strong>仅文中已选内容</strong>：只替换其他已选整格列中确认的内容，保留句子，不猜测陌生名称。</span></p>
-          {selectedColumns.length > 0 && wholeColumnCount === 0 && (
-            <p className="drawer-note drawer-note--warning"><WarningCircle weight="bold" /><span>当前全部选为“仅文中已选内容”。请至少把一列客户、产品、人员或自定义实体设为“整个单元格”，作为文中识别依据。</span></p>
+          {selectedColumns.length > 0 && wholeColumnCount === 0 && selectedCandidateCount === 0 && (
+            <p className="drawer-note drawer-note--warning"><WarningCircle weight="bold" /><span>现在勾选的都是长文字列。请至少再勾选一列公司名、人名或编号（例如客户名称、业务员），系统才知道长文字里该换哪些词。</span></p>
           )}
           {selectedMetricColumns.length > 0 ? (
             <p className="drawer-note drawer-note--warning">
@@ -1372,10 +1370,6 @@ export function App() {
     setSelectedIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
   };
 
-  const changeProtectionMode = (id, processingMode) => {
-    setFieldModes((current) => ({ ...current, [id]: processingMode }));
-  };
-
   const addTextCandidate = (value) => {
     const item = addManualCandidate(analysis, value);
     setAnalysis((current) => ({ ...current, candidates: [...current.candidates, item] }));
@@ -1432,7 +1426,7 @@ export function App() {
           <MobileProgress stage={routeStage} />
           <input ref={inputRef} className="visually-hidden" type="file" accept={(mode === "protect" ? SUPPORTED_PROTECT_FORMATS : SUPPORTED_RESTORE_FORMATS).map(format => `.${format}`).join(",")} tabIndex={-1} aria-label={`选择待${mode === "protect" ? "脱敏" : "还原"}的 ${formatList(mode)} 文件`} onChange={handleFileInput} />
         </section>
-        {detailsOpen && <><button className="drawer-scrim" type="button" tabIndex={-1} onClick={closeDetails} aria-label="关闭详情" /><SecurityDrawer mode={mode} status={status} analysis={analysis} selectedIds={selectedIds} fieldModes={fieldModes} restoreInspection={restoreInspection} result={result} error={error} modal drawerRef={drawerRef} closeButtonRef={closeButtonRef} onClose={closeDetails} onToggleColumn={toggleProtectionColumn} onModeChange={changeProtectionMode} onAddCandidate={addTextCandidate} onRemoveCandidate={removeTextCandidate} onSetSelection={setSelectedIds} /></>}
+        {detailsOpen && <><button className="drawer-scrim" type="button" tabIndex={-1} onClick={closeDetails} aria-label="关闭详情" /><SecurityDrawer mode={mode} status={status} analysis={analysis} selectedIds={selectedIds} fieldModes={fieldModes} restoreInspection={restoreInspection} result={result} error={error} modal drawerRef={drawerRef} closeButtonRef={closeButtonRef} onClose={closeDetails} onToggleColumn={toggleProtectionColumn} onAddCandidate={addTextCandidate} onRemoveCandidate={removeTextCandidate} onSetSelection={setSelectedIds} /></>}
         {localTasksOpen && <><button className="drawer-scrim drawer-scrim--local" type="button" tabIndex={-1} onClick={closeLocalTasks} aria-label="关闭我的任务" /><LocalTasksDrawer localTasks={localTasks} continueDisabled={status === "processing" || status === "inspecting"} onContinueLatest={continueLatestTask} currentTaskId={result?.taskId ?? restoreInspection?.taskId ?? null} pendingDeleteId={pendingDeleteId} deletingTaskId={deletingTaskId} error={taskManagerError} modal drawerRef={localTasksDrawerRef} closeButtonRef={localTasksCloseButtonRef} onClose={closeLocalTasks} onRequestDelete={setPendingDeleteId} onCancelDelete={() => setPendingDeleteId(null)} onConfirmDelete={deleteLocalTask} /></>}
       </main>
       {guideOpen && <><button className="drawer-scrim" type="button" tabIndex={-1} onClick={closeGuide} aria-label="关闭使用指南遮罩" /><GuideDrawer drawerRef={guideDrawerRef} closeButtonRef={guideCloseButtonRef} onClose={closeGuide} onSeen={guideSeen} initialTab={guideUpdate ? "changes" : "use"} /></>}

@@ -7,7 +7,7 @@ import { openMoreColumns } from "./drawer-helper.js";
 
 const SHORT_TOKEN = /(客户|产品|人员|信息)-[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{4}-\d{2,}/;
 
-test("中文多工作表的字段标签独立关联，替换方式说明明确，不再提供代号格式选择", async ({ page }) => {
+test("中文多工作表的字段标签独立关联，不再提供替换方式和代号格式选择", async ({ page }) => {
   const { default: ExcelJS } = await import("exceljs");
   const workbook = new ExcelJS.Workbook();
   workbook.addWorksheet("部门维度").addRows([["部门"], ["虚构部门"]]);
@@ -17,7 +17,7 @@ test("中文多工作表的字段标签独立关联，替换方式说明明确�
   await expect(page.getByText("代号格式")).toHaveCount(0);
   await page.getByRole("button", { name: /确认替换列/ }).click();
   const drawer = page.getByRole("dialog", { name: "替换列", exact: true });
-  await expect(drawer.getByText("勾选需要保护的列；替换方式按列名自动推荐，可手动调整。")).toBeVisible();
+  await expect(drawer.getByText("勾选里面是公司名、人名、编号的列，这些内容会换成代号；备注这类长文字列会自动只替换句子里的名称。")).toBeVisible();
   // 部门 is not a name column, so it sits in the folded "其他 N 列".
   await openMoreColumns(drawer);
   const department = drawer.getByRole("checkbox", { name: /^A 列 · 部门 / });
@@ -30,7 +30,8 @@ test("中文多工作表的字段标签独立关联，替换方式说明明确�
   await drawer.locator(".column-selection__copy").filter({ hasText: "A 列 · 公司名称" }).click();
   await expect(department).toBeChecked();
   await expect(company).not.toBeChecked();
-  await expect(drawer.getByRole("combobox", { name: "部门的替换方式" })).toHaveAttribute("data-value", "whole");
+  await expect(drawer.getByRole("combobox")).toHaveCount(0);
+  await expect(drawer.getByText("替换方式")).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
@@ -169,7 +170,9 @@ test("CSV 文件选择、任务抽屉和失败关闭可用", async ({ page }) =>
   await page.getByRole("button", { name: /确认替换列/ }).click();
   const safetyDialog = page.getByRole("dialog", { name: /替换列|替换内容|检查详情/ });
   await expect(safetyDialog.getByRole("checkbox", { name: /F 列 · 业务员反馈/ })).toBeChecked();
-  await expect(safetyDialog.getByRole("combobox", { name: "业务员反馈的替换方式" })).toHaveAttribute("data-value", "inline");
+  // A long-text column is handled automatically: the sentence stays, only the names in it are replaced.
+  await expect(safetyDialog.getByText("长文字列：保留句子，只替换其中的名称")).toBeVisible();
+  await expect(safetyDialog.getByRole("combobox")).toHaveCount(0);
   await safetyDialog.getByRole("button", { name: "关闭详情" }).click();
   await page.getByRole("button", { name: /生成脱敏文件/ }).click();
   await expect(page.getByRole("heading", { name: "脱敏文件可以下载" })).toBeVisible();
@@ -188,25 +191,18 @@ test("CSV 文件选择、任务抽屉和失败关闭可用", async ({ page }) =>
   await expect(page.getByRole("dialog", { name: "详细信息" })).toBeVisible();
 });
 
-test("CSV 取消叙述列时阻止真实值残留，可原地调整后重试", async ({ page }) => {
+test("CSV 没勾选的叙述列里的名称也会自动替换，并说明替换了哪一列", async ({ page }) => {
   await page.goto("/");
   const input = page.locator('input[type="file"]:not([accept=".json"])');
   await input.setInputFiles(path.resolve("tests/fixtures/01_标准销售数据_UTF8.csv"));
   await page.getByRole("button", { name: /确认替换列/ }).click();
-  let safetyDialog = page.getByRole("dialog", { name: /替换列|替换内容|检查详情/ });
+  const safetyDialog = page.getByRole("dialog", { name: /替换列|替换内容|检查详情/ });
   await safetyDialog.getByRole("checkbox", { name: /F 列 · 业务员反馈/ }).uncheck();
   await safetyDialog.getByRole("button", { name: "关闭详情" }).click();
 
   await page.getByRole("button", { name: /生成脱敏文件/ }).click();
-  await expect(page.getByRole("heading", { name: "还有真实名称没有替换掉" })).toBeVisible();
-  await expect(page.getByText("没有生成输出文件")).toBeVisible();
-  await page.getByRole("button", { name: "调整选择字段" }).click();
-
-  safetyDialog = page.getByRole("dialog", { name: /替换列|替换内容|检查详情/ });
-  await safetyDialog.getByRole("checkbox", { name: /F 列 · 业务员反馈/ }).check();
-  await safetyDialog.getByRole("button", { name: "关闭详情" }).click();
-  await page.getByRole("button", { name: /生成脱敏文件/ }).click();
   await expect(page.getByRole("heading", { name: "脱敏文件可以下载" })).toBeVisible();
+  await expect(page.locator(".state-description")).toContainText(/除了所选的列，还在「业务员反馈」列里替换了 \d+ 处相同的名称/);
 });
 
 test("超限文件在读取前停止并显示拆分建议", async ({ page }) => {

@@ -15,7 +15,10 @@ import {
 test("CSV 残留扫描覆盖生僻字、emoji、单字和短数字，保留独立编码边界", () => {
   for (const value of ["𠮷田产品", "产品🔒A", "李", "825", "825 "]) {
     const document = { rows: [["产品名称", "备注"], [value, `本次采购${value}，请跟进。`]] };
+    const note = document.rows[1][1];
     const result = tokenizeCsv(document, analyzeCsv(document).columns.slice(0, 1), "ABCDEF12");
+    // Names in the note are now replaced automatically; put the original text back so the scanner itself is tested.
+    document.rows[1][1] = note;
     assert.equal(findCsvSensitiveResiduals(document, result.mapping).length, 1, value);
   }
   const mapping = { token: { value: { type: "string", value: "825" } } };
@@ -198,13 +201,21 @@ test("CSV 对包含已知实体的叙述列默认建议文中替换", () => {
   assert.ok(analysis.suggestedColumnIds.includes(feedback.id));
 });
 
-test("CSV 脱敏后能定位未选叙述列中的真实值残留", () => {
-  const document = parseCsvText("客户名称,产品内部编码,销售人员,业务员反馈\n浙江ABC染整,HT-825GK,张三,张三反馈：浙江ABC染整的 HT-825GK 已完成测试。");
+test("CSV 未选的叙述列里的真实值会被自动替换，扫描能定位被还原回去的残留", () => {
+  const note = "张三反馈：浙江ABC染整的 HT-825GK 已完成测试。";
+  const document = parseCsvText(`客户名称,产品内部编码,销售人员,业务员反馈\n浙江ABC染整,HT-825GK,张三,${note}`);
   const analysis = analyzeCsv(document);
   const selected = analysis.columns.filter((column) => column.header !== "业务员反馈");
   const result = tokenizeCsv(document, selected, "7F2A9C4D");
-  const residuals = findCsvSensitiveResiduals(document, result.mapping);
 
+  // The three names in the unselected note are replaced; nothing is left to block the file.
+  assert.deepEqual(result.elsewhere, { cells: 1, sheets: [{ sheet: "业务员反馈", cells: 1 }], unit: "列" });
+  assert.deepEqual(findCsvSensitiveResiduals(document, result.mapping), []);
+  assert.doesNotMatch(document.rows[1][3], /张三|浙江ABC染整|HT-825GK/);
+
+  // The scanner still finds a leftover when one slips through.
+  document.rows[1][3] = note;
+  const residuals = findCsvSensitiveResiduals(document, result.mapping);
   assert.equal(residuals.length, 3);
   assert.ok(residuals.every((item) => item.location === "第 2 行，第 4 列"));
 });
@@ -229,4 +240,35 @@ test("CSV 识别可能被 Excel 执行的公式型字段", () => {
 test("CSV 空列不会被默认勾选", () => {
   const analysis = analyzeCsv(parseCsvText("客户名称,销售人员\r\n虚构客户甲,\r\n虚构客户乙,\r\n"));
   assert.deepEqual(analysis.suggestedColumnIds, [analysis.columns.find((column) => column.header === "客户名称").id]);
+});
+
+// A CSV has one table, but its names also turn up in other columns (notes, follow-up text). They are replaced
+// with the same alias everywhere, while a number that only equals a short code by chance stays as it is.
+test("CSV 全文件替换：备注里的名称一并替换并能完整还原，数量等于编号时不被误换", () => {
+  const text = "客户编号,客户名称,备注,数量\r\nK5204,虚构星河化工,下周拜访虚构星河化工，确认订单,5204\r\nK2391,虚构东骏纺织,/,2391\r\n";
+  const document = parseCsvText(text);
+  const analysis = analyzeCsv(document);
+  const selected = analysis.columns.filter((column) => ["客户编号", "客户名称"].includes(column.header)).map((column) => ({ ...column, processingMode: "whole" }));
+  const result = tokenizeCsv(document, selected, "7F2A9C4D");
+  assert.deepEqual(result.elsewhere, { cells: 1, sheets: [{ sheet: "备注", cells: 1 }], unit: "列" });
+  assert.match(document.rows[1][2], /^下周拜访\[\[客户名称:C\d+@7F2A9C4D\]\]，确认订单$/);
+  assert.equal(document.rows[1][3], "5204");
+  assert.equal(document.rows[2][2], "/");
+  assert.deepEqual(findCsvSensitiveResiduals(document, result.mapping), []);
+
+  const roundTripped = parseCsvText(stringifyCsv(document));
+  const restored = restoreCsvValues(roundTripped, result.mapping);
+  assert.equal(restored.unresolved.length, 0);
+  assert.equal(stringifyCsv(roundTripped), text);
+});
+
+test("CSV 手动添加的关键词在所有列里替换，哪怕只有两个字", () => {
+  const document = parseCsvText("客户名称,备注\r\n虚构星河化工,马总来电\r\n虚构东骏纺织,已付款\r\n");
+  const analysis = analyzeCsv(document);
+  const selected = analysis.columns.filter((column) => column.header === "客户名称").map((column) => ({ ...column, processingMode: "whole" }));
+  const result = tokenizeCsv(document, selected, "7F2A9C4D", [{ value: "马总", label: "手动添加", category: "custom", prefix: "X" }]);
+  assert.match(document.rows[1][1], /^\[\[敏感信息:X001@7F2A9C4D\]\]来电$/);
+  assert.equal(result.elsewhere.cells, 1);
+  const restored = restoreCsvValues(parseCsvText(stringifyCsv(document)), result.mapping);
+  assert.equal(restored.unresolved.length, 0);
 });

@@ -87,7 +87,7 @@ export async function createSafeCsv(file, selectedColumns, options) {
   const id = identity.taskId;
   const createdAt = new Date().toISOString();
   const taskName = baseName(file.name);
-  const result = tokenizeCsv(document, selectedColumns, protectionTokenIdentity(identity));
+  const result = tokenizeCsv(document, selectedColumns, protectionTokenIdentity(identity), options?.candidates ?? []);
   if (!result.replacedCells) throw new SafeFileError("NO_VALUES", "所选列中没有找到可替换值，或文中替换列没有出现已确认实体。", result.warnings);
   if (result.warnings.length) {
     throw new SafeFileError(
@@ -113,6 +113,7 @@ export async function createSafeCsv(file, selectedColumns, options) {
     taskName,
     replacedCells: result.replacedCells,
     uniqueValues: result.uniqueValues,
+    elsewhere: result.elsewhere,
     warnings: [],
     notices: [{ location: "输出文件", reason: `已从 ${document.sourceEncoding} 统一输出为 UTF-8 BOM，便于 Excel 正确识别中文` }],
   };
