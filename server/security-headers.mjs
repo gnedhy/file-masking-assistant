@@ -4,3 +4,12 @@ export const SECURITY_HEADERS = {
   "Referrer-Policy": "no-referrer",
   "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
 };
+
+// Fetch Headers -> Node writeHead object. Each Set-Cookie must stay separate: flattening the
+// Headers keeps only the last one, which dropped the sign-in cookie after WeCom login.
+export function nodeHeaders(headers, base = {}) {
+  const out = { ...base, ...Object.fromEntries(headers) };
+  const cookies = headers.getSetCookie();
+  if (cookies.length) out["set-cookie"] = cookies;
+  return out;
+}

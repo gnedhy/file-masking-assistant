@@ -23,7 +23,7 @@ export function SyncStatus() {
     <p>待同步 {state.pending || 0} 条{state.rejected ? ` · 被拒绝 ${state.rejected} 条` : ""}。统计暂不包含未同步记录。</p>
     {state.otherPending > 0 && <p>另有 {state.otherPending} 条属于其他身份的记录，需原身份重新进入后同步。</p>}
     {state.lastConfirmed && <small>最近确认：{new Date(state.lastConfirmed).toLocaleString("zh-CN")}</small>}
-    {state.error && <p>记录同步暂未完成：{state.error}。文件处理不受影响。</p>}
+    {state.error && <p>记录同步暂未完成：{state.error}{state.error.includes("文件处理不受影响") ? "" : "文件处理不受影响。"}</p>}
     <button type="button" className="text-button" onClick={() => retryOperationSync()}>重新检查同步</button>
   </div>;
 }

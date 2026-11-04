@@ -14,6 +14,7 @@ import { PgVaultRepository } from "../server/repository.mjs";
 import { summarizeTask, taskKeyResolver } from "../src/operationTasks.js";
 import { ISSUE_RESULTS, operationReport } from "../src/operationReports.js";
 import { reportRange } from "../server/operations-repository.mjs";
+import { nodeHeaders } from "../server/security-headers.mjs";
 
 process.env.TZ ||= "Asia/Shanghai";
 
@@ -167,7 +168,7 @@ const server = createServer(async (req, res) => {
       const { user } = await request.json();
       response = Object.hasOwn(TEST_USERS, user) ? login(user, false) : new Response('{"code":"INVALID_USER"}', { status: 400 });
     } else response = await handle(request) ?? new Response("Not found", { status: 404 });
-    const outgoing = Object.fromEntries(response.headers);
+    const outgoing = nodeHeaders(response.headers);
     if (issued) outgoing["set-cookie"] = sessionCookie(issued);
     res.writeHead(response.status, outgoing);
     if (response.body) Readable.fromWeb(response.body).pipe(res); else res.end();

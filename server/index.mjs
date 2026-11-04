@@ -9,7 +9,7 @@ import { createAppHandler } from "./handler.mjs";
 import { PgFeedbackRepository } from "./feedback.mjs";
 import { PgOperationsRepository } from "./operations-repository.mjs";
 import { PgVaultRepository } from "./repository.mjs";
-import { SECURITY_HEADERS } from "./security-headers.mjs";
+import { nodeHeaders, SECURITY_HEADERS } from "./security-headers.mjs";
 import { createWeComAuth } from "./session.mjs";
 
 // Statistics group records by Beijing calendar day, like the record filters do in SQL.
@@ -50,7 +50,7 @@ const server = createServer(async (req, res) => {
     });
     const response = await handle(request);
     if (response) {
-      res.writeHead(response.status, { ...securityHeaders, ...Object.fromEntries(response.headers) });
+      res.writeHead(response.status, nodeHeaders(response.headers, securityHeaders));
       if (response.body) Readable.fromWeb(response.body).pipe(res); else res.end();
       return;
     }
