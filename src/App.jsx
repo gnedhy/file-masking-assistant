@@ -391,7 +391,6 @@ function ReadyState({ mode, file, analysis, selectedIds, fieldModes = {}, restor
           </span>
         </div>
       )}
-      {mode === "protect" && <p className="recognition-line"><CheckCircle weight="bold" /><span>{summary}</span></p>}
       {mode === "restore" && (
         <section className="compatibility-check" data-partial={restoreInspection.partialRestore} data-content-loss={hasContentLoss} aria-labelledby="compatibility-check-title">
           <div className="compatibility-check__head">
@@ -446,7 +445,7 @@ function ReadyState({ mode, file, analysis, selectedIds, fieldModes = {}, restor
         // The header and the preview share one card so the sizes read as one block.
         <div className="replacement-card">
           <button className="evidence-trigger" type="button" onClick={onDetails} aria-expanded={detailsOpen} aria-controls="security-details">
-            <span><ShieldCheck weight="bold" /><strong>确认替换内容</strong></span>
+            <span><ShieldCheck weight="bold" /><span className="evidence-trigger__title"><strong>确认替换内容</strong><small>{summary}</small></span></span>
             <span className="evidence-trigger__action">查看并调整<CaretRight weight="bold" /></span>
           </button>
           <ReplacementPreview items={analysis?.kind === "text"
@@ -715,7 +714,7 @@ function residualColumnsToAdd(error, analysis, selectedIds) {
   if (error?.code !== "SENSITIVE_RESIDUALS" || !analysis?.columns) return [];
   const cells = (error.details ?? []).filter((detail) => detail?.eligible);
   return analysis.columns.filter((column) => !selectedIds.includes(column.id)
-    && cells.some((cell) => cell.sheetName === column.sheetName && cell.columnNumber === column.columnNumber && cell.row > column.headerRow));
+    && cells.some((cell) => cell.sheetName === column.sheetName && cell.columnNumber === column.columnNumber && cell.row > column.headerRow && cell.row <= (column.endRow ?? Infinity)));
 }
 
 function formatIssueDetail(detail) {
@@ -835,11 +834,12 @@ function SecurityDrawer({ mode, status, analysis, selectedIds, fieldModes = {}, 
   const selectedCandidateCount = (analysis?.candidates ?? []).filter((candidate) => selectedIds.includes(candidate.id)).length;
   // Tables are replaced by column, everything else by keyword; only the parts that exist in this file are shown.
   const candidateList = analysis?.candidates ?? [];
-  const tableSheets = new Set((analysis?.columns ?? []).filter((column) => column.suggested || selectedIds.includes(column.id)).map((column) => column.sheetName));
-  const plainSheets = [...new Set(candidateList.flatMap((item) => (item.locations ?? []).map((place) => place.sheet)))].filter((sheet) => sheet !== "CSV" && !tableSheets.has(sheet));
+  // A keyword counts as "outside the tables" when none of its places falls in a table column (headers excluded).
+  const inTable = (place) => (analysis?.columns ?? []).some((column) => column.sheetName === place.sheet && column.columnNumber === place.column && place.row > column.headerRow && place.row <= (column.endRow ?? Infinity));
+  const plainSheets = [...new Set(candidateList.filter((item) => (item.locations ?? []).length && !(item.locations ?? []).some(inTable)).flatMap((item) => item.locations.map((place) => place.sheet)))].filter((sheet) => sheet !== "CSV");
   const keywordSection = !analysis || analysis.kind === "text" ? null
     : !analysis.columns.length ? { title: "需要替换的关键词", hint: "这个文件没有表格，按关键词替换：勾选的名称会在整个文件里替换。系统认不全简称和昵称（如“马总”），可以在下面补充。" }
-      : plainSheets.length ? { title: "需要替换的关键词", hint: `以下工作表不是表格，按关键词替换：${plainSheets.join("、")}。勾选的名称会在整个文件里替换。系统认不全简称和昵称（如“马总”），可以在下面补充。` }
+      : plainSheets.length ? { title: "需要替换的关键词", hint: `${plainSheets.join("、")}里有表格以外的内容（表单、说明文字），按关键词替换。勾选的名称会在整个文件里替换。系统认不全简称和昵称（如“马总”），可以在下面补充。` }
         : candidateList.length ? { title: "没勾选的列里还有这些名称", hint: "例如写在备注里；勾选的会一起替换。系统认不全简称和昵称（如“马总”），可以在下面补充。" }
           : { title: "补充关键词", hint: "系统认不全简称和昵称（如“马总”），可以在这里补充，会在整个文件里替换。" };
   const errorDiagnosis = error ? buildErrorDiagnosis(error) : null;

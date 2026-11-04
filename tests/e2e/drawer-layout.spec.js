@@ -11,7 +11,7 @@ test("抽屉关闭保留退出动画，结束后解锁并恢复焦点", async ({
   for (const reducedMotion of ["no-preference", "reduce"]) {
     await page.emulateMedia({ reducedMotion });
     for (const kind of ["tasks", "details"]) {
-      const trigger = page.getByRole("button", { name: kind === "tasks" ? "查看全部任务" : "确认替换内容 查看并调整", exact: true });
+      const trigger = page.getByRole("button", { name: kind === "tasks" ? "查看全部任务" : /^确认替换内容.*查看并调整$/, exact: kind === "tasks" });
       for (const action of ["button", "scrim", "escape"]) {
         await trigger.click();
         const drawer = page.getByRole("dialog", { name: kind === "tasks" ? "我的任务" : "替换内容", exact: true });
@@ -54,7 +54,7 @@ test("任务与详情抽屉固定标题、独立滚动并适配主题和窄屏",
   for (const theme of ["light", "dark"]) {
     await chooseTheme(page, theme);
     for (const kind of ["tasks", "details"]) {
-      const trigger = page.getByRole("button", { name: kind === "tasks" ? "查看全部任务" : "确认替换内容 查看并调整", exact: true });
+      const trigger = page.getByRole("button", { name: kind === "tasks" ? "查看全部任务" : /^确认替换内容.*查看并调整$/, exact: kind === "tasks" });
       await trigger.click();
       const drawer = page.getByRole("dialog", { name: kind === "tasks" ? "我的任务" : "替换内容", exact: true });
       const head = drawer.locator(".drawer-head");

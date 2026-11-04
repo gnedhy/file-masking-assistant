@@ -14,7 +14,7 @@ test("当前模式不重置，切换取消保留选择并返回实际焦点", as
   page.on("pageerror", error => errors.push(error.message));
   await page.goto("/");
   await upload(page);
-  const trigger = page.getByRole("button", { name: "确认替换内容 查看并调整", exact: true });
+  const trigger = page.getByRole("button", { name: /^确认替换内容.*查看并调整$/ });
   await trigger.click();
   const drawer = page.getByRole("dialog", { name: "替换内容", exact: true });
   await expect(page.locator(".workspace")).toHaveAttribute("inert", "");
