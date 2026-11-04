@@ -155,6 +155,92 @@ function detectHeaderRow(worksheet) {
   return best.rowNumber;
 }
 
+// ---- Table regions -------------------------------------------------------------------------------------------
+// A sheet may hold a form on top and a table below, or several small tables side by side. A table is a run of
+// short text cells (the header) with filled rows under it; everything else is "not a table" and is searched by keyword.
+const MAX_SCAN_ROWS = 20000;
+const MAX_SCAN_COLUMNS = 120;
+const FORM_LABEL_ENDING = /(?:名称|时间|人数|日期|电话|地址|类型|占比|产量|情况|习惯|金额|备注|姓名|职务|职位|部门)\s*[*＊]?\s*[:：]?$/;
+const COMPANY_LIKE = /(?:有限公司|有限责任公司|股份|集团|公司|工厂|商行)$/;
+
+function headerText(cell) {
+  if (cell.isMerged && cell.master !== cell) return null;
+  const value = cell.value;
+  if (typeof value !== "string") return null;
+  const text = value.trim();
+  if (!text || text.length > 30 || /^[\d\s.,%+\-/:：]+$/.test(text) || COMPANY_LIKE.test(text)) return null;
+  return text;
+}
+
+function filled(cell) {
+  if (cell.isMerged && cell.master !== cell) return false;
+  return Boolean(valueAsText(cell.value).trim());
+}
+
+export function detectTableBlocks(worksheet) {
+  const lastRow = Math.min(worksheet.rowCount, MAX_SCAN_ROWS);
+  const lastColumn = Math.min(worksheet.columnCount, MAX_SCAN_COLUMNS);
+  if (lastRow < 2 || lastColumn < 1) return [];
+  const cellAt = (row, column) => worksheet.getRow(row).getCell(column);
+  const filledIn = (row, from, to) => { let count = 0; for (let column = from; column <= to; column += 1) if (filled(cellAt(row, column))) count += 1; return count; };
+
+  // Runs of adjacent header-like cells on one row; a run is a header when it is long enough or names something we know.
+  const headerRuns = (row) => {
+    const runs = [];
+    let current = null;
+    for (let column = 1; column <= lastColumn + 1; column += 1) {
+      const text = column <= lastColumn ? headerText(cellAt(row, column)) : null;
+      if (text) { (current ??= { start: column, end: column, texts: [] }).end = column; current.texts.push(text); }
+      else if (current) { runs.push(current); current = null; }
+    }
+    return runs.filter((run) => run.texts.length >= 3 || run.texts.some((text) => classifyHeader(text).category !== "custom"));
+  };
+
+  const blocks = [];
+  const claimed = (row, start, end) => blocks.some((block) => row >= block.headerRow && row <= block.endRow && start <= block.endColumn && end >= block.startColumn);
+  for (let row = 1; row < lastRow; row += 1) {
+    for (const run of headerRuns(row)) {
+      if (claimed(row, run.start, run.end)) continue;
+      const known = run.texts.some((text) => classifyHeader(text).category !== "custom");
+      // The rows under the header: contiguous, with at most one blank row in between.
+      let dataRows = 0;
+      let blanks = 0;
+      let firstData = 0;
+      for (let next = row + 1; next <= lastRow && blanks < 2; next += 1) {
+        if (filledIn(next, run.start, run.end)) { dataRows += 1; firstData ||= next; blanks = 0; } else if (dataRows) blanks += 1; else blanks += 1;
+      }
+      if (dataRows < (known ? 1 : 2)) continue;
+      if (!known && filledIn(firstData, run.start, run.end) < Math.ceil(run.texts.length / 2)) continue;
+      // A narrow "table" whose first column is made of field names is a form (label, value, label, value …).
+      if (run.end - run.start < 2) {
+        let labels = 0, total = 0;
+        for (let next = row + 1; next <= Math.min(lastRow, row + 30); next += 1) {
+          const value = cellAt(next, run.start).value;
+          if (typeof value === "string" && value.trim()) { total += 1; if (looksLikeFieldLabel(value) || FORM_LABEL_ENDING.test(value.trim())) labels += 1; }
+        }
+        if (total && labels * 2 >= total) continue;
+      }
+      // The table runs down to the last filled row, or stops before the next table's title / header.
+      let endRow = row;
+      for (let next = row + 1; next <= lastRow; next += 1) {
+        if (filledIn(next, run.start, run.end)) endRow = next;
+        const startsTable = next > row + 1 && headerRuns(next).some((other) => other.start <= run.end && other.end >= run.start && filledIn(next + 1, other.start, other.end))
+          && filledIn(next - 1, run.start, run.end) <= 1;
+        if (startsTable) {
+          endRow = next - 1;
+          // A single filled cell right above the next header is that table's title; blank rows before it are not data.
+          if (endRow > row && filledIn(endRow, run.start, run.end) === 1) endRow -= 1;
+          while (endRow > row && !filledIn(endRow, run.start, run.end)) endRow -= 1;
+          break;
+        }
+      }
+      if (endRow <= row) continue;
+      blocks.push({ headerRow: row, startColumn: run.start, endColumn: run.end, endRow });
+    }
+  }
+  return blocks;
+}
+
 function candidateId(sheetName, headerRow, columnNumber) {
   return `${sheetName}::${headerRow}::${columnNumber}`;
 }
@@ -165,11 +251,15 @@ export function analyzeWorkbook(workbook) {
 
   workbook.eachSheet((worksheet) => {
     if (worksheet.name === "__AI安全任务") return;
-    const headerRow = detectHeaderRow(worksheet);
-    const row = worksheet.getRow(headerRow);
+    // Tables found as regions; a sheet with none keeps the old reading (one header row, data to the end).
+    const detected = detectTableBlocks(worksheet);
+    const blocks = detected.length ? detected : [{ headerRow: detectHeaderRow(worksheet), startColumn: 1, endColumn: Math.max(worksheet.columnCount, 1), endRow: worksheet.rowCount }];
     const sheetColumns = [];
 
-    row.eachCell({ includeEmpty: false }, (cell, columnNumber) => {
+    for (const block of blocks) {
+    const { headerRow, endRow } = block;
+    worksheet.getRow(headerRow).eachCell({ includeEmpty: false }, (cell, columnNumber) => {
+      if (columnNumber < block.startColumn || columnNumber > block.endColumn) return;
       const header = valueAsText(cell.value).trim();
       if (!header) return;
       const classification = classifyHeader(header);
@@ -178,7 +268,7 @@ export function analyzeWorkbook(workbook) {
       let complexCount = 0;
       let labelCount = 0;
 
-      for (let rowNumber = headerRow + 1; rowNumber <= worksheet.rowCount; rowNumber += 1) {
+      for (let rowNumber = headerRow + 1; rowNumber <= endRow; rowNumber += 1) {
         const value = worksheet.getRow(rowNumber).getCell(columnNumber).value;
         if (value == null || value === "") continue;
         if (richTextCellValue(value)) {
@@ -199,6 +289,7 @@ export function analyzeWorkbook(workbook) {
         id: candidateId(worksheet.name, headerRow, columnNumber),
         sheetName: worksheet.name,
         headerRow,
+        endRow,
         columnNumber,
         header,
         category: classification.category,
@@ -212,8 +303,9 @@ export function analyzeWorkbook(workbook) {
       sheetColumns.push(candidate);
       columns.push(candidate);
     });
+    }
 
-    sheets.push({ name: worksheet.name, headerRow, rowCount: worksheet.rowCount, columns: sheetColumns.length });
+    sheets.push({ name: worksheet.name, headerRow: blocks[0].headerRow, rowCount: worksheet.rowCount, columns: sheetColumns.length });
   });
 
   return {
@@ -317,7 +409,7 @@ export function tokenizeWorkbook(workbook, selectedColumns, taskId, candidates =
       continue;
     }
 
-    for (let rowNumber = column.headerRow + 1; rowNumber <= worksheet.rowCount; rowNumber += 1) {
+    for (let rowNumber = column.headerRow + 1; rowNumber <= (column.endRow ?? worksheet.rowCount); rowNumber += 1) {
       const cell = worksheet.getRow(rowNumber).getCell(column.columnNumber);
       // Only the top-left cell of a merged area holds the value; the others just show it.
       if (cell.isMerged && cell.master !== cell) continue;
@@ -393,7 +485,7 @@ export function tokenizeWorkbook(workbook, selectedColumns, taskId, candidates =
       warnings.push({ location: column.sheetName, reason: "工作表不存在" });
       continue;
     }
-    for (let rowNumber = column.headerRow + 1; rowNumber <= worksheet.rowCount; rowNumber += 1) {
+    for (let rowNumber = column.headerRow + 1; rowNumber <= (column.endRow ?? worksheet.rowCount); rowNumber += 1) {
       const cell = worksheet.getRow(rowNumber).getCell(column.columnNumber);
       // Only the top-left cell of a merged area holds the value; the others just show it.
       if (cell.isMerged && cell.master !== cell) continue;

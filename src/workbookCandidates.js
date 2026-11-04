@@ -94,7 +94,7 @@ function attachLocations(cells, candidates) {
   }
 }
 
-// headerRows: sheet name → the rows that head a table there (from the column analysis).
+// headerRows: sheet name → the header cells of its tables, as "row:column" (a bare row number covers the whole row).
 export function findWorkbookCandidates(workbook, coveredValues = new Set(), headerRows = new Map()) {
   const cells = workbookCells(workbook);
   const sourceText = cells.map(cell => cell.text).join("\n");
@@ -114,7 +114,7 @@ export function findWorkbookCandidates(workbook, coveredValues = new Set(), head
         const text = cellText(cell.value);
         if (!text) return;
         // Table header rows hold column names, not labels with a value beside them.
-        const kind = headerRows.get(sheet.name)?.has(cell.row) ? null : labelKind(text);
+        const kind = headerRows.get(sheet.name)?.has(`${cell.row}:${cell.col}`) || headerRows.get(sheet.name)?.has(cell.row) ? null : labelKind(text);
         // A label cell: the name sits in the next filled cell to its right.
         if (kind) {
           for (let column = cell.col + 1; column <= cell.col + 4; column += 1) {

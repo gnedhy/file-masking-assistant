@@ -89,7 +89,7 @@ export async function inspectProtectionFile(file) {
   const covered = new Set();
   for (const column of analysis.columns.filter((item) => analysis.suggestedColumnIds.includes(item.id))) {
     const sheet = workbook.getWorksheet(column.sheetName);
-    for (let row = column.headerRow + 1; row <= sheet.rowCount; row += 1) {
+    for (let row = column.headerRow + 1; row <= (column.endRow ?? sheet.rowCount); row += 1) {
       const value = sheet.getRow(row).getCell(column.columnNumber).value;
       if (typeof value === "string") covered.add(value.trim());
     }
@@ -98,7 +98,7 @@ export async function inspectProtectionFile(file) {
   const headerRows = new Map();
   for (const column of analysis.columns.filter((item) => analysis.suggestedColumnIds.includes(item.id))) {
     if (!headerRows.has(column.sheetName)) headerRows.set(column.sheetName, new Set());
-    headerRows.get(column.sheetName).add(column.headerRow);
+    headerRows.get(column.sheetName).add(`${column.headerRow}:${column.columnNumber}`);
   }
   const named = findWorkbookCandidates(workbook, covered, headerRows);
   if (!analysis.columns.length && !named.candidates.length) {
