@@ -1,4 +1,5 @@
 import { classifyHeader, findKnownShortTokens, isEmptyColumn, isPlaceholderValue, recommendedProcessingMode, spreadsAcrossWorkbook } from "./xlsxCore.js";
+import { sensitiveNumberCandidates } from "./sensitivePatterns.js";
 import { createEntityToken, parseEntityToken, tokenPattern, tokenOccurrence } from "./tokenFormat.js";
 
 const DELIMITER_CANDIDATES = [",", "\t", ";"];
@@ -171,15 +172,35 @@ export function analyzeCsv(document) {
     return hasKnownEntity ? { ...column, suggested: true } : column;
   });
 
+  const sourceText = document.rows.map((row) => row.join("\n")).join("\n");
+  const covered = new Set();
+  for (const column of suggestedColumns.filter((item) => item.suggested && !isEmptyColumn(item))) {
+    for (const row of document.rows.slice(column.headerRow)) covered.add(String(row[column.columnNumber - 1] ?? "").trim());
+  }
+  const candidates = sensitiveNumberCandidates(sourceText).filter((item) => !covered.has(item.value));
+
   return {
     format: "csv",
     sheets: [{ name: "CSV", headerRow, rowCount: document.rows.length, columns: suggestedColumns.length }],
     columns: suggestedColumns,
     suggestedColumnIds: suggestedColumns.filter((column) => column.suggested && !isEmptyColumn(column)).map((column) => column.id),
-    // Keywords added by hand are looked up in the file's text.
-    candidates: [],
-    sourceText: document.rows.map((row) => row.join("\n")).join("\n"),
+    // Phone, ID, bank card and e-mail numbers outside the suggested columns are listed as keywords; keywords
+    // added by hand are looked up in the file's text and the places below.
+    candidates,
+    suggestedCandidateIds: candidates.map((item) => item.id),
+    sourceText,
+    cells: csvCells(document),
   };
+}
+
+// Every non-empty field with its place, for "第 2 行第 3 列"-style hints.
+function csvCells(document) {
+  const cells = [];
+  document.rows.forEach((row, rowIndex) => row.forEach((value, columnIndex) => {
+    const text = String(value ?? "");
+    if (text.trim() && cells.length < 100000) cells.push({ sheet: "CSV", row: rowIndex + 1, column: columnIndex + 1, text });
+  }));
+  return cells;
 }
 
 function valueKey(value) {

@@ -1,4 +1,5 @@
-import { classifyHeader, findKnownShortTokens } from "./xlsxCore.js";
+import { sensitiveNumberCandidates } from "./sensitivePatterns.js";
+import { classifyHeader, findKnownShortTokens, isPlaceholderValue } from "./xlsxCore.js";
 import { createEntityToken, parseEntityToken, tokenPattern, tokenOccurrence } from "./tokenFormat.js";
 
 function splitMarkdownRow(line) {
@@ -58,6 +59,7 @@ export function buildTextCandidate(value, label, text, manual = false, kind = nu
 export function analyzeText(text, format) {
   const found = new Map();
   const add = (value, label) => {
+    if (isPlaceholderValue(value)) return;
     const item = buildTextCandidate(value, label, text);
     if (item && !found.has(item.value)) found.set(item.value, item);
   };
@@ -78,6 +80,9 @@ export function analyzeText(text, format) {
       sensitive.forEach(({ header, column }) => add(cells[column], header));
     }
   }
+
+  // Phone, ID, bank card and e-mail numbers anywhere in the text.
+  for (const item of sensitiveNumberCandidates(text)) if (!found.has(item.value)) found.set(item.value, item);
 
   const candidates = [...found.values()];
   return {

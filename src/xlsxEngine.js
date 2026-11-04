@@ -1,6 +1,7 @@
 import {
   addTaskMarker,
   analyzeWorkbook,
+  hiddenContent,
   inspectWorkbookAlteredTokens,
   inspectWorkbookTokens,
   removeTaskMarker,
@@ -107,7 +108,7 @@ export async function inspectProtectionFile(file) {
   workbook.eachSheet((worksheet) => worksheet.eachRow({ includeEmpty: false }, (row) => row.eachCell({ includeEmpty: false }, (cell) => {
     if (typeof cell.text === "string") text.push(cell.text);
   })));
-  return { ...analysis, ...named, media: workbook.fileMedia, riskFindings: highRiskTextFindings(text.join("\n")) };
+  return { ...analysis, ...named, media: workbook.fileMedia, hidden: hiddenContent(workbook), riskFindings: highRiskTextFindings(text.join("\n")) };
 }
 
 export async function createSafeWorkbook(file, selectedColumns, options) {

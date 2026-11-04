@@ -7,6 +7,7 @@ const NARRATIVE_HEADER_PATTERN = /(反馈|备注|说明|描述|原因|计划|进
 const CATEGORY_RULES = [
   { category: "customer", prefix: "C", pattern: /^(?:客户(?:中文|英文)?(?:名称|全称|全名|姓名|编码|编号|简称|k码|名|单位|公司)?|经销商(?:名称|全称)?|供应商(?:名称|全称)?|公司(?:名称|全称)|企业(?:名称|全称)|单位(?:名称|全称)|往来单位|竞品厂家|customer(?:name|id|code)?|client(?:name|id|code)?|account(?:name|id|code)?)$/i },
   { category: "product", prefix: "P", pattern: /^(?:(?:推荐)?产品(?:内部)?(?:名称|编码|编号|型号|内编|对外名称)?|物料(?:名称|编码|编号)?|sku|大货编码|品名|货号|product(?:name|code|id|model)?|item(?:name|code|id)?|material(?:name|code|id)?)$/i },
+  { category: "contact", prefix: "X", pattern: /^(?:手机(?:号码|号)?|电话(?:号码)?|联系电话|联系手机|联系方式|固话|座机|微信(?:号)?|邮箱|电子邮箱|e-?mail|身份证(?:号码|号)?|证件号(?:码)?|银行(?:账号|账户|卡号)|银行卡(?:号)?|卡号|phone|mobile|tel)$/i },
   { category: "sales", prefix: "S", pattern: /^(?:销售(?:人员|员|代表|负责人)|业务(?:员|代表|负责人|经理)|客户经理|区域经理|负责人|对接人|经办人|跟单(?:员|人)?|联系人|姓名|实验员|产品经理|跟进人|sales(?:rep|representative|owner|person)?|accountmanager)$/i },
 ];
 
@@ -46,6 +47,19 @@ export function residualMatches(text, value) {
   const haystack = String(text ?? "");
   const exactOnly = /^[\d\s.,%+\-]+$/.test(needle) || (/^[\x00-\x7F]+$/.test(needle) && needle.length < 4) || needle.length < 2;
   return exactOnly ? haystack.trim() === needle : haystack.includes(needle);
+}
+
+// Hidden sheets, rows and columns are protected like everything else but a person cannot see them, so the
+// result is reported before generating. Null when nothing is hidden.
+export function hiddenContent(workbook) {
+  const hidden = { sheets: 0, rows: 0, columns: 0 };
+  workbook.eachSheet((worksheet) => {
+    if (worksheet.name === "__AI安全任务") return;
+    if (worksheet.state === "hidden" || worksheet.state === "veryHidden") hidden.sheets += 1;
+    worksheet.eachRow({ includeEmpty: false }, (row) => { if (row.hidden) hidden.rows += 1; });
+    for (const column of worksheet.columns ?? []) if (column?.hidden) hidden.columns += 1;
+  });
+  return hidden.sheets + hidden.rows + hidden.columns ? hidden : null;
 }
 
 // A cell that names a field rather than holding a value (业务员, 姓名, 序号 …).

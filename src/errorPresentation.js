@@ -44,6 +44,11 @@ export function failureReason(code) {
   return (code && ERROR_PRESENTATION[code]?.title) || "";
 }
 
+// A place in a sheet or CSV from a candidate's locations: "「重点客户资料表」第 4 行 B 列" or "第 2 行第 3 列".
+export function cellPlace({ sheet, row, column }) {
+  return residualPlace({ sheetName: sheet, row, columnNumber: column });
+}
+
 // One leftover position in words: "「销售明细表」第 5 行 B 列" for a cell, "批注里的「某某公司」" for other places.
 export function residualPlace(detail) {
   if (detail && typeof detail === "object" && detail.sheetName && detail.row) {

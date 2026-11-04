@@ -1,7 +1,8 @@
 import { Fragment, lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { randomId } from "./randomId.js";
 import { isEmptyColumn } from "./xlsxCore.js";
-import { ERROR_PRESENTATION, residualPlace } from "./errorPresentation.js";
+import { ERROR_PRESENTATION, cellPlace, residualPlace } from "./errorPresentation.js";
+import { locateValue } from "./workbookCandidates.js";
 import { TaskDetails } from "./TaskDetails.jsx";
 import { THEME_OPTIONS, ThemeSwitcher } from "./ThemeSwitcher.jsx";
 import { ConfirmDialog } from "./ConfirmDialog.jsx";
@@ -423,6 +424,15 @@ function ReadyState({ mode, file, analysis, selectedIds, fieldModes = {}, restor
           </span>
         </div>
       )}
+      {mode === "protect" && hiddenPhrase(analysis?.hidden) && (
+        <div className="task-change-banner" role="status">
+          <WarningCircle weight="bold" aria-hidden="true" />
+          <span>
+            <strong>文件里有 {hiddenPhrase(analysis.hidden)}</strong>
+            <small>隐藏的内容平时看不到，但和其他内容一样会被替换，也会一起交给 AI。请确认里面没有不该给 AI 的内容。</small>
+          </span>
+        </div>
+      )}
       {mode === "protect" && mediaPhrase(analysis?.media) && (
         <div className="task-change-banner" role="status">
           <WarningCircle weight="bold" aria-hidden="true" />
@@ -560,6 +570,11 @@ function AiHandoff({ taskId, marker }) {
 function mediaPhrase(media) {
   const parts = [media?.images ? `${media.images} 张图片` : "", media?.attachments ? `${media.attachments} 个附件` : ""].filter(Boolean);
   return parts.join("和 ");
+}
+
+// "2 个隐藏工作表、5 行隐藏行"
+function hiddenPhrase(hidden) {
+  return [hidden?.sheets ? `${hidden.sheets} 个隐藏工作表` : "", hidden?.rows ? `${hidden.rows} 行隐藏行` : "", hidden?.columns ? `${hidden.columns} 列隐藏列` : ""].filter(Boolean).join("、");
 }
 
 function elsewhereSentence(elsewhere) {
@@ -790,7 +805,7 @@ function TextCandidateSelection({ analysis, selectedIds, onToggle, onAdd, onRemo
           return (
             <article className="text-candidate" key={item.id}>
               <input id={inputId} type="checkbox" checked={selectedIds.includes(item.id)} onChange={() => onToggle(item.id)} />
-              <label htmlFor={inputId} title={compact ? item.contexts[0] : undefined}><strong>{item.value}</strong><small>{item.label} · 出现 {item.count} 次</small>{!compact && <span>{item.contexts[0]}</span>}</label>
+              <label htmlFor={inputId} title={compact ? item.contexts[0] : undefined}><strong>{item.value}</strong><small>{item.label} · {item.locations?.length ? `${cellPlace(item.locations[0])}${item.count > 1 ? ` 等 ${item.count} 处` : ""}` : `出现 ${item.count} 次`}</small>{!compact && <span>{item.contexts[0]}</span>}</label>
               {item.manual && <button type="button" aria-label={`移除 ${item.value}`} onClick={() => onRemove(item.id)}><Trash /></button>}
             </article>
           );
@@ -1372,6 +1387,7 @@ export function App() {
 
   const addTextCandidate = (value) => {
     const item = addManualCandidate(analysis, value);
+    if (analysis.cells) item.locations = locateValue(analysis.cells, item.value);
     setAnalysis((current) => ({ ...current, candidates: [...current.candidates, item] }));
     setSelectedIds((current) => [...current, item.id]);
   };
