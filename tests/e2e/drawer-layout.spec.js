@@ -50,7 +50,7 @@ test("任务与详情抽屉固定标题、独立滚动并适配主题和窄屏",
     const { saveVault } = await import("/src/vaultStore.js");
     for (let i = 10; i < 26; i++) await saveVault({ version: 2, taskId: `AAAA00${i}`, taskName: `虚构滚动验证任务${i}`, sourceFormat: "txt", createdAt: new Date().toISOString(), mapping: { [`[[C001@AAAA00${i}]]`]: "虚构内容" } });
   });
-  await page.locator('input[type="file"]:not([accept=".json"])').setInputFiles({ name: "虚构抽屉验证.txt", mimeType: "text/plain", buffer: Buffer.from("客户名称：虚构测试公司\n产品名称：DEMO-01") });
+  await page.locator('input[type="file"]:not([accept=".json"])').setInputFiles({ name: "虚构抽屉验证.txt", mimeType: "text/plain", buffer: Buffer.from(["客户名称：虚构测试公司", "产品名称：DEMO-01", ...Array.from({ length: 14 }, (_, i) => `客户名称：虚构滚动${i}有限公司`)].join(String.fromCharCode(10))) });
   for (const theme of ["light", "dark"]) {
     await chooseTheme(page, theme);
     for (const kind of ["tasks", "details"]) {

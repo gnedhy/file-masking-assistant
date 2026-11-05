@@ -19,7 +19,7 @@ test("使用指南：三个页签、截图能加载，新版本蓝点看过更�
   await expect(guide.locator(".guide-version")).toContainText(`v${current}`);
   await expect(guide.locator(".guide-changes > li").first()).toContainText(`v${current}当前版本`);
   // Each release lists each kind of change once, with its items underneath.
-  await expect(guide.locator(".guide-changes > li").first().locator(".guide-change-type")).toHaveText(["新增", "改进", "修复"]);
+  await expect(guide.locator(".guide-changes > li").first().locator(".guide-change-type")).toHaveText(["新增", "改进"]);
   await expect(trigger.locator(".guide-trigger__dot")).toHaveCount(0);
 
   // Arrow keys move between tabs; every screenshot loads.

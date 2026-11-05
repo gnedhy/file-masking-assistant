@@ -4,6 +4,18 @@
 // package.json "version" should match the first entry. The type chip says 新增/改进/修复, so the text doesn't repeat it.
 export const CHANGELOG = [
   {
+    version: "1.0.3",
+    date: "2026-11-05",
+    items: [
+      ["new", "手机号、身份证号、银行卡号、邮箱会自动识别并建议替换，关键词会显示出现在哪些位置"],
+      ["new", "文件里有隐藏的工作表、行、列时会提醒"],
+      ["improve", "表格按列替换、其他内容按关键词替换，界面只显示和你的文件有关的部分，不再有「其他名称」"],
+      ["improve", "同一张工作表里的表单和多个表格能分开识别，并排的小表格也能处理"],
+      ["improve", "不再需要选择「整个单元格 / 仅文中已选内容」，系统自动判断；CSV 里的名称也在整个文件里统一替换"],
+      ["improve", "首页和详情抽屉的排版更简洁，手机上显示更舒适"],
+    ],
+  },
+  {
     version: "1.0.2",
     date: "2026-11-04",
     items: [
