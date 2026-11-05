@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>文件脱敏助手 · 使用指引</title>
+<link rel="stylesheet" href="guide.css">
+<style>
+  .flow { margin-top: 30px; display: grid; grid-template-columns: 1fr auto 1fr auto 1fr; align-items: stretch; gap: 12px; }
+  .stage { padding: 18px 22px; border-radius: 18px; background: var(--white); border: 1px solid var(--line); }
+  .stage h3 { display: flex; align-items: center; gap: 10px; }
+  .stage p { margin-top: 4px; color: var(--muted); font-size: 16px; line-height: 1.5; }
+  .stage .steps { color: var(--blue); font-weight: 700; font-size: 15px; margin-left: auto; }
+  .stage--local h3 svg { color: var(--green); }
+  .stage--ai { background: var(--blue-soft); border-color: rgba(49, 87, 213, 0.18); }
+  .stage--ai h3 svg { color: var(--blue); }
+  .stage h3 svg { width: 24px; height: 24px; }
+  .arrow { align-self: center; color: var(--muted); font-size: 26px; }
+  .grid { margin-top: 24px; display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .step { display: flex; flex-direction: column; gap: 14px; padding: 24px 26px 26px; }
+  .step h2 { font-size: 24px; gap: 12px; }
+  .step h2 .num { width: 36px; height: 36px; font-size: 20px; }
+  .step p { color: var(--muted); font-size: 17px; line-height: 1.6; }
+  .step p b { color: var(--ink); }
+  .step .shot { margin-top: auto; }
+  .tips h2 { font-size: 24px; }
+  .tips ul { margin-top: 14px; list-style: none; display: grid; gap: 12px; font-size: 17px; line-height: 1.55; }
+  .tips li { display: flex; gap: 10px; }
+  .tips li svg { flex: none; width: 20px; height: 20px; margin-top: 3px; }
+  .tips .ok { color: var(--green); }
+  .tips .warn { color: var(--mark); }
+</style>
+</head>
+<body>
+  <div class="brand">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.5-3 8.2-7 10-4-1.8-7-5.5-7-10V6l7-3z"/><path d="M9 12l2 2 4-4"/></svg>
+    文件脱敏助手<span class="tag">测试阶段</span>
+  </div>
+  <h1>把文件安全地交给 AI</h1>
+  <p class="lead">先把真实内容换成代号，再交给 AI；AI 处理完，回到这里换回真实内容。</p>
+
+  <div class="flow">
+    <div class="stage stage--local">
+      <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>本机脱敏<span class="steps">第 1–2 步</span></h3>
+      <p>真实内容换成代号，原文件不上传</p>
+    </div>
+    <span class="arrow">→</span>
+    <div class="stage stage--ai">
+      <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/><rect x="7" y="7" width="10" height="10" rx="2"/></svg>交给 AI 处理<span class="steps">第 3 步</span></h3>
+      <p>AI 只看到代号，看不到真实信息</p>
+    </div>
+    <span class="arrow">→</span>
+    <div class="stage stage--local">
+      <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.5-3 8.2-7 10-4-1.8-7-5.5-7-10V6l7-3z"/><path d="M9 12l2 2 4-4"/></svg>本机还原<span class="steps">第 4–5 步</span></h3>
+      <p>代号换回真实内容，得到最终文件</p>
+    </div>
+  </div>
+
+  <div class="grid">
+    <section class="card step">
+      <h2><span class="num num--blue">1</span>选择文件，核对替换内容</h2>
+      <p>点 <span class="kbd">制作脱敏文件</span>，选择或拖入文件。核对要替换的列，需要增减点 <b>查看并调整</b>，确认后点 <span class="kbd">生成脱敏文件</span>。</p>
+      <figure class="shot" data-src="02-review" data-crop="560,438,720,282" data-marks="@724,633,390,74"></figure>
+    </section>
+    <section class="card step">
+      <h2><span class="num num--blue">2</span>下载脱敏文件</h2>
+      <p>点 <span class="kbd">下载脱敏文件</span>。文件里的真实内容已换成代号，例如 <b style="white-space:nowrap">客户-K7M4-01</b>，交给 AI 前可以打开再看一眼。</p>
+      <figure class="shot" data-src="03-ready-download" data-crop="560,500,720,270" data-marks="@834,702,174,56"></figure>
+    </section>
+    <section class="card step">
+      <h2><span class="num num--blue">3</span>复制说明，交给 AI 处理</h2>
+      <p>点 <span class="kbd">复制 AI 处理说明</span>，把说明和脱敏文件一起发给你常用的 AI。说明会提醒 AI <b>原样保留代号</b>，它可以返回 Excel、CSV、Word 或 PPT。</p>
+      <figure class="shot" data-src="04-result" data-crop="620,630,600,232" data-marks="@650,686,136,32"></figure>
+    </section>
+    <section class="card step">
+      <h2><span class="num num--blue">4</span>导入 AI 返回的文件</h2>
+      <p>保存 AI 返回的文件，回来点 <span class="kbd">导入 AI 处理后的文件</span>（或左侧 <b>还原处理文件</b>）选择它。检查通过后点 <span class="kbd">生成还原文件</span>。</p>
+      <figure class="shot" data-src="08-restore-review" data-crop="560,455,720,335" data-marks="@726,703,390,74"></figure>
+    </section>
+    <section class="card step">
+      <h2><span class="num num--blue">5</span>下载还原文件</h2>
+      <p>点 <span class="kbd">下载还原文件</span>，代号已换回真实内容，这就是最终文件。</p>
+      <figure class="shot" data-src="09-restore-ready" data-crop="560,460,720,310" data-marks="@752,698,175,56"></figure>
+    </section>
+    <section class="card tips">
+      <h2>记住这几点</h2>
+      <ul>
+        <li><svg class="ok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg><span>文件在浏览器里处理，<b>原文件不上传、不修改</b>。</span></li>
+        <li><svg class="ok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg><span>还原记录加密保存在公司服务器，<b>可以稍后再还原，换电脑也能还原</b>。</span></li>
+        <li><svg class="ok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg><span>支持 XLSX、CSV、TXT、MD、DOCX；文本类 10 MB、Office 20 MB 以内。</span></li>
+        <li><svg class="warn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.5v.01"/></svg><span><b>还原后的文件含真实信息</b>，不要再交给外部 AI。</span></li>
+        <li><svg class="warn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.5v.01"/></svg><span>不要手动改动文件里的代号，改过的部分无法还原。</span></li>
+      </ul>
+    </section>
+  </div>
+
+  <div class="note note--blue" style="margin-top:22px">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11H8l-4 4z"/></svg>
+    <span>结果不对，点结果页下方的 <span class="kbd">不满意</span>；报错、卡住或有建议，点右上角的 <span class="kbd">反馈</span>。详见《反馈指引》。</span>
+  </div>
+
+  <footer><span>文件脱敏助手 · 使用指引</span><span>截图为测试数据</span></footer>
+<script src="guide.js"></script>
+</body>
+</html>

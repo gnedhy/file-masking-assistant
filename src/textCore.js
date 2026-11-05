@@ -1,4 +1,6 @@
-import { classifyHeader, findKnownShortTokens, tokenPattern } from "./xlsxCore.js";
+import { sensitiveNumberCandidates } from "./sensitivePatterns.js";
+import { classifyHeader, findKnownShortTokens, isPlaceholderValue } from "./xlsxCore.js";
+import { createEntityToken, parseEntityToken, tokenPattern, tokenOccurrence } from "./tokenFormat.js";
 
 function splitMarkdownRow(line) {
   return line.trim().replace(/^\||\|$/g, "").split("|").map((cell) => cell.trim());
@@ -35,11 +37,12 @@ function contextAt(text, index, length) {
   return text.slice(start, endIndex < 0 ? text.length : endIndex).trim().slice(0, 180);
 }
 
-function candidate(value, label, text, manual = false) {
+// kind overrides the category guessed from the label (form labels such as 法人 are not column headers).
+export function buildTextCandidate(value, label, text, manual = false, kind = null) {
   const normalized = String(value).trim();
   const indexes = occurrenceIndexes(text, normalized);
   if (!normalized || !indexes.length || tokenPattern("").test(normalized)) return null;
-  const classification = manual ? { category: "custom", prefix: "X" } : classifyHeader(label);
+  const classification = kind ?? (manual ? { category: "custom", prefix: "X" } : classifyHeader(label));
   return {
     id: `TEXT::${encodeURIComponent(normalized)}`,
     value: normalized,
@@ -56,7 +59,8 @@ function candidate(value, label, text, manual = false) {
 export function analyzeText(text, format) {
   const found = new Map();
   const add = (value, label) => {
-    const item = candidate(value, label, text);
+    if (isPlaceholderValue(value)) return;
+    const item = buildTextCandidate(value, label, text);
     if (item && !found.has(item.value)) found.set(item.value, item);
   };
   const lines = text.split(/\r\n|\r|\n/);
@@ -77,6 +81,9 @@ export function analyzeText(text, format) {
     }
   }
 
+  // Phone, ID, bank card and e-mail numbers anywhere in the text.
+  for (const item of sensitiveNumberCandidates(text)) if (!found.has(item.value)) found.set(item.value, item);
+
   const candidates = [...found.values()];
   return {
     kind: "text",
@@ -88,16 +95,12 @@ export function analyzeText(text, format) {
 }
 
 export function addManualCandidate(analysis, value) {
-  const item = candidate(value, "手动添加", analysis.sourceText, true);
+  const item = buildTextCandidate(value, "手动添加", analysis.sourceText, true);
   if (!item) throw Object.assign(new Error("文件中没有找到这段完整文字。"), { code: "TEXT_VALUE_NOT_FOUND" });
   if (analysis.candidates.some((entry) => entry.value === item.value)) {
     throw Object.assign(new Error("这段内容已经在候选列表中。"), { code: "TEXT_VALUE_EXISTS" });
   }
   return item;
-}
-
-function createToken(prefix, sequence, taskId) {
-  return `[[${prefix}${String(sequence).padStart(3, "0")}@${taskId}]]`;
 }
 
 export function tokenizeText(text, selectedCandidates, taskId) {
@@ -108,7 +111,7 @@ export function tokenizeText(text, selectedCandidates, taskId) {
     .map((item) => {
       const prefix = item.prefix || "X";
       counters[prefix] += 1;
-      return { ...item, token: createToken(prefix, counters[prefix], taskId), used: false };
+      return { ...item, token: createEntityToken({ label: item.label, category: item.category, prefix, sequence: counters[prefix], taskId }), used: false };
     });
   let output = "";
   let replacedOccurrences = 0;
@@ -131,7 +134,7 @@ export function tokenizeText(text, selectedCandidates, taskId) {
 }
 
 export function inspectTextTokens(text) {
-  const occurrences = [...text.matchAll(tokenPattern())].map((match) => ({ token: match[0], shortToken: match[1], taskId: match[2], index: match.index }));
+  const occurrences = [...text.matchAll(tokenPattern())].map((match) => ({ ...tokenOccurrence(match[0]), index: match.index }));
   return {
     occurrences,
     taskIds: [...new Set(occurrences.map((item) => item.taskId))],
@@ -140,7 +143,7 @@ export function inspectTextTokens(text) {
 }
 
 export function inspectAlteredTextTokens(text, mapping) {
-  const knownShortTokens = new Set(Object.keys(mapping).map((token) => token.match(/^\[\[([^@]+)@/)?.[1]).filter(Boolean));
+  const knownShortTokens = new Set(Object.keys(mapping).map((token) => parseEntityToken(token)?.shortToken).filter(Boolean));
   const withoutFull = text.replace(tokenPattern(), " ");
   const malformed = [...withoutFull.matchAll(/\[\[[^\]]{1,80}(?:\]\]|$)/g)].map((match) => ({ value: match[0], index: match.index }));
   if (malformed.length) return malformed;

@@ -1,14 +1,31 @@
-import { classifyHeader, findKnownShortTokens, recommendedProcessingMode, tokenPattern } from "./xlsxCore.js";
+import { classifyHeader, findKnownShortTokens, isEmptyColumn, isPlaceholderValue, recommendedProcessingMode, spreadsAcrossWorkbook } from "./xlsxCore.js";
+import { sensitiveNumberCandidates } from "./sensitivePatterns.js";
+import { createEntityToken, parseEntityToken, tokenPattern, tokenOccurrence } from "./tokenFormat.js";
 
 const DELIMITER_CANDIDATES = [",", "\t", ";"];
+export const CSV_LIMITS = { rows: 200_000, columns: 500, cells: 5_000_000 };
 
-function parseRows(text, delimiter) {
+function parseRows(text, delimiter, limits, sample = false) {
   const rows = [];
   let row = [];
   let value = "";
   let quoted = false;
+  let cells = 0;
+  const pushValue = () => {
+    if (!sample && (rows.length >= limits.rows || row.length >= limits.columns || cells >= limits.cells)) {
+      throw Object.assign(new Error("CSV 超出当前安全处理范围，已停止解析。"), {
+        code: "CSV_LIMIT_EXCEEDED",
+        details: [`第 ${rows.length + 1} 行，第 ${row.length + 1} 列`, `限制：${limits.rows} 行、${limits.columns} 列、${limits.cells} 个字段`],
+      });
+    }
+    row.push(value);
+    cells += 1;
+    value = "";
+  };
 
   for (let index = 0; index < text.length; index += 1) {
+    // ponytail: bounded dialect sample; ambiguous CSV still requires a consistent delimiter.
+    if (sample && (rows.length >= 20 || index >= 64 * 1024)) return rows.length ? rows : [[...row, value]];
     const character = text[index];
     if (quoted) {
       if (character === '"') {
@@ -27,22 +44,20 @@ function parseRows(text, delimiter) {
     if (character === '"' && value === "") {
       quoted = true;
     } else if (character === delimiter) {
-      row.push(value);
-      value = "";
+      pushValue();
     } else if (character === "\r" || character === "\n") {
-      row.push(value);
+      pushValue();
       rows.push(row);
       row = [];
-      value = "";
       if (character === "\r" && text[index + 1] === "\n") index += 1;
     } else {
       value += character;
     }
   }
 
-  if (quoted) throw new Error("CSV 中存在未闭合的引号");
+  if (quoted && !sample) throw new Error("CSV 中存在未闭合的引号");
   if (row.length || value !== "" || !/(?:\r\n|\r|\n)$/.test(text)) {
-    row.push(value);
+    pushValue();
     rows.push(row);
   }
   return rows;
@@ -58,7 +73,7 @@ function delimiterScore(rows) {
   return frequency * 100 + width - (sample.length - frequency) * 10;
 }
 
-export function parseCsvText(input) {
+export function parseCsvText(input, limits = CSV_LIMITS) {
   const hadBom = String(input).startsWith("\uFEFF");
   const text = String(input).replace(/^\uFEFF/, "");
   const newline = text.includes("\r\n") ? "\r\n" : text.includes("\r") ? "\r" : "\n";
@@ -66,13 +81,13 @@ export function parseCsvText(input) {
   let best = null;
 
   for (const delimiter of DELIMITER_CANDIDATES) {
-    const rows = parseRows(text, delimiter);
+    const rows = parseRows(text, delimiter, limits, true);
     const score = delimiterScore(rows);
     if (!best || score > best.score) best = { delimiter, rows, score };
   }
 
   return {
-    rows: best?.rows ?? [],
+    rows: parseRows(text, best?.delimiter ?? ",", limits),
     delimiter: best?.delimiter ?? ",",
     newline,
     trailingNewline,
@@ -143,16 +158,49 @@ export function analyzeCsv(document) {
     }];
   });
 
+  const knownEntities = columns
+    .filter((column) => column.suggested && column.recommendedMode !== "inline")
+    .flatMap((column) => document.rows.slice(column.headerRow).map((row) => String(row[column.columnNumber - 1] ?? "").trim()))
+    .filter(inlineDictionaryEligible);
+  const entityIndex = buildEntityIndex([...new Set(knownEntities)].map(source => ({ source })));
+  const suggestedColumns = columns.map((column) => {
+    if (column.suggested || column.recommendedMode !== "inline") return column;
+    const hasKnownEntity = document.rows.slice(column.headerRow).some((row) => {
+      const text = String(row[column.columnNumber - 1] ?? "");
+      return !entityMatches(text, entityIndex).next().done;
+    });
+    return hasKnownEntity ? { ...column, suggested: true } : column;
+  });
+
+  const sourceText = document.rows.map((row) => row.join("\n")).join("\n");
+  const covered = new Set();
+  for (const column of suggestedColumns.filter((item) => item.suggested && !isEmptyColumn(item))) {
+    for (const row of document.rows.slice(column.headerRow)) covered.add(String(row[column.columnNumber - 1] ?? "").trim());
+  }
+  const candidates = sensitiveNumberCandidates(sourceText).filter((item) => !covered.has(item.value));
+
   return {
     format: "csv",
-    sheets: [{ name: "CSV", headerRow, rowCount: document.rows.length, columns: columns.length }],
-    columns,
-    suggestedColumnIds: columns.filter((column) => column.suggested).map((column) => column.id),
+    sheets: [{ name: "CSV", headerRow, rowCount: document.rows.length, columns: suggestedColumns.length }],
+    columns: suggestedColumns,
+    suggestedColumnIds: suggestedColumns.filter((column) => column.suggested && !isEmptyColumn(column)).map((column) => column.id),
+    // Phone, ID, bank card and e-mail numbers outside the suggested columns are listed as keywords; keywords
+    // added by hand are looked up in the file's text and the places below.
+    candidates,
+    suggestedCandidateIds: candidates.map((item) => item.id),
+    sourceText,
+    cells: csvCells(document),
   };
 }
 
-function createToken(prefix, sequence, taskId) {
-  return `[[${prefix}${String(sequence).padStart(3, "0")}@${taskId}]]`;
+// Every non-empty field with its place, for "第 2 行第 3 列"-style hints.
+function csvCells(document) {
+  const cells = [];
+  document.rows.forEach((row, rowIndex) => row.forEach((value, columnIndex) => {
+    const text = String(value ?? "");
+    if (text.trim() && cells.length < 100000) cells.push({ sheet: "CSV", row: rowIndex + 1, column: columnIndex + 1, text });
+  }));
+  return cells;
 }
 
 function valueKey(value) {
@@ -184,6 +232,34 @@ function independentEntityMatch(text, start, source) {
   return true;
 }
 
+function buildEntityIndex(entries) {
+  const root = { children: new Map(), entries: [] };
+  for (const entry of entries) {
+    if (!entry.source) continue;
+    let node = root;
+    // Both construction and lookup use UTF-16 units, including surrogate pairs.
+    for (const character of entry.source.split("")) {
+      if (!node.children.has(character)) node.children.set(character, { children: new Map(), entries: [] });
+      node = node.children.get(character);
+    }
+    node.entries.push(entry);
+  }
+  return root;
+}
+
+function* entityMatches(text, root) {
+  for (let start = 0; start < text.length; start += 1) {
+    let node = root;
+    for (let end = start; end < text.length; end += 1) {
+      node = node.children.get(text[end]);
+      if (!node) break;
+      for (const entry of node.entries) {
+        if (independentEntityMatch(text, start, entry.source)) yield entry;
+      }
+    }
+  }
+}
+
 function replaceEntityInSegment(text, source, token) {
   const parts = [];
   let cursor = 0;
@@ -209,7 +285,9 @@ function replaceEntityInSegment(text, source, token) {
   return { parts, replacements };
 }
 
-function replaceKnownEntities(text, dictionary) {
+function replaceKnownEntities(text, entityIndex) {
+  const dictionary = [...new Set(entityMatches(String(text), entityIndex))]
+    .sort((left, right) => right.source.length - left.source.length || left.order - right.order);
   let segments = [{ text: String(text), protected: false }];
   let replacements = 0;
   for (const { source, token } of dictionary) {
@@ -229,12 +307,15 @@ function replaceKnownEntities(text, dictionary) {
   return { text: segments.map((segment) => segment.text).join(""), replacements };
 }
 
-export function tokenizeCsv(document, selectedColumns, taskId) {
+// candidates: names the user confirmed or added by hand, each { value, label, category, prefix }.
+export function tokenizeCsv(document, selectedColumns, taskId, candidates = []) {
   const counters = { C: 0, P: 0, S: 0, X: 0 };
   const tokenByValue = new Map();
   const mapping = {};
   const warnings = [];
   const dictionaryBySource = new Map();
+  // Cells (row:column) that a selected column already handled; the workbook-wide pass leaves them alone.
+  const handled = new Set();
   let replacedCells = 0;
 
   const columnsByMode = {
@@ -246,8 +327,9 @@ export function tokenizeCsv(document, selectedColumns, taskId) {
     const columnIndex = column.columnNumber - 1;
     for (let rowIndex = column.headerRow; rowIndex < document.rows.length; rowIndex += 1) {
       const row = document.rows[rowIndex];
+      handled.add(`${rowIndex}:${columnIndex}`);
       const value = row[columnIndex] ?? "";
-      if (!String(value).trim()) continue;
+      if (!String(value).trim() || isPlaceholderValue(value)) continue;
       if (tokenPattern("").test(String(value))) {
         warnings.push({ location: `第 ${rowIndex + 1} 行，第 ${column.columnNumber} 列`, reason: "原文件已含本工具代号" });
         continue;
@@ -258,7 +340,7 @@ export function tokenizeCsv(document, selectedColumns, taskId) {
       let token = tokenByValue.get(key);
       if (!token) {
         counters[prefix] += 1;
-        token = createToken(prefix, counters[prefix], taskId);
+        token = createEntityToken({ label: column.header, category: column.category, prefix, sequence: counters[prefix], taskId });
         tokenByValue.set(key, token);
         mapping[token] = {
           value: { type: "string", value: String(value) },
@@ -274,20 +356,40 @@ export function tokenizeCsv(document, selectedColumns, taskId) {
     }
   }
 
-  const dictionary = Array.from(dictionaryBySource, ([source, token]) => ({ source, token }))
-    .sort((left, right) => right.source.length - left.source.length);
+  // Names confirmed by hand get their own alias unless a selected column already gave them one; they are
+  // replaced everywhere, whatever their length.
+  const forced = new Set();
+  const tokenByText = new Map(Object.entries(mapping).map(([token, entry]) => [String(entry.value?.value ?? ""), token]));
+  for (const item of candidates) {
+    const source = String(item.value ?? "").trim();
+    if (!source || isPlaceholderValue(source)) continue;
+    let token = tokenByText.get(source);
+    if (!token) {
+      const prefix = item.prefix || "X";
+      counters[prefix] += 1;
+      token = createEntityToken({ label: item.label, category: item.category, prefix, sequence: counters[prefix], taskId });
+      mapping[token] = { value: { type: "string", value: source }, category: item.category, header: item.label };
+      tokenByText.set(source, token);
+    }
+    dictionaryBySource.set(source, token);
+    forced.add(source);
+  }
+
+  const dictionaryEntries = Array.from(dictionaryBySource, ([source, token], order) => ({ source, token, order }));
+  const entityIndex = buildEntityIndex(dictionaryEntries);
 
   for (const column of columnsByMode.inline) {
     const columnIndex = column.columnNumber - 1;
     for (let rowIndex = column.headerRow; rowIndex < document.rows.length; rowIndex += 1) {
       const row = document.rows[rowIndex];
+      handled.add(`${rowIndex}:${columnIndex}`);
       const value = row[columnIndex] ?? "";
       if (!String(value).trim()) continue;
       if (tokenPattern("").test(String(value))) {
         warnings.push({ location: `第 ${rowIndex + 1} 行，第 ${column.columnNumber} 列`, reason: "原文件已含本工具代号" });
         continue;
       }
-      const replaced = replaceKnownEntities(value, dictionary);
+      const replaced = replaceKnownEntities(value, entityIndex);
       if (!replaced.replacements) continue;
       while (row.length <= columnIndex) row.push("");
       row[columnIndex] = replaced.text;
@@ -295,7 +397,41 @@ export function tokenizeCsv(document, selectedColumns, taskId) {
     }
   }
 
-  return { mapping, replacedCells, uniqueValues: Object.keys(mapping).length, warnings, notices: [] };
+  // People pick the columns that hold names; the same names in every other column (notes, follow-up text, a
+  // second name column) are replaced too. Only names and longer codes are looked for there: a quantity that
+  // happens to equal a short code is never touched (see spreadsAcrossWorkbook).
+  const elsewhere = replaceAcrossCsv(document, dictionaryEntries.filter(({ source }) => forced.has(source) || spreadsAcrossWorkbook(source)), handled, selectedColumns[0]?.headerRow - 1);
+  replacedCells += elsewhere.cells;
+
+  return { mapping, replacedCells, uniqueValues: Object.keys(mapping).length, warnings, notices: [], elsewhere };
+}
+
+function replaceAcrossCsv(document, entries, handled, headerIndex) {
+  const result = { cells: 0, sheets: [], unit: "列" };
+  if (!entries.length) return result;
+  const exactToken = new Map(entries.map(({ source, token }) => [source, token]));
+  const index = buildEntityIndex(entries);
+  const perColumn = new Map();
+  document.rows.forEach((row, rowIndex) => {
+    if (rowIndex === headerIndex) return;
+    row.forEach((value, columnIndex) => {
+      if (handled.has(`${rowIndex}:${columnIndex}`)) return;
+      const text = String(value ?? "");
+      if (!text.trim() || isPlaceholderValue(text) || tokenPattern("").test(text)) return;
+      let next = exactToken.get(text.trim()) ?? null;
+      if (next == null) {
+        const replaced = replaceKnownEntities(text, index);
+        if (replaced.replacements) next = replaced.text;
+      }
+      if (next == null) return;
+      row[columnIndex] = next;
+      result.cells += 1;
+      perColumn.set(columnIndex, (perColumn.get(columnIndex) ?? 0) + 1);
+    });
+  });
+  const headers = document.rows[headerIndex] ?? [];
+  result.sheets = [...perColumn].sort((a, b) => a[0] - b[0]).map(([columnIndex, cells]) => ({ sheet: String(headers[columnIndex] ?? "").trim() || `第 ${columnIndex + 1} 列`, cells }));
+  return result;
 }
 
 export function inspectCsvTokens(document) {
@@ -304,11 +440,10 @@ export function inspectCsvTokens(document) {
   document.rows.forEach((row, rowIndex) => {
     row.forEach((value, columnIndex) => {
       for (const match of String(value).matchAll(tokenPattern())) {
-        taskIds.add(match[2]);
+        const parsed = tokenOccurrence(match[0]);
+        taskIds.add(parsed.taskId);
         occurrences.push({
-          token: match[0],
-          shortToken: match[1],
-          taskId: match[2],
+          ...parsed,
           rowNumber: rowIndex + 1,
           columnNumber: columnIndex + 1,
           location: `第 ${rowIndex + 1} 行，第 ${columnIndex + 1} 列`,
@@ -325,7 +460,7 @@ export function inspectCsvTokens(document) {
 }
 
 export function inspectCsvAlteredTokens(document, mapping) {
-  const knownShortTokens = new Set(Object.keys(mapping).map((token) => token.match(/^\[\[([^@]+)@/)?.[1]).filter(Boolean));
+  const knownShortTokens = new Set(Object.keys(mapping).map((token) => parseEntityToken(token)?.shortToken).filter(Boolean));
   const findings = [];
   document.rows.forEach((row, rowIndex) => {
     row.forEach((value, columnIndex) => {
@@ -354,7 +489,7 @@ export function restoreCsvValues(document, mapping) {
   const inspection = inspectCsvTokens(document);
   const unresolved = inspection.occurrences
     .filter((occurrence) => !mapping[occurrence.token])
-    .map((occurrence) => ({ ...occurrence, reason: "本机没有对应映射" }));
+    .map((occurrence) => ({ ...occurrence, reason: "本机没有对应还原记录" }));
   if (unresolved.length) return { restoredOccurrences: 0, unresolved, inspection };
 
   let restoredOccurrences = 0;
@@ -367,4 +502,33 @@ export function restoreCsvValues(document, mapping) {
     });
   });
   return { restoredOccurrences, unresolved: [], inspection };
+}
+
+export function findCsvSensitiveResiduals(document, mapping) {
+  const sources = [...new Set(Object.values(mapping).map((entry) => String(entry?.value?.value ?? "")).filter(Boolean))];
+  const root = buildEntityIndex(sources.map(source => ({ source })));
+
+  const findings = [];
+  document.rows.forEach((row, rowIndex) => row.forEach((value, columnIndex) => {
+    const text = String(value ?? "").replace(tokenPattern(), " ");
+    const location = `第 ${rowIndex + 1} 行，第 ${columnIndex + 1} 列`;
+    for (const { source } of entityMatches(text, root)) {
+      findings.push({ location, sheetName: "CSV", row: rowIndex + 1, columnNumber: columnIndex + 1, eligible: inlineDictionaryEligible(source), reason: inlineDictionaryEligible(source)
+        ? "已选真实值仍出现在脱敏结果中"
+        : "已选短名称或短编码仍出现在此处；不自动猜测替换，请将该列设为整格替换或先整理原文件" });
+    }
+  }));
+  return findings;
+}
+
+export function findCsvFormulaCells(document) {
+  const headers = document.rows[detectHeaderRow(document.rows) - 1] ?? [];
+  const findings = [];
+  document.rows.forEach((row, rowIndex) => row.forEach((value, columnIndex) => {
+    const text = String(value ?? "");
+    const trimmed = text.replace(/^[\t\r\n ]+/, "");
+    if (!/^[=+\-@]/.test(trimmed) || /^[+\-]\d+(?:[.,]\d+)?%?$/.test(trimmed)) return;
+    findings.push({ location: `第 ${rowIndex + 1} 行，第 ${columnIndex + 1} 列`, row: rowIndex + 1, header: String(headers[columnIndex] ?? "").trim(), value: trimmed.slice(0, 80) });
+  }));
+  return findings;
 }

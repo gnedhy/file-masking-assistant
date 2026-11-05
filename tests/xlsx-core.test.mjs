@@ -65,7 +65,7 @@ test("XLSX 富文本可整格脱敏并按原结构还原", () => {
 
   const result = tokenizeWorkbook(workbook, [{ ...analysis.columns[0], processingMode: "whole" }], "A1B2C3D4");
   assert.equal(result.warnings.length, 0);
-  assert.equal(sheet.getCell("A2").value, "[[C001@A1B2C3D4]]");
+  assert.equal(sheet.getCell("A2").value, "[[客户名称:C001@A1B2C3D4]]");
   restoreWorkbookValues(workbook, result.mapping);
   assert.deepEqual(sheet.getCell("A2").value, {
     richText: [
@@ -92,7 +92,7 @@ test("XLSX 叙述字段只替换已确认实体并保留上下文", () => {
   assert.equal(result.replacedCells, 6);
   assert.equal(
     sheet.getCell("D2").value,
-    "[[S001@7F2A9C4D]]反馈：[[C001@7F2A9C4D]]的 [[P001@7F2A9C4D]] 已完成第二轮测试。",
+    "[[业务员:S001@7F2A9C4D]]反馈：[[客户名称:C001@7F2A9C4D]]的 [[产品内部编码:P001@7F2A9C4D]] 已完成第二轮测试。",
   );
   restoreWorkbookValues(workbook, result.mapping);
   assert.equal(sheet.getCell("D2").value, "张三反馈：浙江ABC染整的 HT-825GK 已完成第二轮测试。");
@@ -107,8 +107,8 @@ test("XLSX 脱敏与还原保留公式和样式", async () => {
   addTaskMarker(workbook, { taskId, taskName: "7月销售明细", createdAt: "2026-08-12T00:00:00.000Z" });
 
   assert.equal(protectedResult.replacedCells, 9);
-  assert.equal(workbook.getWorksheet("销售明细").getCell("A2").value, "[[C001@7F2A9C4D]]");
-  assert.equal(workbook.getWorksheet("销售明细").getCell("A3").value, "[[C001@7F2A9C4D]]");
+  assert.equal(workbook.getWorksheet("销售明细").getCell("A2").value, "[[客户名称:C001@7F2A9C4D]]");
+  assert.equal(workbook.getWorksheet("销售明细").getCell("A3").value, "[[客户名称:C001@7F2A9C4D]]");
   assert.equal(workbook.getWorksheet("销售明细").getCell("D4").value.formula, "SUM(D2:D3)");
 
   const roundTripped = new ExcelJS.Workbook();
@@ -116,6 +116,8 @@ test("XLSX 脱敏与还原保留公式和样式", async () => {
   const inspection = inspectWorkbookTokens(roundTripped);
   assert.deepEqual(inspection.taskIds, [taskId]);
   assert.equal(roundTripped.getWorksheet("__AI安全任务").state, "veryHidden");
+  assert.equal(roundTripped.getWorksheet("__AI安全任务").getColumn(1).values.includes("任务名称"), false);
+  assert.equal(JSON.stringify(roundTripped.getWorksheet("__AI安全任务").getSheetValues()).includes("7月销售明细"), false);
 
   const restored = restoreWorkbookValues(roundTripped, protectedResult.mapping);
   assert.equal(restored.unresolved.length, 0);
@@ -147,7 +149,7 @@ test("选择金额列时清除公式缓存而不是拦截处理", async () => {
   assert.equal(protectedResult.replacedCells, 2);
   assert.equal(protectedResult.warnings.length, 0);
   assert.equal(protectedResult.notices.length, 1);
-  assert.match(workbook.getWorksheet("销售明细").getCell("D2").value, /^\[\[X001@A1B2C3D4\]\]$/);
+  assert.match(workbook.getWorksheet("销售明细").getCell("D2").value, /^\[\[销售金额:X001@A1B2C3D4\]\]$/);
   assert.equal(workbook.getWorksheet("销售明细").getCell("D4").value.formula, "SUM(D2:D3)");
   assert.equal(workbook.getWorksheet("销售明细").getCell("D4").value.result, undefined);
 
@@ -167,7 +169,7 @@ test("未知 Token 与公式中的 Token 均失败关闭", () => {
   });
   assert.equal(result.restoredOccurrences, 0);
   assert.equal(result.unresolved.length, 2);
-  assert.match(result.unresolved[0].reason, /没有对应映射/);
+  assert.match(result.unresolved[0].reason, /没有对应还原记录/);
   assert.match(result.unresolved[1].reason, /公式/);
 });
 
@@ -234,7 +236,47 @@ test("短英文数字编码仅在独立出现时进行文中替换", () => {
   const result = tokenizeWorkbook(workbook, selected, "7F2A9C4D");
 
   assert.equal(result.replacedCells, 2);
-  assert.equal(sheet.getCell("B2").value, "[[P001@7F2A9C4D]] 已通过，XA12 不应被部分替换");
+  assert.equal(sheet.getCell("B2").value, "[[产品编码:P001@7F2A9C4D]] 已通过，XA12 不应被部分替换");
   restoreWorkbookValues(workbook, result.mapping);
   assert.equal(sheet.getCell("B2").value, "A1 已通过，XA12 不应被部分替换");
+});
+
+test("完全没有内容的列不会被默认勾选，并能被识别为空列", async () => {
+  const { isEmptyColumn } = await import("../src/xlsxCore.js");
+  const workbook = new ExcelJS.Workbook();
+  workbook.addWorksheet("表").addRows([["客户名称", "销售人员"], ["虚构客户甲", null], ["虚构客户乙", ""]]);
+  const analysis = analyzeWorkbook(workbook);
+  const empty = analysis.columns.find((column) => column.header === "销售人员");
+  assert.equal(empty.suggested, true);
+  assert.equal(isEmptyColumn(empty), true);
+  assert.equal(isEmptyColumn(analysis.columns.find((column) => column.header === "客户名称")), false);
+  assert.deepEqual(analysis.suggestedColumnIds, [analysis.columns.find((column) => column.header === "客户名称").id]);
+});
+
+test("占位符（/、-、无、N/A）不当作真实值，原样保留", async () => {
+  const { isPlaceholderValue } = await import("../src/xlsxCore.js");
+  for (const value of ["/", "／", "-", "—", "无", "暂无", "N/A", "n/a", "*"]) assert.equal(isPlaceholderValue(value), true, value);
+  for (const value of ["K5204", "张三", "0", "x", "A1"]) assert.equal(isPlaceholderValue(value), false, value);
+  const workbook = new ExcelJS.Workbook();
+  workbook.addWorksheet("表").addRows([["客户简称", "金额"], ["K5204", 1], ["/", 2], ["无", 3]]);
+  const column = analyzeWorkbook(workbook).columns.find(c => c.header === "客户简称");
+  const result = tokenizeWorkbook(workbook, [{ ...column, processingMode: "whole" }], "AB12CD34");
+  assert.equal(result.replacedCells, 1);
+  assert.deepEqual(Object.values(result.mapping).map(entry => entry.value.value), ["K5204"]);
+  assert.equal(workbook.getWorksheet("表").getCell("A3").value, "/");
+});
+
+test("合并单元格的客户名只替换一次，不误报“已含代号”", () => {
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet("表");
+  sheet.addRows([["客户名称", "产品"], ["虚构星河化工", "甲"], [null, "乙"], ["虚构东骏纺织", "丙"]]);
+  sheet.mergeCells("A2:A3");
+  const column = analyzeWorkbook(workbook).columns.find(c => c.header === "客户名称");
+  const result = tokenizeWorkbook(workbook, [{ ...column, processingMode: "whole" }], "AB12CD34");
+  assert.deepEqual(result.warnings, []);
+  assert.equal(result.replacedCells, 2);
+});
+
+test("客户全称、公司全称、企业名称、单位名称默认识别为客户列", () => {
+  for (const header of ["客户全称", "客户全名", "公司全称", "企业名称", "单位名称", "往来单位", "供应商全称"]) assert.equal(classifyHeader(header).category, "customer", header);
 });
