@@ -6617,11 +6617,7 @@ input {
 .workbench {
   min-height: clamp(440px, calc(100vh - 340px), 600px);
   padding: 40px 44px 44px;
-  background: var(--surface-raised);
 }
-.workbench::before,
-.workbench::after { display: none; }
-.workbench[data-dragging="true"] { background: color-mix(in srgb, var(--blue) 4%, var(--surface-raised)); }
 .workbench[data-status="success"] { padding-block: 32px 36px; }
 
 .selected-file { min-height: 88px; gap: 18px; padding: 16px 20px; }

@@ -1,6 +1,7 @@
 import {
   addTaskMarker,
   analyzeWorkbook,
+  coveredValues,
   hiddenContent,
   inspectWorkbookAlteredTokens,
   inspectWorkbookTokens,
@@ -86,14 +87,7 @@ export async function inspectProtectionFile(file) {
   const workbook = await loadWorkbook(file);
   const analysis = analyzeWorkbook(workbook);
   // Names already covered by the suggested columns are not listed again.
-  const covered = new Set();
-  for (const column of analysis.columns.filter((item) => analysis.suggestedColumnIds.includes(item.id))) {
-    const sheet = workbook.getWorksheet(column.sheetName);
-    for (let row = column.headerRow + 1; row <= (column.endRow ?? sheet.rowCount); row += 1) {
-      const value = sheet.getRow(row).getCell(column.columnNumber).value;
-      if (typeof value === "string") covered.add(value.trim());
-    }
-  }
+  const covered = coveredValues(workbook, analysis.columns.filter((item) => analysis.suggestedColumnIds.includes(item.id)));
   // Header rows of tables with a suggested column are read as column names; form rows are still read as labels.
   const headerRows = new Map();
   for (const column of analysis.columns.filter((item) => analysis.suggestedColumnIds.includes(item.id))) {

@@ -87,3 +87,29 @@ test("仿真的重点客户资料工作簿：表单工作表不再被当成一�
   assert.deepEqual(sheets["销售明细表"], [[1, 1, 6, 3]]);
   assert.deepEqual(sheets["重点客户资料表"], []);
 });
+
+test("数据中间有空行或分组标题，数据行里又是几个短文字时，不会被误拆成新表格", () => {
+  const { sheet } = sheetOf([
+    ["序号", "部门", "业务员", "客户全称"],
+    [1, "销售一部", "张三", "开平市信迪染整厂"],
+    [2, "销售一部", "李四", "佛山市中汇纺织印染有限公司"],
+    null,
+    ["华南区"],
+    ["销售二部", "王五", "绍兴泽平印染有限公司", "信诚染织（福建）"],
+    [3, "销售二部", "赵六", "绍兴泽平印染有限公司"],
+    [4, "销售二部", "钱七", "信诚染织（福建）有限公司"],
+  ]);
+  assert.deepEqual(shape(detectTableBlocks(sheet)), [[1, 1, 4, 8]]);
+});
+
+test("已勾选的列里有部分文字加粗（富文本）的单元格，也算已覆盖，不会再列到“没勾选的列”里", async () => {
+  const { coveredValues } = await import("../src/xlsxCore.js");
+  const { findWorkbookCandidates } = await import("../src/workbookCandidates.js");
+  const { workbook, sheet } = sheetOf([["序号", "业务员", "客户全称"], [1, "张三", "虚构甲染整有限公司"], [2, "李四", "虚构乙染整有限公司"], [3, "王五", "虚构丙染整有限公司"]]);
+  sheet.getCell("C3").value = { richText: [{ text: "开平市信迪" }, { text: "染整厂", font: { bold: true } }] };
+  const analysis = analyzeWorkbook(workbook);
+  const chosen = analysis.columns.filter(column => analysis.suggestedColumnIds.includes(column.id));
+  const covered = coveredValues(workbook, chosen);
+  assert.ok(covered.has("开平市信迪染整厂"));
+  assert.ok(!findWorkbookCandidates(workbook, covered).candidates.some(item => item.value === "开平市信迪染整厂"));
+});

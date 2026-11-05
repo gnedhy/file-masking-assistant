@@ -161,6 +161,9 @@ function detectHeaderRow(worksheet) {
 const MAX_SCAN_ROWS = 20000;
 const MAX_SCAN_COLUMNS = 120;
 const FORM_LABEL_ENDING = /(?:名称|时间|人数|日期|电话|地址|类型|占比|产量|情况|习惯|金额|备注|姓名|职务|职位|部门)\s*[*＊]?\s*[:：]?$/;
+// Words a column name tends to end with; used to tell a new table's header from a data row that merely looks like one.
+const FIELD_ENDING = /(?:名称|简称|全称|编号|编码|代码|日期|时间|数量|单价|金额|总额|价格|类型|类别|区域|地区|省份|部门|姓名|备注|说明|状态|序号|占比|比例|用量|产量|销量|销售额|品种|产品|客户|业务员|负责人|联系人)\s*[*＊]?$/;
+const headerish = (text) => FIELD_ENDING.test(text) || classifyHeader(text).category !== "custom";
 const COMPANY_LIKE = /(?:有限公司|有限责任公司|股份|集团|公司|工厂|商行)$/;
 
 function headerText(cell) {
@@ -224,7 +227,7 @@ export function detectTableBlocks(worksheet) {
       let endRow = row;
       for (let next = row + 1; next <= lastRow; next += 1) {
         if (filledIn(next, run.start, run.end)) endRow = next;
-        const startsTable = next > row + 1 && headerRuns(next).some((other) => other.start <= run.end && other.end >= run.start && filledIn(next + 1, other.start, other.end))
+        const startsTable = next > row + 1 && headerRuns(next).some((other) => other.start <= run.end && other.end >= run.start && other.texts.filter(headerish).length >= 2 && filledIn(next + 1, other.start, other.end))
           && filledIn(next - 1, run.start, run.end) <= 1;
         if (startsTable) {
           endRow = next - 1;
@@ -239,6 +242,21 @@ export function detectTableBlocks(worksheet) {
     }
   }
   return blocks;
+}
+
+// The text of every value in the given columns (rich-text cells included), so names already covered by a chosen column are not listed again.
+export function coveredValues(workbook, columns) {
+  const covered = new Set();
+  for (const column of columns) {
+    const sheet = workbook.getWorksheet(column.sheetName);
+    if (!sheet) continue;
+    for (let row = column.headerRow + 1; row <= (column.endRow ?? sheet.rowCount); row += 1) {
+      const cell = sheet.getRow(row).getCell(column.columnNumber);
+      if (cell.isMerged && cell.master !== cell) continue;
+      if (typeof cell.value === "string" || richTextCellValue(cell.value)) covered.add(valueAsText(cell.value).trim());
+    }
+  }
+  return covered;
 }
 
 function candidateId(sheetName, headerRow, columnNumber) {
