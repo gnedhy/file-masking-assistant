@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Dropdown } from "./Dropdown.jsx";
-import { ArrowsClockwise } from "@phosphor-icons/react";
+import { ArrowsClockwise, ShieldCheck, User } from "@phosphor-icons/react";
 import { ConfirmDialog } from "./ConfirmDialog.jsx";
 import { getSession } from "./session.js";
 
@@ -129,7 +129,7 @@ export default function AccessSettings({ onBack }) {
             <button className="access-action access-sync" type="button" disabled={syncing} onClick={sync}><ArrowsClockwise size={16} weight="bold" aria-hidden="true" />{syncing ? "正在同步…" : "同步通讯录"}</button>
           </div>
           <div className="access-filters">
-            <label>搜索姓名或账号<input type="search" value={query} onChange={e => { setQuery(e.target.value); setPage(1); }} /></label>
+            <label>搜索姓名或账号<input type="search" placeholder="姓名或账号" value={query} onChange={e => { setQuery(e.target.value); setPage(1); }} /></label>
             <div className="field"><span>部门</span><Dropdown label="部门" value={department} onChange={next => { setDepartment(next); setPage(1); }} options={[{ value: "", label: "全部部门" }, ...tree.map(d => ({ value: String(d.id), label: d.name, depth: d.depth }))]} /></div>
           </div>
           {data.members.length === 0 ? <p className="access-empty" role="status">{syncing ? "正在从企业微信读取通讯录…" : "通讯录为空，请先同步。"}</p> : <>
@@ -140,13 +140,14 @@ export default function AccessSettings({ onBack }) {
               <span className={member.isAdmin ? "access-role access-role--admin" : "access-role"}>{member.isAdmin ? "管理员" : "普通用户"}</span>
               {memberAction(member)}
             </li>)}</ul>
-            {matches.length === 0 ? <p className="access-count" role="status">没有符合条件的人员。</p> : <nav className="access-pager" aria-label="通讯录分页">
+            {matches.length === 0 ? <p className="access-count" role="status">没有符合条件的人员。</p> : pages <= 1 && matches.length === data.members.length ? null : <nav className="access-pager" aria-label="通讯录分页">
               <span role="status">共 {matches.length} 人{pages > 1 && ` · 第 ${currentPage} / ${pages} 页`}</span>
               {pages > 1 && <div><button className="access-action" type="button" disabled={currentPage === 1} onClick={() => turnPage(currentPage - 1)}>上一页</button><button className="access-action" type="button" disabled={currentPage === pages} onClick={() => turnPage(currentPage + 1)}>下一页</button></div>}
             </nav>}
           </>}
           <p className="access-note">只能读到企业微信应用可见范围内的部门和人员。超过一天未同步时，打开本页会自动同步。</p>
         </section>
+
 
         <aside className="access-side">
           <section className="access-card" aria-labelledby="access-admins">
@@ -159,6 +160,10 @@ export default function AccessSettings({ onBack }) {
                 {memberAction(member)}
               </li>;
             })}</ul>
+            <div className="access-role-help">
+              <div><ShieldCheck weight="bold" aria-hidden="true" /><strong>管理员</strong><span>查看全员记录和使用统计，导出、配置权限</span></div>
+              <div><User weight="bold" aria-hidden="true" /><strong>普通用户</strong><span>只能查看自己的操作记录。</span></div>
+            </div>
           </section>
           <section className="access-card" aria-labelledby="access-changes">
             <div className="access-card__head"><h2 id="access-changes">变更记录</h2></div>
@@ -166,13 +171,6 @@ export default function AccessSettings({ onBack }) {
               <strong>{c.targetName} · {CHANGE_LABELS[c.change]}</strong>
               <small>{formatTime(c.time)}{c.change !== "first_login" && ` · 操作人 ${c.actorName}`}</small>
             </li>)}</ol> : <p className="access-empty">暂无变更。</p>}
-          </section>
-          <section className="access-card access-roles" aria-label="身份说明">
-            <dl>
-              <div><dt>管理员</dt><dd>查看全部人员的操作记录、使用统计，导出记录，配置权限。</dd></div>
-              <div><dt>普通用户</dt><dd>只能查看自己的操作记录。</dd></div>
-            </dl>
-            <p>每个人的还原记录只有本人能用，管理员也看不到。变更在对方下次打开应用时生效。</p>
           </section>
         </aside>
       </div>

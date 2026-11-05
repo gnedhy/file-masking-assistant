@@ -46,6 +46,8 @@ test("管理员在操作记录里切换“我的 / 全部”，并按部门、�
   await expect(tasks).toContainText("测试员工乙");
 
   // A department keeps only its people; the parent department covers everyone under it.
+  // The department and person pickers sit inside the filter fold.
+  await drawer.locator(".record-filters-more > summary").click();
   const pick = async (label, option) => {
     await drawer.getByRole("combobox", { name: label }).click();
     await drawer.getByRole("listbox", { name: label }).getByRole("option", { name: option, exact: true }).click();

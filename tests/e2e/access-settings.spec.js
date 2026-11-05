@@ -48,7 +48,8 @@ test("权限配置：仅管理员可见；普通用户的使用统计只含本�
   // The parent department lists everyone under it; then narrow to one department.
   await settings.getByRole("combobox", { name: "部门" }).click();
   await settings.getByRole("option", { name: "测试公司" }).click();
-  await expect(settings.getByRole("navigation", { name: "通讯录分页" })).toHaveText("共 3 人");
+  // Everyone is listed, so the count line (already in the card subtitle) is not repeated.
+  await expect(settings.locator(".access-directory .access-list > li")).toHaveCount(3);
   await settings.getByRole("combobox", { name: "部门" }).click();
   await settings.getByRole("option", { name: "财务部" }).click();
   await expect(settings.getByRole("combobox", { name: "部门" })).toHaveText("财务部");

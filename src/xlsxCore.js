@@ -253,7 +253,12 @@ export function coveredValues(workbook, columns) {
     for (let row = column.headerRow + 1; row <= (column.endRow ?? sheet.rowCount); row += 1) {
       const cell = sheet.getRow(row).getCell(column.columnNumber);
       if (cell.isMerged && cell.master !== cell) continue;
-      if (typeof cell.value === "string" || richTextCellValue(cell.value)) covered.add(valueAsText(cell.value).trim());
+      // Text, rich text, and cells holding a formula or link: what shows in the cell is covered by the column.
+      const value = cell.value;
+      if (typeof value === "string" || (value && typeof value === "object" && !(value instanceof Date))) {
+        const text = typeof cell.text === "string" ? cell.text.trim() : "";
+        if (text) covered.add(text);
+      }
     }
   }
   return covered;

@@ -107,9 +107,21 @@ test("已勾选的列里有部分文字加粗（富文本）的单元格，也�
   const { findWorkbookCandidates } = await import("../src/workbookCandidates.js");
   const { workbook, sheet } = sheetOf([["序号", "业务员", "客户全称"], [1, "张三", "虚构甲染整有限公司"], [2, "李四", "虚构乙染整有限公司"], [3, "王五", "虚构丙染整有限公司"]]);
   sheet.getCell("C3").value = { richText: [{ text: "开平市信迪" }, { text: "染整厂", font: { bold: true } }] };
+  sheet.getCell("C4").value = { formula: "B4", result: "开平市信迪染整二厂" };
+  sheet.getCell("C2").value = { text: "开平市信迪染整三厂", hyperlink: "https://example.com" };
   const analysis = analyzeWorkbook(workbook);
   const chosen = analysis.columns.filter(column => analysis.suggestedColumnIds.includes(column.id));
   const covered = coveredValues(workbook, chosen);
-  assert.ok(covered.has("开平市信迪染整厂"));
+  assert.ok(covered.has("开平市信迪染整厂") && covered.has("开平市信迪染整二厂") && covered.has("开平市信迪染整三厂"));
   assert.ok(!findWorkbookCandidates(workbook, covered).candidates.some(item => item.value === "开平市信迪染整厂"));
+});
+
+test("名称只出现在已勾选列的整格文字里（例如公司简称在全称里）时，不再单独列出", async () => {
+  const { findWorkbookCandidates } = await import("../src/workbookCandidates.js");
+  const { workbook } = sheetOf([["序号", "业务员", "客户全称"], [1, "张三", "开平市信迪染整厂有限公司"], [2, "李四", "佛山市中汇纺织印染有限公司（启丰车间）"], [3, "王五", "虚构丙染整有限公司"]]);
+  const inColumn = cell => cell.column === 3 && cell.row > 1;
+  const names = findWorkbookCandidates(workbook, new Set(), new Map(), inColumn).candidates.map(item => item.value);
+  assert.ok(!names.some(name => name.includes("信迪")), names.join("|"));
+  const notChosen = findWorkbookCandidates(workbook).candidates.map(item => item.value);
+  assert.ok(notChosen.some(name => name.includes("信迪")), "没有勾选该列时仍应列出");
 });

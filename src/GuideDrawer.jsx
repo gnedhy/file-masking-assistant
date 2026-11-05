@@ -124,7 +124,7 @@ export function GuideDrawer({ drawerRef, closeButtonRef, onClose, onSeen, initia
       <div><h2 id="guide-title">使用指南</h2><p className="guide-version">应用版本<span>v{CURRENT_VERSION.version}</span><i aria-hidden="true">·</i>应用最近更新于 {longDate(CURRENT_VERSION.date)}</p></div>
       <div className="drawer-head__actions"><button ref={closeButtonRef} className="icon-button" type="button" onClick={onClose} aria-label="关闭使用指南"><X /></button></div>
     </div>
-    <div className="guide-tabs" role="tablist" aria-label="使用指南内容" onKeyDown={onTabKey}>
+    <div className="guide-tabs" role="tablist" aria-label="使用指南内容" style={{ "--tab": TABS.findIndex(([key]) => key === tab) }} onKeyDown={onTabKey}>
       {TABS.map(([key, label]) => <button key={key} id={`guide-tab-${key}`} type="button" role="tab" aria-selected={tab === key} aria-controls="guide-panel" tabIndex={tab === key ? 0 : -1} onClick={() => setTab(key)}>{label}</button>)}
     </div>
     <div className="drawer-body">

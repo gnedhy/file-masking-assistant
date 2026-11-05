@@ -1,8 +1,11 @@
+import { useState } from "react";
 import { ChartBar, X } from "@phosphor-icons/react";
 import CentralOperations, { useOperationSync, SyncStatus } from "./CentralOperations.jsx";
 
 export function OperationDrawer({ drawerRef, closeButtonRef, onClose, onPreview }) {
   const sync = useOperationSync();
+  // The pagination renders into this footer, so it stays at the bottom of the drawer.
+  const [foot, setFoot] = useState(null);
   return <aside className="security-drawer operation-drawer" ref={drawerRef} role="dialog" aria-modal="true" aria-labelledby="operation-title">
     <div className="drawer-head">
       <div><h2 id="operation-title">操作记录</h2><p>{sync.session ? `${sync.session.userName} · 只记录操作和文件名` : "正在确认身份"}</p></div>
@@ -13,7 +16,8 @@ export function OperationDrawer({ drawerRef, closeButtonRef, onClose, onPreview 
       </div>
     </div>
     <div className="drawer-body">
-      {sync.session ? <CentralOperations compact /> : <SyncStatus />}
+      {sync.session ? <CentralOperations compact footTarget={foot} /> : <SyncStatus />}
     </div>
+    <div className="drawer-foot drawer-foot--pager" ref={setFoot} />
   </aside>;
 }

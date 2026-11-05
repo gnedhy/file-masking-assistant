@@ -6107,7 +6107,7 @@ input {
 .access-metrics > div:last-child { border-right: 0; }
 .access-metrics dt { color: var(--muted); font-size: var(--fs-sm); }
 .access-metrics dd { margin: 6px 0 0; font-size: 28px; font-weight: var(--fw-bold); font-variant-numeric: tabular-nums; line-height: 1.1; }
-.access-layout { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 20px; align-items: start; }
+.access-layout { display: grid; grid-template-columns: minmax(0, 1fr) 372px; gap: 20px; align-items: start; }
 /* The side column follows the page while a long directory scrolls. */
 .access-side { position: sticky; top: 104px; display: grid; gap: 20px; }
 .access-pager { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; color: var(--muted); font-size: var(--fs-xs); }
@@ -6632,7 +6632,7 @@ input {
 .replacement-card .evidence-trigger > span:first-child > svg { margin-top: 1px; }
 .replacement-card .evidence-trigger__action { padding-top: 2px; }
 .replacement-card .replacement-preview { padding: 0 20px 16px; gap: 8px; }
-.replacement-card .replacement-preview li { border: 0; background: var(--surface-soft); padding: 10px 14px; }
+.replacement-card .replacement-preview li { border: 1px solid var(--line-soft); background: var(--surface-raised); padding: 10px 14px; }
 .replacement-card .replacement-preview .replacement-preview__more { background: transparent; padding: 2px 2px 0; }
 @media (min-width: 1181px) { .replacement-card { margin-bottom: 28px; } }
 
@@ -6668,7 +6668,6 @@ input {
 .task-token-note { margin-top: 20px; }
 .workspace { padding-top: 28px; }
 .workspace-intro { margin-bottom: 0; }
-.workspace-intro h1 { font-size: clamp(28px, 2.7vw, 40px); }
 .protection-section__head h3 { font-size: var(--fs-lg); }
 .workspace-intro { padding-bottom: 8px; }
 .ai-handoff > p { border-top: 0; padding-top: 0; margin-top: 12px; }
@@ -6698,3 +6697,246 @@ input {
 .evidence-list dt { font-size: var(--fs-sm); }
 .restore-scope { margin: 12px 0 0; padding-top: 0; border-top: 0; gap: 14px; }
 .drawer-summary { min-height: 0; padding: 14px 16px; }
+
+/* Ready-state details: banners as wide as the cards, even rhythm, no pill around the "more" line. */
+.ready-state > .task-change-banner { width: 100%; margin: 16px 0 0; padding: 12px 16px; gap: 12px; }
+.ready-state > .task-change-banner strong { font-size: var(--fs-md); margin-bottom: 2px; }
+.ready-state > .task-change-banner small { font-size: var(--fs-sm); }
+.ready-state > .task-change-banner > svg { margin-top: 1px; }
+.replacement-card .replacement-preview .replacement-preview__more { border: 0; background: transparent; padding: 4px 2px 0; }
+.replacement-card .replacement-preview .replacement-preview__more { font-size: var(--fs-xs); }
+.trust-line { align-items: center; }
+.trust-line > i { align-self: center; }
+.empty-state > .empty-state__title { font-size: clamp(22px, 1.9vw, 28px); max-width: 26ch; margin-bottom: 10px; }
+@media (max-width: 640px) { .empty-state > .empty-state__title { font-size: var(--fs-xl); } }
+/* No empty band between the drawer title and its first section. */
+.drawer-body > .protection-section:first-child,
+.drawer-body > .text-candidates:first-child { padding-top: 0; }
+.security-drawer > .drawer-head,
+.local-tasks-drawer > .drawer-head { padding-bottom: 12px; }
+.drawer-body { padding-top: 0; }
+/* Drawer title sits above a hairline; the content starts a clear step below it. */
+.security-drawer > .drawer-head,
+.local-tasks-drawer > .drawer-head { padding: 20px 24px 16px; border-bottom: 1px solid var(--line); }
+.drawer-body { padding-top: 20px; }
+@media (max-width: 640px) {
+  .security-drawer > .drawer-head,
+  .local-tasks-drawer > .drawer-head { padding: max(16px, env(safe-area-inset-top, 0px)) 18px 14px; }
+  .drawer-body { padding-top: 16px; }
+}
+/* The hairline under the drawer title stops short of the edges and fades out at both ends. */
+.security-drawer > .drawer-head,
+.local-tasks-drawer > .drawer-head { position: relative; border-bottom: 0; }
+.security-drawer > .drawer-head::after,
+.local-tasks-drawer > .drawer-head::after {
+  position: absolute; right: 24px; bottom: 0; left: 24px; height: 1px; content: "";
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--ink) 18%, transparent) 16%, color-mix(in srgb, var(--ink) 18%, transparent) 84%, transparent);
+}
+@media (max-width: 640px) {
+  .security-drawer > .drawer-head::after,
+  .local-tasks-drawer > .drawer-head::after { right: 18px; left: 18px; }
+}
+
+/* "其他 N 列" reads as a control: a soft bar with a chevron, not loose text. */
+.column-more { margin-top: 10px; padding: 0; border: 0; }
+.column-more > summary { padding: 11px 14px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface-soft); justify-content: space-between; align-items: center; transition: border-color 160ms ease, background-color 160ms ease; }
+.column-more > summary::before { content: none; }
+.column-more > summary::after { content: ""; width: 7px; height: 7px; margin-left: auto; border-right: 1.6px solid var(--muted); border-bottom: 1.6px solid var(--muted); transform: translateY(-2px) rotate(45deg); transition: transform 160ms ease; }
+.column-more[open] > summary::after { transform: translateY(2px) rotate(-135deg); }
+.column-more > summary:hover { border-color: color-mix(in srgb, var(--blue) 40%, var(--line)); }
+.column-more > summary:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.column-more > .column-selection-list { padding: 8px 0 0; }
+
+/* Manual add belongs to its keyword section: no divider, close to the list or hint above. */
+.text-candidates__manual { margin-top: 12px; padding-top: 0; border-top: 0; }
+.text-candidates .text-candidate-list { margin-bottom: 0; }
+
+/* Boundary notes stay at the bottom of the drawer while the content scrolls. */
+.drawer-foot { position: relative; flex: 0 0 auto; display: grid; gap: 10px; padding: 14px 24px 18px; }
+.drawer-foot::before { position: absolute; top: 0; right: 24px; left: 24px; height: 1px; content: ""; background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--ink) 18%, transparent) 16%, color-mix(in srgb, var(--ink) 18%, transparent) 84%, transparent); }
+.drawer-foot .task-token-note { margin: 0; }
+.drawer-foot .drawer-note { margin: 0; justify-content: center; text-align: center; padding: 0; border: 0; background: transparent; font-size: var(--fs-xs); }
+@media (max-width: 640px) {
+  .drawer-foot { padding: 12px 18px max(16px, env(safe-area-inset-bottom, 0px)); }
+  .drawer-foot::before { right: 18px; left: 18px; }
+}
+.text-candidate-list:empty { display: none; }
+.drawer-foot { overflow-y: hidden; scrollbar-gutter: stable; }
+.drawer-foot .drawer-note { text-wrap: balance; }
+.security-drawer > .drawer-body, .local-tasks-drawer > .drawer-body { flex: 1 1 auto; }
+/* Content scrolling under the pinned footer fades out instead of being cut off; the bottom padding keeps the last row clear of the fade. */
+.security-drawer > .drawer-body,
+.local-tasks-drawer > .drawer-body {
+  padding-bottom: 32px;
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 32px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 32px), transparent);
+}
+.security-drawer > .drawer-body,
+.local-tasks-drawer > .drawer-body {
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 16px, #000 calc(100% - 32px), transparent);
+  mask-image: linear-gradient(to bottom, transparent, #000 16px, #000 calc(100% - 32px), transparent);
+}
+
+/* Operation records drawer: no gap above the search, filters as a control, pagination pinned at the bottom. */
+.operation-drawer .record-filters-compact { margin-top: 0; }
+.operation-drawer .drawer-body > :first-child { margin-top: 0; }
+.record-filters-more > summary {
+  display: flex; align-items: center; gap: 8px; width: auto; padding: 9px 14px;
+  color: var(--ink); font-weight: var(--fw-semibold); list-style: none; cursor: pointer;
+  border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface-soft);
+  transition: border-color 160ms ease;
+}
+.record-filters-more > summary::-webkit-details-marker { display: none; }
+.record-filters-more > summary::after { content: ""; width: 7px; height: 7px; margin-left: auto; border-right: 1.6px solid var(--muted); border-bottom: 1.6px solid var(--muted); transform: translateY(-2px) rotate(45deg); transition: transform 160ms ease; }
+.record-filters-more[open] > summary::after { transform: translateY(2px) rotate(-135deg); }
+.record-filters-more > summary:hover { border-color: color-mix(in srgb, var(--blue) 40%, var(--line)); }
+.record-filters-more > summary b { min-width: 20px; padding: 1px 7px; color: var(--blue-deep); border-radius: 999px; background: var(--blue-soft); font-size: var(--fs-xs); font-weight: var(--fw-bold); text-align: center; }
+.record-filters-more > summary:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.record-filters-more .record-filters { margin-top: 10px; }
+.drawer-foot--pager:empty { display: none; }
+.drawer-foot--pager .record-pagination { padding-top: 0; }
+.drawer-foot--pager { overflow: visible; }
+.drawer-foot--pager .dropdown__panel { top: auto; bottom: calc(100% + 6px); }
+
+/* ---- Consistency pass: loading text, page back buttons, summary line, empty lists ---- */
+.page-loading { max-width: 1232px; margin: 0 auto; padding: 96px 32px; color: var(--muted); text-align: center; font-size: var(--fs-md); }
+.usage-heading .secondary-button { min-height: 44px; padding: 8px 18px; font-size: var(--fs-md); }
+.usage-summary { font-size: var(--fs-md); color: var(--ink); }
+.access-empty { padding: 20px 0; text-align: center; font-size: var(--fs-sm); }
+/* Fold controls use the same white fill as inputs, not the beige panel tone. */
+.record-filters-more > summary,
+.column-more > summary { background: var(--surface-raised); }
+
+/* ---- One content width for the full pages (1150px of content), and the follow-up polish ---- */
+.usage-preview { max-width: 1198px; }
+.access-settings, .feedback-center { max-width: 1198px; margin-inline: auto; }
+
+/* Permission summary: three figures separated by space, not rules. */
+.access-metrics { gap: 0; }
+.access-metrics > div { border-right: 0; }
+
+/* Trend card without enough data: a slim full-width note, and the cards below fill the row. */
+.usage-grid figure.usage-trend--empty { grid-column: 1 / -1; align-self: start; padding-block: var(--sp-3); }
+.usage-trend--empty p { margin: var(--sp-3) 0 var(--sp-2); }
+.usage-grid:has(.usage-trend--empty) figure.usage-outcomes { grid-column: span 3; }
+.usage-grid[data-people="false"]:has(.usage-trend--empty) figure.usage-outcomes { grid-column: 1 / -1; }
+.usage-grid:has(.usage-trend--empty) figure.usage-rank:last-child { grid-column: 1 / -1; }
+/* Change log: the timeline carries the structure, so the version body is not boxed a second time. */
+.guide-changes__body { padding: 0; border: 0; background: transparent; gap: 12px; }
+/* Admin scope switch sits clear of the search box below it. */
+.record-scope + .record-filters-compact { margin-top: var(--sp-3); }
+.operation-drawer .record-toolbar { margin-top: var(--sp-4); }
+
+/* Permission summary: three separate tiles, like the statistics page. */
+.access-metrics { gap: var(--sp-3); border: 0; border-radius: 0; background: transparent; }
+.access-metrics > div { padding: var(--sp-4) var(--sp-5); border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface-raised); }
+.access-metrics dd { font-size: var(--fs-2xl); }
+@media (max-width: 640px) { .access-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-2); } .access-metrics > div { padding: var(--sp-3); } }
+
+/* Permissions with a real directory: the role notes sit under the directory, so both columns end at about the same height; the side column no longer sticks. */
+.access-main { display: grid; gap: 20px; min-width: 0; }
+.access-side { position: static; }
+/* Role notes: plain text under the figures, not another card. */
+.access-roles-note { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 32px; margin: 0 0 20px; padding: 0 4px; color: var(--muted); font-size: var(--fs-xs); line-height: 1.6; }
+.access-roles-note strong { margin-right: 8px; color: var(--ink); font-size: var(--fs-sm); }
+.access-roles-note small { grid-column: 1 / -1; font-size: var(--fs-xs); }
+@media (max-width: 640px) { .access-roles-note { grid-template-columns: 1fr; } }
+
+/* ---- Permissions: two aligned columns. The directory sets the height; the side column fills exactly that height, with the admin list and the change log scrolling inside their cards. ---- */
+.access-roles-note { display: none; }
+.access-role-help { display: grid; gap: 4px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line-soft); color: var(--muted); font-size: var(--fs-xs); line-height: 1.6; }
+.access-role-help p { margin: 0; }
+.access-role-help strong { margin-right: 8px; color: var(--ink); font-size: var(--fs-sm); }
+.access-role-help small { margin-top: 4px; font-size: var(--fs-xs); }
+@media (min-width: 961px) {
+  .access-layout { align-items: stretch; }
+  .access-directory { min-height: 720px; }
+  .access-side { display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 20px; height: 0; min-height: 100%; }
+  .access-side > section { min-height: 0; }
+  .access-side > section:first-child .access-list--compact { max-height: 288px; overflow-y: auto; }
+  .access-side > section:last-child { display: flex; flex-direction: column; }
+  .access-side > section:last-child .access-timeline { flex: 1 1 0; min-height: 0; max-height: none; }
+  .access-side > section:last-child .access-empty { margin: auto 0; }
+}
+.access-role-help strong { display: inline-flex; align-items: center; gap: 5px; }
+.access-role-help strong svg { width: 15px; height: 15px; color: var(--blue); }
+
+/* Role notes: icon column, title on the first line, description under it. */
+.access-role-help { gap: 12px; }
+.access-role-help > div { display: grid; grid-template-columns: 20px minmax(0, 1fr); column-gap: 8px; row-gap: 2px; align-items: center; }
+.access-role-help > div > svg { grid-row: 1; grid-column: 1; width: 16px; height: 16px; color: var(--blue); }
+.access-role-help > div > strong { grid-row: 1; grid-column: 2; margin: 0; color: var(--ink); font-size: var(--fs-sm); }
+.access-role-help > div > span { grid-row: 2; grid-column: 2; color: var(--muted); font-size: var(--fs-xs); line-height: 1.6; }
+/* Directory card: footnote anchored to the bottom, so a short list never leaves it floating. */
+.access-directory { display: flex; flex-direction: column; }
+.access-directory .access-note { margin-top: auto; }
+@media (min-width: 961px) { .access-directory { min-height: 520px; } }
+
+/* ---- Motion: views and states arrive with a short fade and rise; nothing moves for people who ask for reduced motion ---- */
+@keyframes view-enter { from { opacity: 0; transform: translateY(12px); } }
+@keyframes state-enter { from { opacity: 0; transform: translateY(8px); } }
+@keyframes fade-enter { from { opacity: 0; } }
+@keyframes item-enter { from { opacity: 0; transform: translateY(6px); } }
+@keyframes banner-enter { from { opacity: 0; transform: translateY(-4px); } }
+
+@media (prefers-reduced-motion: no-preference) {
+  /* Full pages (statistics, permissions, feedback) and the way back to the workbench. */
+  .usage-preview { animation: view-enter 300ms var(--ease-out) both; }
+  .app-main:not([hidden]) { animation: fade-enter 220ms ease-out both; }
+  .page-loading { animation: fade-enter 200ms ease-out 150ms both; }
+
+  /* Each workbench state (empty, ready, working, done, stopped) and the mode switch. */
+  .workbench > .empty-state,
+  .workbench > .ready-state,
+  .workbench > .processing-state,
+  .workbench > .success-state,
+  .workbench > .error-state { animation: state-enter 280ms var(--ease-out) both; }
+  .task-change-banner { animation: banner-enter 220ms var(--ease-out) both; }
+
+  /* Drawer content settles in a beat after the panel itself. */
+  .security-drawer .drawer-body > * { animation: item-enter 280ms var(--ease-out) both; }
+  .security-drawer .drawer-body > *:nth-child(2) { animation-delay: 30ms; }
+  .security-drawer .drawer-body > *:nth-child(3) { animation-delay: 60ms; }
+  .security-drawer .drawer-body > *:nth-child(4) { animation-delay: 90ms; }
+  .security-drawer .drawer-body > *:nth-child(n+5) { animation-delay: 120ms; }
+
+  /* Selection and press feedback. */
+  .column-selection, .text-candidate { transition: border-color 160ms ease, background-color 160ms ease; }
+  .primary-button, .secondary-button { transition-property: transform, background-color, border-color, box-shadow, color, opacity; transition-duration: 160ms; }
+  .primary-button:active:not(:disabled), .secondary-button:active:not(:disabled) { transform: translateY(1px) scale(0.99); }
+
+  /* Folds open and close smoothly where the browser can animate to auto height. */
+  @supports (interpolate-size: allow-keywords) {
+    :root { interpolate-size: allow-keywords; }
+    .column-more::details-content, .operation-tasks__steps::details-content, .usage-detail::details-content, .operation-steps::details-content { height: 0; overflow: clip; transition: height 240ms var(--ease-out), content-visibility 240ms allow-discrete; }
+    .column-more[open]::details-content, .operation-tasks__steps[open]::details-content, .usage-detail[open]::details-content, .operation-steps[open]::details-content { height: auto; }
+  }
+}
+
+/* Segmented switches: the highlight slides to the chosen segment instead of jumping. */
+.record-scope__switch, .guide-tabs { position: relative; }
+.record-scope__switch > button, .guide-tabs > button { position: relative; z-index: 1; background: transparent !important; }
+.record-scope__switch::before, .guide-tabs::before { content: ""; position: absolute; z-index: 0; top: 3px; bottom: 3px; left: 3px; border-radius: var(--radius-sm); background: var(--blue-soft); }
+.record-scope__switch::before { width: calc((100% - 8px) / 2); }
+.record-scope__switch[data-scope="all"]::before { transform: translateX(calc(100% + 2px)); }
+.guide-tabs::before { width: calc((100% - 10px) / 3); transform: translateX(calc(var(--tab, 0) * (100% + 2px))); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .record-scope__switch::before, .guide-tabs::before { transition: transform 260ms var(--ease-out); }
+  .central-records .operation-tasks { animation: item-enter 240ms var(--ease-out) both; }
+
+  /* Page switches: the old view fades out while the new one comes in; the top bar stays put. */
+  .app-header { view-transition-name: app-header; }
+  ::view-transition-old(root) { animation: 140ms ease-out both vt-out; }
+  ::view-transition-new(root) { animation: 220ms ease-out both fade-enter; }
+}
+@keyframes vt-out { to { opacity: 0; transform: translateY(-6px); } }
+/* Department / person pickers live inside the filter fold now. */
+.record-filters-more > .record-scope { margin-top: var(--sp-3); }
+/* In the fold, the department / person pickers join the filter grid between the dates and the type / result. */
+.record-filters-more .record-scope { display: contents; margin: 0; }
+.record-filters-more .record-scope__filters { display: contents; }
+.record-filters-more .record-scope__filters > p { grid-column: 1 / -1; }
+.record-filters-more > .record-scope { margin-top: 0; }
+/* Quick date chips show which range is active; "自定义" reveals the two date fields. */
+.record-date-shortcuts .secondary-button[aria-pressed="true"] { color: var(--blue); border-color: color-mix(in srgb, var(--blue) 40%, var(--line)); background: var(--blue-soft); }

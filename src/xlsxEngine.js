@@ -94,7 +94,9 @@ export async function inspectProtectionFile(file) {
     if (!headerRows.has(column.sheetName)) headerRows.set(column.sheetName, new Set());
     headerRows.get(column.sheetName).add(`${column.headerRow}:${column.columnNumber}`);
   }
-  const named = findWorkbookCandidates(workbook, covered, headerRows);
+  const chosen = analysis.columns.filter((item) => analysis.suggestedColumnIds.includes(item.id));
+  const inChosenColumn = (cell) => chosen.some((column) => column.sheetName === cell.sheet && column.columnNumber === cell.column && cell.row > column.headerRow && cell.row <= (column.endRow ?? Infinity));
+  const named = findWorkbookCandidates(workbook, covered, headerRows, inChosenColumn);
   if (!analysis.columns.length && !named.candidates.length) {
     throw new SafeFileError("NO_TABLE", "没有识别到表格或需要保护的名称。");
   }

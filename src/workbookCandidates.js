@@ -79,7 +79,7 @@ export function locateValue(cells, value, limit = 3) {
 }
 
 // One pass over the cells, giving each candidate up to three places. Very long lists only locate the first ones.
-function attachLocations(cells, candidates) {
+function attachLocations(cells, candidates, isCoveredCell) {
   const budget = Math.max(50, Math.floor(2e7 / Math.max(1, cells.length)));
   const pending = candidates.slice(0, budget);
   for (const item of pending) item.locations = [];
@@ -87,15 +87,18 @@ function attachLocations(cells, candidates) {
   for (const cell of cells) {
     for (const item of pending) {
       if (item.locations.length >= 3 || !cell.text.includes(item.value)) continue;
+      // A name that only sits inside cells of a chosen column (e.g. the short form inside a full company name) is already covered.
+      if (isCoveredCell(cell)) { item.inCovered = true; continue; }
       item.locations.push({ sheet: cell.sheet, row: cell.row, column: cell.column });
       if (item.locations.length === 3) open -= 1;
     }
     if (!open) break;
   }
+  return candidates.filter((item) => !(item.inCovered && item.locations?.length === 0));
 }
 
 // headerRows: sheet name → the header cells of its tables, as "row:column" (a bare row number covers the whole row).
-export function findWorkbookCandidates(workbook, coveredValues = new Set(), headerRows = new Map()) {
+export function findWorkbookCandidates(workbook, coveredValues = new Set(), headerRows = new Map(), isCoveredCell = () => false) {
   const cells = workbookCells(workbook);
   const sourceText = cells.map(cell => cell.text).join("\n");
   const found = new Map();
@@ -141,7 +144,6 @@ export function findWorkbookCandidates(workbook, coveredValues = new Set(), head
   for (const item of sensitiveNumberCandidates(sourceText)) {
     if (!found.has(item.value) && !coveredValues.has(item.value)) found.set(item.value, item);
   }
-  const candidates = [...found.values()];
-  attachLocations(cells, candidates);
+  const candidates = attachLocations(cells, [...found.values()], isCoveredCell);
   return { candidates, sourceText, cells, suggestedCandidateIds: candidates.map(item => item.id) };
 }

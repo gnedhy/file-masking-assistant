@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Pagination, RecordFilters, TaskRecordList, usePageSize } from "./OperationViews.jsx";
 import { getOperationSyncState, retryOperationSync } from "./operationSync.js";
 import { Check, DownloadSimple } from "@phosphor-icons/react";
@@ -60,13 +61,13 @@ function departmentScope(departments, id) {
 }
 
 // Admins choose whose records the drawer shows: their own, or everyone, narrowed by department or person.
-function ScopePicker({ scope, onScope, directory, department, person, onDepartment, onPerson }) {
+function ScopePicker({ scope, onScope, directory, department, person, onDepartment, onPerson, part = "all" }) {
   const options = directory ? departmentOptions(directory.departments) : [];
   const inScope = department ? departmentScope(options, department) : null;
   const people = (directory?.members ?? []).filter(m => !inScope || m.departmentIds.some(id => inScope.has(String(id)))).sort((a, b) => a.name.localeCompare(b.name, "zh-CN"));
   return <div className="record-scope">
-    <div className="record-scope__switch" role="group" aria-label="查看范围">{[["mine", "我的"], ["all", "全部"]].map(([key, label]) => <button key={key} type="button" aria-pressed={scope === key} onClick={() => onScope(key)}>{label}</button>)}</div>
-    {scope === "all" && <div className="record-scope__filters">
+    {part !== "filters" && <div className="record-scope__switch" data-scope={scope} role="group" aria-label="查看范围">{[["mine", "我的"], ["all", "全部"]].map(([key, label]) => <button key={key} type="button" aria-pressed={scope === key} onClick={() => onScope(key)}>{label}</button>)}</div>}
+    {part !== "switch" && scope === "all" && <div className="record-scope__filters">
       {directory?.error ? <p role="alert">{directory.error}</p> : !directory ? <p role="status">正在读取通讯录…</p> : <>
         <div className="field"><span>部门</span><Dropdown label="部门" value={department} onChange={onDepartment} options={[{ value: "", label: "全部部门" }, ...options.map(d => ({ value: d.id, label: d.label, depth: d.depth }))]} /></div>
         <div className="field"><span>人员</span><Dropdown label="人员" value={person} onChange={onPerson} options={[{ value: "", label: department ? "部门全部人员" : "全部人员" }, ...people.map(m => ({ value: m.userId, label: m.name }))]} /></div>
@@ -76,8 +77,9 @@ function ScopePicker({ scope, onScope, directory, department, person, onDepartme
   </div>;
 }
 
-export default function CentralOperations({ onBack, compact = false }) {
+export default function CentralOperations({ onBack, compact = false, footTarget = null }) {
   const sync = useOperationSync();
+  const [customDates, setCustomDates] = useState(false);
   const [filters, setFilters] = useState(() => dateRange(30));
   const [query, setQuery] = useState("");
   useEffect(() => { const timer = setTimeout(() => setQuery(filters.query || ""), 300); return () => clearTimeout(timer); }, [filters.query]);
@@ -148,15 +150,18 @@ export default function CentralOperations({ onBack, compact = false }) {
     finally { setExporting(false); }
   }
   const totals = data.stats?.totals;
-  const dateShortcuts = <div className={compact ? "record-date-shortcuts record-date-shortcuts--compact" : "record-date-shortcuts"} aria-label="快捷日期">{[[7,"最近 7 天"],[30,"最近 30 天"],["month","本月"]].map(([days,label]) => <button className="secondary-button" type="button" key={days} onClick={() => changeFilters({ ...filters, ...dateRange(days) })}>{label}</button>)}</div>;
+  const sameRange = (days) => { const range = dateRange(days); return range.from === filters.from && range.to === filters.to; };
+  const dateShortcuts = <div className={compact ? "record-date-shortcuts record-date-shortcuts--compact" : "record-date-shortcuts"} aria-label="快捷日期">{[[7,"最近 7 天"],[30,"最近 30 天"],["month","本月"]].map(([days,label]) => <button className="secondary-button" type="button" key={days} aria-pressed={!customDates && sameRange(days)} onClick={() => { setCustomDates(false); changeFilters({ ...filters, ...dateRange(days) }); }}>{label}</button>)}{compact && <button className="secondary-button" type="button" aria-pressed={customDates} aria-expanded={customDates} onClick={() => setCustomDates(open => !open)}>自定义</button>}</div>;
+  const pager = <Pagination label="操作记录分页" page={page} total={data.total} pageSize={pageSize} unit="个任务" onPage={next => { setPage(next); details.current?.scrollIntoView({ block: "start" }); details.current?.focus({ preventScroll: true }); }} onPageSize={next => { setPageSize(next); setPage(1); }} />;
   return <section className={compact ? "central-records" : "usage-preview"} aria-label="集中操作记录">
     {!compact && <div className="usage-heading"><h1 ref={heading} tabIndex={-1}>使用统计</h1><button className="secondary-button" type="button" onClick={onBack}>返回文件处理</button></div>}
     {!compact && <p className="operation-scope">{sync.session?.userName} · {sync.session?.isAdmin ? "管理员 · 统计全部人员" : "仅统计本人的记录"} · 按北京时间筛选 · 保留 180 天</p>}
     <SyncStatus />
-    {compact && admin && <ScopePicker scope={scope} directory={directory} department={department} person={person}
+    {compact && admin && <ScopePicker part="switch" scope={scope} directory={directory} department={department} person={person}
       onScope={next => { setScope(next); setPage(1); }} onDepartment={next => { setDepartment(next); setPerson(""); setPage(1); }} onPerson={next => { setPerson(next); setPage(1); }} />}
     {!compact && dateShortcuts}
-    <RecordFilters value={filters} onChange={changeFilters} users={!compact && sync.session?.isAdmin ? users : undefined} collapsible={compact} shortcuts={compact ? dateShortcuts : null} />
+    <RecordFilters hideDates={compact && !customDates} extra={compact && admin && scope === "all" ? <ScopePicker part="filters" scope={scope} directory={directory} department={department} person={person}
+      onScope={next => { setScope(next); setPage(1); }} onDepartment={next => { setDepartment(next); setPerson(""); setPage(1); }} onPerson={next => { setPerson(next); setPage(1); }} /> : null} extraCount={(department ? 1 : 0) + (person ? 1 : 0)} value={filters} onChange={changeFilters} users={!compact && sync.session?.isAdmin ? users : undefined} collapsible={compact} shortcuts={compact ? dateShortcuts : null} />
     {compact ? null : sync.session?.isAdmin ? <label className="central-search">文件名／任务搜索<input type="search" value={filters.query || ""} onChange={e => changeFilters({ ...filters, query: e.target.value })}/></label> : <label className="central-search">格式<select value={filters.format || ""} onChange={e => changeFilters({ ...filters, format:e.target.value })}><option value="">全部格式</option>{["xlsx","csv","txt","md","docx","pptx","html"].map(f=><option key={f}>{f}</option>)}</select></label>}
     {data.loading ? <p role="status">正在读取集中记录…</p> : data.error ? <div role="alert"><p>{data.error}</p><button type="button" className="secondary-button" onClick={() => setReload(v => v + 1)}>重新读取</button></div> : <>
       {!compact && totals && <dl className="usage-metrics" data-count={sync.session?.isAdmin ? 4 : 3}>{[...(sync.session?.isAdmin ? [["使用人数",totals.users]] : []),["成功脱敏任务",totals.protected],["有还原结果的任务",totals.restored],["失败操作",totals.failed]].map(([label,value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>}
@@ -164,8 +169,9 @@ export default function CentralOperations({ onBack, compact = false }) {
       <div className="record-toolbar" ref={details} tabIndex={-1}><strong>操作记录 · {data.total} 个任务</strong><button className={compact ? "text-button record-export-button record-export-button--compact" : "secondary-button record-export-button"} data-done={exportState.kind === "done" || undefined} type="button" title="导出的文件名可能包含敏感信息，请妥善保管" disabled={!data.total || exporting || query !== (filters.query || "")} onClick={exportRecords}>{exportState.kind === "done" ? <Check size={18} weight="bold" aria-hidden="true"/> : <DownloadSimple size={18} aria-hidden="true"/>}{exporting ? "正在导出…" : exportState.kind === "done" ? "已开始下载" : "导出记录"}</button></div>
       {!compact && <p className="operation-scope">导出筛选范围内的全部操作明细，不只当前页。下载仅代表发起请求。</p>}
       <p className="record-export-status" role={exportState.kind === "error" ? "alert" : "status"}>{exportState.kind === "error" ? exportState.text : exportState.kind === "done" ? <span className="visually-hidden">已开始下载</span> : null}</p>
-      {data.tasks.length ? <TaskRecordList tasks={data.tasks} showUser={allScope || (!compact && sync.session?.isAdmin)} /> : <p role="status">当前筛选范围暂无记录。可调整日期或等待记录同步。</p>}
-      {data.total > 0 && <Pagination label="操作记录分页" page={page} total={data.total} pageSize={pageSize} unit="个任务" onPage={next => { setPage(next); details.current?.scrollIntoView({ block: "start" }); details.current?.focus({ preventScroll: true }); }} onPageSize={next => { setPageSize(next); setPage(1); }} />}
+      {data.tasks.length ? <TaskRecordList key={scope} tasks={data.tasks} showUser={allScope || (!compact && sync.session?.isAdmin)} /> : <p role="status">当前筛选范围暂无记录。可调整日期或等待记录同步。</p>}
+      {data.total > 0 && !(compact && footTarget) && pager}
     </>}
+    {data.total > 0 && compact && footTarget && createPortal(pager, footTarget)}
   </section>;
 }

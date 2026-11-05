@@ -29,20 +29,23 @@ export function Pagination({ label, page, total, pageSize, unit, onPage, onPageS
 
 export const activeFilterCount = (value) => ["from", "to", "action", "result", "query"].filter(key => value[key]).length;
 
-export function RecordFilters({ value, onChange, users, collapsible = false, shortcuts = null }) {
+export function RecordFilters({ value, onChange, users, collapsible = false, shortcuts = null, extra = null, extraCount = 0, hideDates = false }) {
   const control = (key, next) => onChange({ ...value, [key]: next });
   const fields = <>
+    {!hideDates && <>
     <label>开始日期<input type="date" value={value.from || ""} onChange={e => control("from", e.target.value)} /></label>
     <label>结束日期<input type="date" value={value.to || ""} onChange={e => control("to", e.target.value)} /></label>
+    </>}
+    {extra}
     {users ? <><div className="field"><span>用户</span><Dropdown label="用户" value={value.user || ""} onChange={next => control("user", next)} options={[{ value: "", label: "全部用户" }, ...users.map(u => ({ value: u.id, label: u.name }))]} /></div><div className="field"><span>格式</span><Dropdown label="格式" value={value.format || ""} onChange={next => control("format", next)} options={[{ value: "", label: "全部格式" }, ...["xlsx", "csv", "txt", "md", "docx", "pptx", "html"].map(f => ({ value: f, label: f.toUpperCase() }))]} /></div></> : <div className="field"><span>操作类型</span><Dropdown label="操作类型" value={value.action || ""} onChange={next => control("action", next)} options={[{ value: "", label: "全部操作" }, ...Object.entries(OPERATION_LABELS).map(([k, v]) => ({ value: k, label: v }))]} /></div>}
-    <div className="field"><span>结果</span><Dropdown label="结果" value={value.result || ""} onChange={next => control("result", next)} options={[{ value: "", label: "全部结果" }, ...Object.entries(OPERATION_RESULTS).filter(([k]) => k !== "warning").map(([k, v]) => ({ value: k, label: v }))]} /></div>
+    <div className="field"><span>结果</span><Dropdown label="结果" value={value.result || ""} onChange={next => control("result", next)} options={[{ value: "", label: "全部结果" }, ...Object.entries(OPERATION_RESULTS).filter(([k]) => ["success", "partial", "missing", "failed"].includes(k)).map(([k, v]) => ({ value: k, label: v }))]} /></div>
   </>;
   const rangeError = value.from && value.to && value.from > value.to && <p role="alert">开始日期不能晚于结束日期。</p>;
   if (collapsible) {
-    const count = activeFilterCount({ ...value, query: "" });
+    const count = activeFilterCount({ ...value, query: "" }) + extraCount;
     return <div className="record-filters-compact">
       <label className="record-search"><span className="visually-hidden">搜索</span><input type="search" placeholder="搜索文件名或任务编号" value={value.query || ""} onChange={e => control("query", e.target.value)} /></label>
-      <details className="record-filters-more"><summary>{count ? `筛选（${count}）` : "筛选"}</summary>{shortcuts}<div className="record-filters">{fields}</div></details>
+      <details className="record-filters-more"><summary><span>筛选</span>{count ? <b aria-label={`已设置 ${count} 项`}>{count}</b> : null}</summary>{shortcuts}<div className="record-filters">{fields}</div></details>
       {rangeError}
     </div>;
   }

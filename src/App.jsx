@@ -61,6 +61,7 @@ import {
   inspectRestoreFile,
   restoreSafeFile,
 } from "./fileEngine.js";
+import { flushSync } from "react-dom";
 import { getSession, signIn } from "./session.js";
 
 const UsageStats = lazy(() => import("./UsageStats.jsx"));
@@ -317,7 +318,7 @@ function MobileProgress({ stage }) {
 
 function ReplacementPreview({ items }) {
   if (!items.length) return null;
-  const shown = items.slice(0, 4);
+  const shown = items.slice(0, 6);
   return (
     <ul className="replacement-preview" aria-label="将被替换的内容">
       {shown.map((item) => <li key={item.key}><strong>{item.title}</strong><small>{item.detail}</small></li>)}
@@ -809,11 +810,11 @@ function TextCandidateSelection({ analysis, selectedIds, onToggle, onAdd, onRemo
             </article>
           );
         })}
-        {!visible.length && <p className="text-candidates__empty">{candidates.length ? "没有匹配的候选；可以清除搜索或手动添加文件中的完整文字。" : "系统没有找到需要补充的名称；有需要可以在下面手动添加。"}</p>}
+        {!visible.length && (candidates.length > 0 || !compact) && <p className="text-candidates__empty">{candidates.length ? "没有匹配的候选；可以清除搜索或手动添加文件中的完整文字。" : "系统没有找到需要补充的名称；有需要可以在下面手动添加。"}</p>}
       </div>
       <div className="text-candidates__manual">
-        <label htmlFor="manual-sensitive-value">手动添加</label>
-        <div><input id="manual-sensitive-value" value={manualValue} placeholder="粘贴文件中需要替换的完整文字" onChange={(event) => setManualValue(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); submitManual(); } }} /><button type="button" onClick={submitManual}>添加</button></div>
+        {(candidates.length > 0 || !compact) && <label htmlFor="manual-sensitive-value">手动添加</label>}
+        <div><input id="manual-sensitive-value" aria-label="手动添加" value={manualValue} placeholder="粘贴文件中需要替换的完整文字" onChange={(event) => setManualValue(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); submitManual(); } }} /><button type="button" onClick={submitManual}>添加</button></div>
         {manualError && <small role="alert">{manualError}</small>}
       </div>
       {analysis.kind === "text" && <p className="drawer-note"><Info weight="bold" />{analysis.format === "docx"
@@ -840,7 +841,7 @@ function SecurityDrawer({ mode, status, analysis, selectedIds, fieldModes = {}, 
   const keywordSection = !analysis || analysis.kind === "text" ? null
     : !analysis.columns.length ? { title: "需要替换的关键词", hint: "这个文件没有表格，按关键词替换：勾选的名称会在整个文件里替换。系统认不全简称和昵称（如“马总”），可以在下面补充。" }
       : plainSheets.length ? { title: "需要替换的关键词", hint: `${plainSheets.join("、")}里有表格以外的内容（表单、说明文字），按关键词替换。勾选的名称会在整个文件里替换。系统认不全简称和昵称（如“马总”），可以在下面补充。` }
-        : candidateList.length ? { title: "没勾选的列里还有这些名称", hint: "例如写在备注里；勾选的会一起替换。系统认不全简称和昵称（如“马总”），可以在下面补充。" }
+        : candidateList.length ? { title: "需要替换的关键词", hint: "这些名称出现在没勾选的列里（例如备注），勾选后会在整个文件里一起替换。系统认不全简称和昵称（如“马总”），可以在下面补充。" }
           : { title: "补充关键词", hint: "系统认不全简称和昵称（如“马总”），可以在这里补充，会在整个文件里替换。" };
   const errorDiagnosis = error ? buildErrorDiagnosis(error) : null;
   const comparison = result?.occurrenceComparison ?? restoreInspection?.occurrenceComparison;
@@ -982,8 +983,10 @@ function SecurityDrawer({ mode, status, analysis, selectedIds, fieldModes = {}, 
           title={keywordSection.title} hint={keywordSection.hint} />
       )}
 
-      <div className="task-token-note"><ShieldCheck weight="bold" /><p><strong>处理边界</strong>未选内容、上下文和图片仍可能含敏感信息。</p></div>
-      <p className="drawer-note"><Info weight="bold" />还原记录加密保存在公司服务器，可在“我的任务”中删除。</p>
+      </div>
+      <div className="drawer-foot">
+        <div className="task-token-note"><ShieldCheck weight="bold" /><p><strong>处理边界</strong>未选内容、上下文和图片仍可能含敏感信息。</p></div>
+        <p className="drawer-note"><Info weight="bold" />还原记录加密保存在公司服务器，可在“我的任务”中删除。</p>
       </div>
     </aside>
   );
@@ -1048,6 +1051,15 @@ export function App() {
   const [switchPrompt, setSwitchPrompt] = useState(false);
   const switchResolveRef = useRef(null);
   const [usagePreview, setUsagePreview] = useState(false);
+  // Full-page switches cross-fade through the View Transitions API in Chromium browsers (it crashed WebKit in testing); elsewhere they just switch.
+  const changeView = (next) => {
+    if (!document.startViewTransition || !navigator.userAgentData?.brands?.some((brand) => brand.brand === "Chromium") || matchMedia("(prefers-reduced-motion: reduce)").matches) { setUsagePreview(next); return; }
+    // If the browser does not run the transition callback promptly (hidden tab, headless), the change still happens.
+    let applied = false;
+    const apply = () => { if (!applied) { applied = true; flushSync(() => setUsagePreview(next)); } };
+    document.startViewTransition(apply);
+    setTimeout(apply, 150);
+  };
   const [isAdmin, setIsAdmin] = useState(false);
   const [signedIn, setSignedIn] = useState(false);
   const feedbackSummary = useFeedbackSummary(signedIn);
@@ -1426,12 +1438,12 @@ export function App() {
         </div>
         <div className="local-status">
           <ThemeSwitcher value={themePreference} onChange={setThemePreference} />
-          {signedIn && <button className="audit-trigger feedback-trigger" type="button" title={feedbackBadge ? `反馈：${isAdmin && feedbackSummary.open ? `${feedbackSummary.open} 条待处理` : ""}${isAdmin && feedbackSummary.open && feedbackSummary.replies ? "，" : ""}${feedbackSummary.replies ? `${feedbackSummary.replies} 条新回复` : ""}` : "反馈"} aria-label={feedbackBadge ? `反馈，${feedbackBadge} 条新提醒` : "反馈"} aria-pressed={usagePreview === "feedback"} onClick={() => setUsagePreview("feedback")}><ChatCircleDots aria-hidden="true" weight="bold" /><span>反馈</span>{feedbackBadge > 0 && <b aria-hidden="true">{feedbackBadge > 99 ? "99+" : feedbackBadge}</b>}</button>}
-          {isAdmin && <button className="audit-trigger access-trigger" type="button" title="权限配置" aria-label="权限配置" aria-pressed={usagePreview === "access"} onClick={() => setUsagePreview("access")}><UserGear aria-hidden="true" weight="bold" /><span>权限配置</span></button>}
+          {signedIn && <button className="audit-trigger feedback-trigger" type="button" title={feedbackBadge ? `反馈：${isAdmin && feedbackSummary.open ? `${feedbackSummary.open} 条待处理` : ""}${isAdmin && feedbackSummary.open && feedbackSummary.replies ? "，" : ""}${feedbackSummary.replies ? `${feedbackSummary.replies} 条新回复` : ""}` : "反馈"} aria-label={feedbackBadge ? `反馈，${feedbackBadge} 条新提醒` : "反馈"} aria-pressed={usagePreview === "feedback"} onClick={() => changeView("feedback")}><ChatCircleDots aria-hidden="true" weight="bold" /><span>反馈</span>{feedbackBadge > 0 && <b aria-hidden="true">{feedbackBadge > 99 ? "99+" : feedbackBadge}</b>}</button>}
+          {isAdmin && <button className="audit-trigger access-trigger" type="button" title="权限配置" aria-label="权限配置" aria-pressed={usagePreview === "access"} onClick={() => changeView("access")}><UserGear aria-hidden="true" weight="bold" /><span>权限配置</span></button>}
           <button className="audit-trigger" type="button" title={auditIncomplete ? "操作记录：有记录未能保存" : "操作记录"} aria-label="操作记录" aria-haspopup="dialog" aria-expanded={auditOpen} onClick={event => { drawerTriggerRef.current = event.currentTarget; setAuditOpen(true); }}><ClockCounterClockwise aria-hidden="true" weight="bold" /><span>操作记录</span>{auditIncomplete && <b aria-label="有操作记录未保存">!</b>}</button>
         </div>
       </header>
-      {usagePreview && <div inert={auditOpen || guideOpen}>{usagePreview === "feedback" ? <FeedbackCenter admin={isAdmin} onBack={() => { setUsagePreview(false); requestAnimationFrame(() => document.querySelector(".feedback-trigger")?.focus()); }} /> : usagePreview === "access" ? <AccessSettings onBack={() => { setUsagePreview(false); requestAnimationFrame(() => document.querySelector(".access-trigger")?.focus()); }} /> : <Suspense fallback={<p role="status">正在打开使用统计…</p>}><UsageStats onBack={() => { setUsagePreview(false); requestAnimationFrame(() => document.querySelector(".audit-trigger[aria-label=\"操作记录\"]")?.focus()); }}/></Suspense>}</div>}
+      {usagePreview && <div inert={auditOpen || guideOpen}>{usagePreview === "feedback" ? <FeedbackCenter admin={isAdmin} onBack={() => { changeView(false); requestAnimationFrame(() => document.querySelector(".feedback-trigger")?.focus()); }} /> : usagePreview === "access" ? <AccessSettings onBack={() => { changeView(false); requestAnimationFrame(() => document.querySelector(".access-trigger")?.focus()); }} /> : <Suspense fallback={<p className="page-loading" role="status">正在打开使用统计…</p>}><UsageStats onBack={() => { changeView(false); requestAnimationFrame(() => document.querySelector(".audit-trigger[aria-label=\"操作记录\"]")?.focus()); }}/></Suspense>}</div>}
       <main className="app-main" hidden={usagePreview}>
         <section className="workspace" aria-label="文件处理工作区" inert={detailsOpen || localTasksOpen || auditOpen || guideOpen || switchPrompt}>
           <header className="workspace-intro">
@@ -1455,7 +1467,7 @@ export function App() {
         {localTasksOpen && <><button className="drawer-scrim drawer-scrim--local" type="button" tabIndex={-1} onClick={closeLocalTasks} aria-label="关闭我的任务" /><LocalTasksDrawer localTasks={localTasks} continueDisabled={status === "processing" || status === "inspecting"} onContinueLatest={continueLatestTask} currentTaskId={result?.taskId ?? restoreInspection?.taskId ?? null} pendingDeleteId={pendingDeleteId} deletingTaskId={deletingTaskId} error={taskManagerError} modal drawerRef={localTasksDrawerRef} closeButtonRef={localTasksCloseButtonRef} onClose={closeLocalTasks} onRequestDelete={setPendingDeleteId} onCancelDelete={() => setPendingDeleteId(null)} onConfirmDelete={deleteLocalTask} /></>}
       </main>
       {guideOpen && <><button className="drawer-scrim" type="button" tabIndex={-1} onClick={closeGuide} aria-label="关闭使用指南遮罩" /><GuideDrawer drawerRef={guideDrawerRef} closeButtonRef={guideCloseButtonRef} onClose={closeGuide} onSeen={guideSeen} initialTab={guideUpdate ? "changes" : "use"} /></>}
-      {auditOpen && <><button className="drawer-scrim" type="button" tabIndex={-1} onClick={closeAudit} aria-label="关闭记录遮罩" /><OperationDrawer drawerRef={auditDrawerRef} closeButtonRef={auditCloseButtonRef} onClose={closeAudit} onPreview={async view => { await closeAudit(); setUsagePreview(view); }} /></>}
+      {auditOpen && <><button className="drawer-scrim" type="button" tabIndex={-1} onClick={closeAudit} aria-label="关闭记录遮罩" /><OperationDrawer drawerRef={auditDrawerRef} closeButtonRef={auditCloseButtonRef} onClose={closeAudit} onPreview={async view => { await closeAudit(); changeView(view); }} /></>}
       {switchPrompt && <ConfirmDialog title="切换任务？" message="切换后将清空当前页面选择，原文件不变。" confirmLabel="切换并清空" onClose={closeSwitchPrompt} />}
     </div>
   );
