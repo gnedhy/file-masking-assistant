@@ -47,7 +47,7 @@ function UseGuide() {
     <ol className="guide-steps">
       <Step number={1} title="选择文件，生成脱敏文件"
         actions={[<>点 <kbd>制作脱敏文件</kbd>，选择或拖入文件。</>, <>核对要替换的内容，需要增减就点「查看并调整」。</>, <>确认无误后点 <kbd>生成脱敏文件</kbd>。</>]}
-        shots={[["use-1-review", 774, 328, "核对替换内容后，点生成脱敏文件"]]} />
+        shots={[["use-1-review", 774, 304, "核对替换内容后，点生成脱敏文件"]]} />
       <Step number={2} title="下载脱敏文件，交给 AI 处理"
         actions={[<>点 <kbd>下载脱敏文件</kbd>。文件里的真实内容已换成代号，例如 <b className="nowrap">客户-K7M4-01</b>。</>, <>点 <kbd>复制 AI 处理说明</kbd>，把说明和文件一起发给常用的 AI。说明会提醒 AI 原样保留代号。</>]}
         shots={[["use-2-download", 774, 290, "下载脱敏文件按钮", [1, "下载脱敏文件"]], ["use-3-copy", 774, 299, "复制 AI 处理说明按钮", [2, "复制 AI 处理说明"]]]} />
