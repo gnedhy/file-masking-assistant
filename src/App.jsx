@@ -1,7 +1,7 @@
 import { Fragment, lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { randomId } from "./randomId.js";
 import { isEmptyColumn } from "./xlsxCore.js";
-import { ERROR_PRESENTATION, cellPlace, residualPlace } from "./errorPresentation.js";
+import { ERROR_PRESENTATION, cellPlace, errorCodeOf, residualPlace } from "./errorPresentation.js";
 import { locateValue } from "./workbookCandidates.js";
 import { TaskDetails } from "./TaskDetails.jsx";
 import { THEME_OPTIONS, ThemeSwitcher } from "./ThemeSwitcher.jsx";
@@ -1295,7 +1295,7 @@ export function App() {
       if (mode === "protect") recordFileOperation("inspect_protect", "success", { format, inputName: selected.name });
       setStatus("ready");
     } catch (caught) {
-      recordFileOperation(`inspect_${mode}`, "failed", { format, inputName: selected.name, errorCode: caught?.code });
+      recordFileOperation(`inspect_${mode}`, "failed", { format, inputName: selected.name, errorCode: errorCodeOf(caught) });
       showError(caught);
     }
   };
@@ -1358,7 +1358,7 @@ export function App() {
           .then((summary) => setLocalTasks({ status: "ready", ...summary }))
           .catch(() => setLocalTasks({ status: "error", count: 0, mappingCount: 0, latest: null, tasks: [] }));
       }
-    } catch (caught) { recordFileOperation(mode, "failed", { format: fileFormatFromName(file.name), inputName: file.name, errorCode: caught?.code }); showError(caught); }
+    } catch (caught) { recordFileOperation(mode, "failed", { format: fileFormatFromName(file.name), inputName: file.name, errorCode: errorCodeOf(caught) }); showError(caught); }
   };
 
   const adjustProtection = async () => {

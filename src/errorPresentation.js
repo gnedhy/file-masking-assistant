@@ -36,8 +36,16 @@ export const ERROR_PRESENTATION = {
   FILE_TOO_LARGE: { title: "文件太大了", description: "Office 文件不能超过 20 MB，网页文件不能超过 10 MB。", guidance: "把文件拆成几份，或者压缩里面的图片后再试。" },
   PACKAGE_TOO_LARGE: { title: "文件内容太多了", description: "文件里的工作表或内部内容太多，超出了一次能处理的范围。", guidance: "把文件拆成几份，分别处理。" },
   ALTERED_TOKENS: { title: "有些代号被 AI 改动过", description: "代号被改写或截断后，系统没法确认它原来对应哪个名称。", guidance: "让 AI 原样保留代号重新处理；“复制 AI 处理说明”里已经写了这个要求。" },
+  PROCESSING_ERROR: { title: "处理时出了点意外问题", description: "文件在处理过程中出现了系统没有预料到的错误，原文件没有受影响。", guidance: "用文件副本再试一次；仍然不行，请点右上角「反馈」告诉管理员，写明文件格式和操作到哪一步。" },
   UNSUPPORTED_CONTENT: { title: "代号出现在系统不能还原的地方", description: "代号出现在了批注、特殊图形、网页脚本或链接这类地方，系统不能安全地改回去。", guidance: "按“查看详细信息”里的位置，把代号挪回普通文字或表格里，再重新选择。" },
 };
+
+// The code stored for a failed operation: the error's own code, or PROCESSING_ERROR when it has none,
+// so a failure is never recorded without a reason.
+export function errorCodeOf(caught) {
+  const code = caught?.code;
+  return typeof code === "string" && /^[A-Z][A-Z0-9_]{1,39}$/.test(code) ? code : "PROCESSING_ERROR";
+}
 
 // The short reason shown next to a failed record; unknown codes show nothing rather than a raw code.
 export function failureReason(code) {
