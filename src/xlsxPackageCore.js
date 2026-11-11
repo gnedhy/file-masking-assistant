@@ -41,14 +41,19 @@ export async function preflightXlsxPackage(input, limits = XLSX_LIMITS) {
   if (!/spreadsheetml\.sheet\.main\+xml/i.test(contentTypes)) throw packageError("FORMAT_MISMATCH", "文件扩展名是 XLSX，但内部内容不是标准工作簿。");
   for (const entry of entries.filter((item) => /\.rels$/i.test(item.name))) {
     const relationships = await entry.async("string");
-    if (/TargetMode=["']External["']/i.test(relationships)) {
+    // An ordinary link in a cell only opens when someone clicks it; linked workbooks, data connections and
+    // remote pictures fetch on their own, so only those stop the file.
+    const external = [...relationships.matchAll(/<Relationship\b[^>]*>/gi)].map(match => match[0]).filter(tag => /TargetMode=["']External["']/i.test(tag));
+    if (external.some(tag => !/Type=["'][^"']*\/hyperlink["']/i.test(tag))) {
       throw packageError("EXTERNAL_RELATIONSHIPS", "XLSX 包含外部链接或远程连接，已停止处理。", [entry.name]);
     }
   }
   for (const entry of entries.filter(item => /\.(xml|rels)$/i.test(item.name))) {
     let xml = await entry.async("string");
     // Only ordinary cell text is restored; aliases elsewhere must not disappear during ExcelJS serialization.
-    if (/^xl\/(?:sharedStrings\.xml|worksheets\/sheet\d+\.xml)$/i.test(entry.name)) xml = xml.replace(/(<t\b[^>]*>)[\s\S]*?(<\/t>)/g, "$1$2");
+    if (/^xl\/(?:sharedStrings\.xml|worksheets\/sheet\d+\.xml|comments\d*\.xml)$/i.test(entry.name)) xml = xml.replace(/(<t\b[^>]*>)[\s\S]*?(<\/t>)/g, "$1$2");
+    // Link addresses are not text the tool restores, and they never hold an alias the tool wrote.
+    if (/\.rels$/i.test(entry.name)) continue;
     const decoded = xml.replace(/&#x([0-9a-f]+);/gi, (_, code) => String.fromCodePoint(parseInt(code, 16))).replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(Number(code)));
     const text = `${decoded}\n${decoded.replace(/<[^>]*>/g, "")}`;
     const shortTokens = [...text.matchAll(tokenPattern())].map(match => match[0]).filter(token => !token.startsWith("[["));

@@ -2,6 +2,7 @@ import {
   addTaskMarker,
   analyzeWorkbook,
   coveredValues,
+  flattenHyperlinks,
   hiddenContent,
   inspectWorkbookAlteredTokens,
   inspectWorkbookTokens,
@@ -14,6 +15,7 @@ import { deleteVault, listVaultSummaries, loadVault, saveVault } from "./vaultSt
 import { createProtectionIdentity, protectionTokenIdentity, protectionResult, resolveRestoreVault, taskEvidence } from "./taskIdentity.js";
 import { assertNoAttachmentsInXlsxPackage, assertNoSensitiveValuesInXlsxPackage, mappingText, preflightXlsxPackage } from "./xlsxPackageCore.js";
 import { findWorkbookCandidates } from "./workbookCandidates.js";
+import { shortNameCandidates } from "./companyAbbreviations.js";
 import { highRiskTextFindings, occurrenceBaseline, occurrenceComparison, protectedOutputName, restoredOutputName } from "./fileSafety.js";
 
 export class SafeFileError extends Error {
@@ -85,6 +87,7 @@ function baseName(filename) {
 
 export async function inspectProtectionFile(file) {
   const workbook = await loadWorkbook(file);
+  flattenHyperlinks(workbook);
   const analysis = analyzeWorkbook(workbook);
   // Names already covered by the suggested columns are not listed again.
   const covered = coveredValues(workbook, analysis.columns.filter((item) => analysis.suggestedColumnIds.includes(item.id)));
@@ -97,6 +100,11 @@ export async function inspectProtectionFile(file) {
   const chosen = analysis.columns.filter((item) => analysis.suggestedColumnIds.includes(item.id));
   const inChosenColumn = (cell) => chosen.some((column) => column.sheetName === cell.sheet && column.columnNumber === cell.column && cell.row > column.headerRow && cell.row <= (column.endRow ?? Infinity));
   const named = findWorkbookCandidates(workbook, covered, headerRows, inChosenColumn);
+  // Short forms of the company names (宏图化工 for 广州宏图化工有限公司) that are written somewhere on their own.
+  const companies = [...covered, ...named.candidates.filter((item) => item.category === "customer").map((item) => item.value)];
+  const shortNames = shortNameCandidates(companies, named.cells.filter((cell) => cell.note || !inChosenColumn(cell)), new Set([...covered, ...named.candidates.map((item) => item.value)]));
+  named.candidates.push(...shortNames);
+  named.suggestedCandidateIds.push(...shortNames.map((item) => item.id));
   if (!analysis.columns.length && !named.candidates.length) {
     throw new SafeFileError("NO_TABLE", "没有识别到表格或需要保护的名称。");
   }
@@ -110,6 +118,7 @@ export async function inspectProtectionFile(file) {
 export async function createSafeWorkbook(file, selectedColumns, options) {
   if (!selectedColumns.length && !options?.candidates?.length) throw new SafeFileError("NO_COLUMNS", "请至少选择一列或一个名称。");
   const workbook = await loadWorkbook(file);
+  const removedLinks = flattenHyperlinks(workbook);
   const identity = await createProtectionIdentity(options, JSON.stringify(workbook.model));
   const id = identity.taskId;
   const createdAt = new Date().toISOString();
@@ -165,7 +174,7 @@ export async function createSafeWorkbook(file, selectedColumns, options) {
     elsewhere: result.elsewhere,
     removedMedia: workbook.fileMedia,
     warnings: result.warnings,
-    notices: result.notices,
+    notices: removedLinks ? [...result.notices, { location: "整个文件", reason: `${removedLinks} 个单元格的超链接已去掉，文字保留` }] : result.notices,
   };
 }
 

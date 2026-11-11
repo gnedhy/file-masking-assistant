@@ -66,9 +66,10 @@ for (const format of ["pptx", "html"]) {
     for (const area of format === "pptx" ? ["幻灯片文字和表格", "演讲者备注", "图表文字和数据", "文档属性（标题、主题等）"] : ["图表脚本中的文字"]) {
       await expect(page.locator('.compatibility-check [data-area="checked"]')).toContainText(area);
     }
-    // The deck and the report use 6 of the sheet's tokens; that is normal for a new file, not missing content.
+    // A new file that uses only some of the sheet's aliases is normal, not missing content.
     await expect(page.locator(".compatibility-check")).toHaveAttribute("data-content-loss", "false");
-    await expect(page.locator(".compatibility-check")).toContainText("没用到的属于正常改写");
+    // The 合计 row is no longer given an alias, so the deck uses every alias of the sheet; the report still leaves some out.
+    await expect(page.locator(".compatibility-check")).toContainText(format === "pptx" ? "任务已匹配" : "没用到的属于正常改写");
     if (format === "html") await expect(page.locator(".compatibility-check")).toContainText("保留了 2 段图表脚本，在隔离框架中运行");
     await page.getByRole("button", { name: "生成还原文件" }).click();
     await expect(page.getByRole("link", { name: "下载还原文件" })).toBeVisible({ timeout: 30000 });

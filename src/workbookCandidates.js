@@ -1,6 +1,6 @@
 import { buildTextCandidate } from "./textCore.js";
 import { sensitiveNumberCandidates } from "./sensitivePatterns.js";
-import { classifyHeader, isPlaceholderValue } from "./xlsxCore.js";
+import { classifyHeader, isPlaceholderValue, noteText } from "./xlsxCore.js";
 
 // Many working sheets are forms, not tables: "企业名称 | 某某有限公司", "负责人：马某", a quote addressed
 // "To: 某某公司". Column headers cannot find those names, so the whole workbook is read for them and the user
@@ -32,7 +32,10 @@ function labelKind(text) {
   if (COMPANY_LABEL.test(label)) return { category: "customer", prefix: "C" };
   if (PERSON_LABEL.test(label)) return { category: "sales", prefix: "S" };
   const header = classifyHeader(label);
-  return header.category === "customer" || header.category === "sales" ? header : null;
+  if (header.category === "customer" || header.category === "sales") return header;
+  // Phone numbers and mailboxes are found by their shape; of the other details only those that name a place or
+  // an account are read from the cell beside the label ("联系方式 | 见名片" is not one).
+  return header.category === "contact" && /地址|账号|帐号|账户|开户|税号|识别号|信用代码|车牌|工号|护照/.test(label) ? header : null;
 }
 
 const cellText = value => {
@@ -53,10 +56,13 @@ export function workbookCells(workbook) {
   const cells = [];
   workbook.eachSheet(sheet => {
     if (sheet.name === MARKER_SHEET) return;
-    sheet.eachRow({ includeEmpty: false }, row => row.eachCell({ includeEmpty: false }, cell => {
+    sheet.eachRow({ includeEmpty: false }, row => row.eachCell({ includeEmpty: true }, cell => {
       if (cells.length >= MAX_CELLS || (cell.isMerged && cell.master !== cell)) return;
       const text = cellText(cell.value);
       if (text) cells.push({ sheet: sheet.name, row: cell.row, column: cell.col, text });
+      // A note is read like the cell it hangs on, so a phone number or a company that is only in a note is found.
+      const note = noteText(cell.note);
+      if (note) cells.push({ sheet: sheet.name, row: cell.row, column: cell.col, text: note, note: true });
     }));
   });
   return cells;
@@ -112,8 +118,12 @@ export function findWorkbookCandidates(workbook, coveredValues = new Set(), head
   workbook.eachSheet(sheet => {
     if (sheet.name === MARKER_SHEET) return;
     sheet.eachRow({ includeEmpty: false }, row => {
-      row.eachCell({ includeEmpty: false }, cell => {
+      row.eachCell({ includeEmpty: true }, cell => {
         if (cell.isMerged && cell.master !== cell) return;
+        for (const match of noteText(cell.note).matchAll(COMPANY_NAME)) {
+          const company = match[0].replace(/^[（(]+|[）)]+$/g, "").replace(LEADING_WORD, "");
+          if (company.length >= 4 && !GENERIC_COMPANY.test(company) && !BARE_SUFFIX.test(company)) add(company, "公司名称", { category: "customer", prefix: "C" });
+        }
         const text = cellText(cell.value);
         if (!text) return;
         // Table header rows hold column names, not labels with a value beside them.

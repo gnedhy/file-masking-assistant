@@ -253,7 +253,7 @@ async function writeDetail(book, batches, pageSetup) {
       const row = sheet.addRow({
         time: beijingDate(r.time), user: r.userName, task: r.marker || r.taskId?.slice(0, 8) || '—',
         input: r.inputName || '未记录', output: r.outputName || '未记录', format: r.format?.toUpperCase() || '—',
-        action: OPERATION_LABELS[r.action], result: r.result === 'failed' && failureReason(r.errorCode) ? `${OPERATION_RESULTS[r.result]}：${failureReason(r.errorCode)}` : OPERATION_RESULTS[r.result],
+        action: OPERATION_LABELS[r.action], result: r.result === 'failed' && failureReason(r.errorCode) ? `${OPERATION_RESULTS[r.result]}：${failureReason(r.errorCode, r.errorPlaces)}` : OPERATION_RESULTS[r.result],
       });
       const banded = index++ % 2 === 1;
       row.height = 20;

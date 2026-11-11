@@ -106,7 +106,9 @@ test("XLSX 脱敏与还原保留公式和样式", async () => {
   const protectedResult = tokenizeWorkbook(workbook, selected, taskId);
   addTaskMarker(workbook, { taskId, taskName: "7月销售明细", createdAt: "2026-08-12T00:00:00.000Z" });
 
-  assert.equal(protectedResult.replacedCells, 9);
+  // The 合计 row at the foot of the customer column labels the row and is left as it is.
+  assert.equal(protectedResult.replacedCells, 8);
+  assert.equal(workbook.getWorksheet("销售明细").getCell("A4").value, "合计");
   assert.equal(workbook.getWorksheet("销售明细").getCell("A2").value, "[[客户名称:C001@7F2A9C4D]]");
   assert.equal(workbook.getWorksheet("销售明细").getCell("A3").value, "[[客户名称:C001@7F2A9C4D]]");
   assert.equal(workbook.getWorksheet("销售明细").getCell("D4").value.formula, "SUM(D2:D3)");
@@ -121,7 +123,7 @@ test("XLSX 脱敏与还原保留公式和样式", async () => {
 
   const restored = restoreWorkbookValues(roundTripped, protectedResult.mapping);
   assert.equal(restored.unresolved.length, 0);
-  assert.equal(restored.restoredOccurrences, 9);
+  assert.equal(restored.restoredOccurrences, 8);
   removeTaskMarker(roundTripped);
 
   const output = new ExcelJS.Workbook();

@@ -144,7 +144,7 @@ async function flush() {
 export async function enqueueOperation(record) {
   if (!state.session && !await session().catch(() => false)) return false;
   const event = { version: 1, eventId: randomId(), operationId: record.operationId || randomId() };
-  for (const key of ["time", "action", "result", "taskId", "marker", "format", "inputName", "outputName", "errorCode"]) if (record[key] !== undefined) event[key] = record[key];
+  for (const key of ["time", "action", "result", "taskId", "marker", "format", "inputName", "outputName", "errorCode", "errorPlaces"]) if (record[key] !== undefined) event[key] = record[key];
   const row = { eventId: event.eventId, owner: state.session.userId, status: "pending", event };
   row.bytes = new TextEncoder().encode(JSON.stringify(row)).byteLength;
   try {

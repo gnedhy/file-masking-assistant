@@ -61,7 +61,7 @@ export function RecordFilename({ label, name }) {
 export function RecordList({ records, compact = false, withinTask = false }) {
   return <ol className="operation-list">{records.map(r => <li key={r.id}>
     <div className="operation-list__head"><strong>{OPERATION_LABELS[r.action] || "操作"}</strong><span data-result={r.result}>{OPERATION_RESULTS[r.result] || "未知状态"}</span></div>
-    {r.result === "failed" && failureReason(r.errorCode) && <p className="operation-list__reason">原因：{failureReason(r.errorCode)}</p>}
+    {r.result === "failed" && failureReason(r.errorCode) && <p className="operation-list__reason">原因：{failureReason(r.errorCode, r.errorPlaces)}</p>}
     {!compact && !/credential|mapping|export_records|view_all_records|rate_|feedback/.test(r.action) && <><RecordFilename label="输入" name={r.inputName} />{(r.outputName || /^(protect|restore|download_)/.test(r.action)) && <RecordFilename label="输出" name={r.outputName} />}</>}
     <time dateTime={r.time}>{new Date(r.time).toLocaleString("zh-CN", { hour12: false })}</time>
     {!compact && !withinTask && <p>{[r.userName, r.format?.toUpperCase(), r.taskId && `任务 ${r.marker || r.taskId}`].filter(Boolean).join(" · ")}</p>}
@@ -116,7 +116,7 @@ function StageChip({ label, state }) {
 // One step in the opened task: what happened, its result, when, and the file names involved.
 function StepRow({ step }) {
   const tone = STEP_TONE[step.result] ?? "neutral";
-  const reason = step.result === "failed" ? failureReason(step.errorCode) : "";
+  const reason = step.result === "failed" ? failureReason(step.errorCode, step.errorPlaces) : "";
   const files = !/credential|mapping|export_records|view_all_records|rate_|feedback/.test(step.action) ? [["输入", step.inputName], ["输出", step.outputName]].filter(([, name]) => name) : [];
   return <li className="task-step" data-tone={tone}>
     <span className="task-step__dot" aria-hidden="true" />

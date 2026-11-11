@@ -14,6 +14,24 @@ export function tokenPattern(flags = "g") {
   return new RegExp(`(?:${TOKEN_PATTERN_SOURCE})|(?:${SHORT_PATTERN_SOURCE})`, flags);
 }
 
+// An alias ends in digits, so a letter, digit or hyphen right after it would be read as part of it and the
+// alias could not be restored ("宏图2026年" → "客户-K7M4-012026年"). When what follows an alias is such a
+// character (with or without spaces before it) one space is put after the alias, and restoring takes one
+// space away again, so the text comes back exactly: "宏图2026" ⇄ "客户-K7M4-01 2026", "宏图 2026" ⇄ "客户-K7M4-01  2026".
+export function aliasWithGap(token, rest) {
+  return /^ *[A-Za-z0-9-]/.test(rest ?? "") ? `${token} ` : token;
+}
+
+// Replaces every alias in the text with what restore(token) returns, removing the space aliasWithGap added.
+// An alias restore() leaves unchanged stays exactly as it is.
+export function replaceAliases(text, restore) {
+  return String(text).replace(new RegExp(`(?:${tokenPattern().source})(?: (?= *[A-Za-z0-9-]))?`, "g"), (match) => {
+    const token = match.endsWith(" ") ? match.slice(0, -1) : match;
+    const restored = restore(token);
+    return restored === token ? match : restored;
+  });
+}
+
 export function sanitizeSemanticLabel(label, category = "custom") {
   const fallback = FALLBACK_LABELS[category] || FALLBACK_LABELS.custom;
   const normalized = String(label ?? "")

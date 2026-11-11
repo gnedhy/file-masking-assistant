@@ -258,7 +258,8 @@ function replaceParagraphValues(paragraph, replacementsByValue) {
   for (let cursor = 0; cursor < combined.length;) {
     const entry = entries.find(([source]) => combined.startsWith(source, cursor) && isIndependentMatch(combined, source, cursor));
     if (!entry) { cursor += 1; continue; }
-    replacements.push({ start: cursor, end: cursor + entry[0].length, value: entry[1] });
+    // A letter, digit or hyphen right after an alias would be read as part of it; a space keeps them apart.
+    replacements.push({ start: cursor, end: cursor + entry[0].length, value: /[A-Za-z0-9-]/.test(combined[cursor + entry[0].length] ?? "") ? `${entry[1]} ` : entry[1] });
     cursor += entry[0].length;
   }
   if (!replacements.length) return { xml: paragraph.raw, count: 0 };

@@ -1,4 +1,5 @@
 import { enqueueOperation } from "./operationSync.js";
+import { isErrorPlace } from "./errorPresentation.js";
 export const OPERATION_LABELS = {
   import_protect: "导入待脱敏文件", import_restore: "导入待还原文件", export_records: "导出操作记录", view_all_records: "查看全员记录",
   rate_up: "结果点赞", rate_down: "结果倒赞", submit_feedback: "提交反馈", resolve_feedback: "处理反馈",
@@ -22,6 +23,11 @@ function safeRecord(action, result, metadata) {
   if (/^[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{4}$/.test(metadata.marker ?? "")) record.marker = metadata.marker;
   if (["xlsx", "csv", "txt", "md", "docx", "pptx", "html"].includes(metadata.format)) record.format = metadata.format;
   if (result === "failed" && /^[A-Z][A-Z0-9_]{1,39}$/.test(metadata.errorCode ?? "")) record.errorCode = metadata.errorCode;
+  // Kinds of place only ("comment:3"); the names and cells found there never enter the log.
+  if (result === "failed" && Array.isArray(metadata.errorPlaces)) {
+    const places = metadata.errorPlaces.filter(isErrorPlace).slice(0, 8);
+    if (places.length) record.errorPlaces = places;
+  }
   if (!action.includes("credential")) for (const key of ["inputName", "outputName"]) {
     if (typeof metadata[key] === "string") record[key] = metadata[key].split(/[\\/]/).pop().replace(/[\u0000-\u001f\u007f]/g, "").slice(0, 512);
   }

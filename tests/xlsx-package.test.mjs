@@ -17,13 +17,15 @@ test("XLSX package preflight accepts a standard workbook", async () => {
   assert.equal(result.worksheetCount, 1);
 });
 
-test("short aliases in chart caches, comments or XML attributes fail closed", async () => {
+test("short aliases in chart caches, threaded comments or XML attributes fail closed; cell notes are restorable", async () => {
   for (const [name, value] of [
     ["xl/charts/chart1.xml", "<c:cache><c:v>产品-K7M4-01</c:v></c:cache>"],
-    ["xl/comments1.xml", "<comments><t>产品-k7m4-01</t></comments>"],
+    ["xl/threadedComments/threadedComment1.xml", "<ThreadedComments><text>产品-K7M4-01</text></ThreadedComments>"],
     ["xl/worksheets/sheet1.xml", '<worksheet><c name="产品-K7M4-01"><t>普通文字</t></c></worksheet>'],
   ]) await assert.rejects(() => xlsxBytes({ [name]: value }).then(bytes => preflightXlsxPackage(bytes)), { code: "UNSUPPORTED_CONTENT" });
   await preflightXlsxPackage(await xlsxBytes({ "xl/sharedStrings.xml": "<sst><si><t>产品-K7M4-01</t></si></sst>" }));
+  // Notes are restored since 1.0.4, so aliases there no longer stop the file.
+  await preflightXlsxPackage(await xlsxBytes({ "xl/comments1.xml": "<comments><t>产品-K7M4-01</t></comments>" }));
 });
 
 test("XLSX package preflight rejects format mismatch and macros; attachments and pictures are counted", async () => {

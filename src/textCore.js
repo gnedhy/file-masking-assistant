@@ -1,6 +1,6 @@
 import { sensitiveNumberCandidates } from "./sensitivePatterns.js";
 import { classifyHeader, findKnownShortTokens, isPlaceholderValue } from "./xlsxCore.js";
-import { createEntityToken, parseEntityToken, tokenPattern, tokenOccurrence } from "./tokenFormat.js";
+import { aliasWithGap, createEntityToken, parseEntityToken, replaceAliases, tokenPattern, tokenOccurrence } from "./tokenFormat.js";
 
 function splitMarkdownRow(line) {
   return line.trim().replace(/^\||\|$/g, "").split("|").map((cell) => cell.trim());
@@ -122,7 +122,8 @@ export function tokenizeText(text, selectedCandidates, taskId) {
       cursor += 1;
       continue;
     }
-    output += item.token;
+    // A letter, digit or hyphen right after an alias would be read as part of it; a space keeps them apart.
+    output += aliasWithGap(item.token, text.slice(cursor + item.value.length, cursor + item.value.length + 64));
     item.used = true;
     replacedOccurrences += 1;
     cursor += item.value.length;
@@ -155,7 +156,7 @@ export function restoreText(text, mapping) {
   const unresolved = inspection.occurrences.filter((item) => !mapping[item.token]);
   if (unresolved.length) return { text, restoredOccurrences: 0, unresolved, inspection };
   let restoredOccurrences = 0;
-  const restored = text.replace(tokenPattern(), (token) => {
+  const restored = replaceAliases(text, (token) => {
     restoredOccurrences += 1;
     return String(mapping[token].value?.value ?? "");
   });

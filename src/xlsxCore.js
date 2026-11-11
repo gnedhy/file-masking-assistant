@@ -1,4 +1,4 @@
-import { createEntityToken, parseEntityToken, tokenPattern, tokenOccurrence } from "./tokenFormat.js";
+import { aliasWithGap, createEntityToken, parseEntityToken, replaceAliases, tokenPattern, tokenOccurrence } from "./tokenFormat.js";
 
 export { tokenPattern };
 
@@ -7,7 +7,7 @@ const NARRATIVE_HEADER_PATTERN = /(反馈|备注|说明|描述|原因|计划|进
 const CATEGORY_RULES = [
   { category: "customer", prefix: "C", pattern: /^(?:客户(?:中文|英文)?(?:名称|全称|全名|姓名|编码|编号|简称|k码|名|单位|公司)?|经销商(?:名称|全称)?|供应商(?:名称|全称)?|公司(?:名称|全称)|企业(?:名称|全称)|单位(?:名称|全称)|往来单位|竞品厂家|customer(?:name|id|code)?|client(?:name|id|code)?|account(?:name|id|code)?)$/i },
   { category: "product", prefix: "P", pattern: /^(?:(?:推荐)?产品(?:内部)?(?:名称|编码|编号|型号|内编|对外名称)?|物料(?:名称|编码|编号)?|sku|大货编码|品名|货号|product(?:name|code|id|model)?|item(?:name|code|id)?|material(?:name|code|id)?)$/i },
-  { category: "contact", prefix: "X", pattern: /^(?:手机(?:号码|号)?|电话(?:号码)?|联系电话|联系手机|联系方式|固话|座机|微信(?:号)?|邮箱|电子邮箱|e-?mail|身份证(?:号码|号)?|证件号(?:码)?|银行(?:账号|账户|卡号)|银行卡(?:号)?|卡号|phone|mobile|tel)$/i },
+  { category: "contact", prefix: "X", pattern: /^(?:手机(?:号码|号)?|电话(?:号码)?|联系电话|联系手机|联系方式|固话|座机|微信(?:号)?|邮箱|电子邮箱|e-?mail|身份证(?:号码|号)?|证件号(?:码)?|银行(?:账号|账户|卡号)|银行卡(?:号)?|卡号|(?:收货|送货|发货|详细|联系|通讯|公司|注册|办公|家庭|邮寄|收件)?地址|开户(?:行|银行)(?:及账号)?|(?:对公|收款|付款)?(?:账号|帐号|账户)|税号|纳税人识别号|统一社会信用代码|信用代码|车牌(?:号码|号)?|qq(?:号)?|传真|工号|员工(?:编号|工号)|护照(?:号码|号)?|phone|mobile|tel|address|fax)$/i },
   { category: "sales", prefix: "S", pattern: /^(?:销售(?:人员|员|代表|负责人)|业务(?:员|代表|负责人|经理)|客户经理|区域经理|负责人|对接人|经办人|跟单(?:员|人)?|联系人|姓名|实验员|产品经理|跟进人|sales(?:rep|representative|owner|person)?|accountmanager)$/i },
 ];
 
@@ -35,7 +35,8 @@ export function isPlaceholderValue(value) {
   const text = String(value ?? "").normalize("NFKC").trim();
   if (!text) return true;
   if (/^[\p{P}\p{S}\s]+$/u.test(text)) return true;
-  return /^(?:无|空|暂无|未知|不详|待定|n\/?a|none|null|nil)$/i.test(text);
+  // 合计 / 小计 at the foot of a name column label the row; they are not a customer or a person.
+  return /^(?:无|空|暂无|未知|不详|待定|n\/?a|none|null|nil|合计|小计|总计|累计|汇总|total|subtotal)$/i.test(text);
 }
 
 // How a selected value is looked for when checking that nothing real is left behind. Numbers and short codes
@@ -45,8 +46,56 @@ export function residualMatches(text, value) {
   const needle = String(value ?? "").trim();
   if (!needle) return false;
   const haystack = String(text ?? "");
+  if (isLongNumber(needle)) {
+    // Phone, ID and account numbers count inside longer text too, but not as part of a longer run of digits.
+    for (let index = haystack.indexOf(needle); index >= 0; index = haystack.indexOf(needle, index + 1)) {
+      if (!/\d/.test(haystack[index - 1] ?? "") && !/\d/.test(haystack[index + needle.length] ?? "")) return true;
+    }
+    return false;
+  }
   const exactOnly = /^[\d\s.,%+\-]+$/.test(needle) || (/^[\x00-\x7F]+$/.test(needle) && needle.length < 4) || needle.length < 2;
   return exactOnly ? haystack.trim() === needle : haystack.includes(needle);
+}
+
+// A number long enough to be a phone, ID or account number rather than a quantity or an amount.
+export function isLongNumber(value) {
+  const text = String(value ?? "").trim();
+  return /^\d[\d\s\-]*\d$/.test(text) && text.replace(/\D/g, "").length >= 8;
+}
+
+// Job words people put where a name belongs; they are not names and occur all over a file.
+const ROLE_WORD = /^(?:销售|采购|财务|会计|出纳|老板|老板娘|经理|总经理|副总|厂长|主管|助理|文员|仓库|仓管|前台|客服|技术|研发|生产|品质|品管|行政|人事|跟单|业务|司机|工程师|负责人|联系人|总监|董事长|法人|股东|店长|店员|门卫|保安)$/;
+
+// A name column often holds more than one name or a name with a remark: "张伟/刘洋", "甲公司、乙公司",
+// "张伟（经理）", "李娜 赵敏", "张伟、刘洋等". Returns the pieces in order, names at the even places and the text
+// between or after them at the odd places, or null when the cell is simply one name. Only Chinese names are
+// split, so "Foo Co., Ltd." stays whole; people (not companies) are also split at spaces.
+export function splitNames(value, category = "sales") {
+  if (typeof value !== "string") return null;
+  let parts = value.trim().split(/(\s*[、，,；;\/／]\s*)/);
+  if (category === "sales") {
+    parts = parts.flatMap((part, index) => {
+      if (index % 2) return [part];
+      const words = part.split(/(\s+)/);
+      return words.length > 1 && words.every((word, at) => at % 2 || /^[一-龥]{2,4}$/.test(word)) ? words : [part];
+    });
+  }
+  const pieces = [];
+  let peeled = false;
+  for (let index = 0; index < parts.length; index += 2) {
+    const match = /^(.*?)(\s*(?:[（(][^（()）]*[）)])?(?:等人?)?)$/.exec(parts[index]);
+    // A remark in brackets belongs to a company's name (某公司（香港）) but not to a person's (张伟（经理）).
+    let name = category === "sales" ? match[1] : parts[index], tail = category === "sales" ? match[2] : "";
+    // "何等" is a name; only a longer piece ends in the word 等.
+    if (!name || (name.length < 2 && tail)) { name = parts[index]; tail = ""; }
+    const open = (name.match(/[（(]/g) ?? []).length, close = (name.match(/[）)]/g) ?? []).length;
+    if (name.length < 2 || !/[一-龥]/.test(name) || open !== close || (category === "sales" && open) || isPlaceholderValue(name) || ROLE_WORD.test(name) || tokenPattern("").test(name)) return null;
+    if (tail) peeled = true;
+    pieces.push(name, tail + (parts[index + 1] ?? ""));
+  }
+  if (pieces.length === 2 && !peeled) return null;
+  if (!pieces.at(-1)) pieces.pop();
+  return pieces;
 }
 
 // Hidden sheets, rows and columns are protected like everything else but a person cannot see them, so the
@@ -258,6 +307,9 @@ export function coveredValues(workbook, columns) {
       if (typeof value === "string" || (value && typeof value === "object" && !(value instanceof Date))) {
         const text = typeof cell.text === "string" ? cell.text.trim() : "";
         if (text) covered.add(text);
+        if (column.category === "customer" || column.category === "sales") {
+          for (const [index, piece] of (splitNames(text, column.category) ?? []).entries()) if (index % 2 === 0) covered.add(piece);
+        }
       }
     }
   }
@@ -378,7 +430,9 @@ function replaceEntityInSegment(text, source, token) {
       continue;
     }
     if (index > copiedUntil) parts.push({ text: text.slice(copiedUntil, index), protected: false });
-    parts.push({ text: token, protected: true });
+    // An alias ends in digits, so a letter, digit or hyphen right after it would be read as part of it and the
+    // alias could not be restored ("宏图2026年" → "客户-K7M4-012026年"). A space keeps them apart.
+    parts.push({ text: aliasWithGap(token, text.slice(index + source.length)), protected: true });
     replacements += 1;
     copiedUntil = index + source.length;
     cursor = copiedUntil;
@@ -407,6 +461,78 @@ function replaceKnownEntities(text, dictionary) {
     segments = next;
   }
   return { text: segments.map((segment) => segment.text).join(""), replacements };
+}
+
+// A link cell ({ text, hyperlink }) is turned into its plain text: the address (a mailbox, a web page, a file
+// path) can itself name someone, and the AI does not need it. Returns how many links were removed.
+export function flattenHyperlinks(workbook) {
+  let removed = 0;
+  workbook.eachSheet((worksheet) => {
+    worksheet.eachRow({ includeEmpty: false }, (row) => {
+      row.eachCell({ includeEmpty: false }, (cell) => {
+        const value = cell.value;
+        // =HYPERLINK("mailto:…","发邮件") keeps the address inside the formula; only what the cell shows stays.
+        if (formulaCellValue(value) && /^\s*HYPERLINK\s*\(/i.test(String(value.formula ?? ""))) {
+          cell.value = value.result == null || typeof value.result === "object" ? "" : String(value.result);
+          removed += 1;
+          return;
+        }
+        if (!value || typeof value !== "object" || !("hyperlink" in value) || formulaCellValue(value)) return;
+        const text = value.text;
+        cell.value = text && typeof text === "object" && Array.isArray(text.richText) ? { richText: text.richText } : String(text ?? "");
+        removed += 1;
+      });
+    });
+  });
+  return removed;
+}
+
+export const noteText = note => typeof note === "string" ? note : Array.isArray(note?.texts) ? note.texts.map(part => part.text ?? "").join("") : "";
+// Rewrites a cell note with the given text function, keeping its formatting runs.
+function rewriteNote(cell, change) {
+  const note = cell.note;
+  if (typeof note === "string") cell.note = change(note);
+  else if (Array.isArray(note?.texts)) cell.note = { ...note, texts: note.texts.map(part => ({ ...part, text: change(String(part.text ?? "")) })) };
+}
+
+// Names outside the cells: notes get the aliases too (and are restored), names in page headers and footers are
+// masked, and a drop-down list that offers a name is removed. None of these can be fixed by choosing columns.
+function replaceOutsideCells(workbook, dictionary, notices) {
+  if (!dictionary.length) return 0;
+  const sources = dictionary.map(({ source }) => source);
+  let changed = 0;
+  workbook.eachSheet((worksheet) => {
+    if (worksheet.name === "__AI安全任务") return;
+    worksheet.eachRow({ includeEmpty: false }, (row) => {
+      row.eachCell({ includeEmpty: true }, (cell) => {
+        const text = noteText(cell.note);
+        if (!text || !sources.some(source => text.includes(source))) return;
+        // A name split across two formatting runs cannot be replaced run by run, so the note becomes plain text.
+        const whole = replaceKnownEntities(text, dictionary);
+        let perRun = 0;
+        rewriteNote(cell, part => { const replaced = replaceKnownEntities(part, dictionary); perRun += replaced.replacements; return replaced.text; });
+        if (perRun < whole.replacements) cell.note = whole.text;
+        notices.push({ location: `${worksheet.name}!${cell.address}`, reason: "批注里的已选名称已替换" });
+        changed += 1;
+      });
+    });
+    const headerFooter = worksheet.headerFooter ?? {};
+    for (const key of ["oddHeader", "oddFooter", "evenHeader", "evenFooter", "firstHeader", "firstFooter"]) {
+      const text = headerFooter[key];
+      if (typeof text !== "string" || !sources.some(source => text.includes(source))) continue;
+      headerFooter[key] = sources.reduce((result, source) => result.split(source).join("***"), text);
+      notices.push({ location: worksheet.name, reason: "页眉页脚里的已选名称已隐去" });
+      changed += 1;
+    }
+    const validations = worksheet.dataValidations?.model;
+    for (const [address, rule] of Object.entries(validations ?? {})) {
+      if (!(rule?.formulae ?? []).some(formula => typeof formula === "string" && sources.some(source => formula.includes(source)))) continue;
+      delete validations[address];
+      notices.push({ location: `${worksheet.name}!${address}`, reason: "下拉选项里有已选名称，已去掉这个下拉列表" });
+      changed += 1;
+    }
+  });
+  return changed;
 }
 
 // candidates: names confirmed from forms and text (see workbookCandidates.js), each { value, label, category, prefix }.
@@ -461,18 +587,34 @@ export function tokenizeWorkbook(workbook, selectedColumns, taskId, candidates =
       }
 
       const prefix = column.prefix || "X";
-      const key = `${prefix}:${valueKey(visibleValue)}`;
-      let token = tokenByValue.get(key);
-      if (!token) {
-        counters[prefix] += 1;
-        token = createEntityToken({ label: column.header, category: column.category, prefix, sequence: counters[prefix], taskId });
-        tokenByValue.set(key, token);
-        mapping[token] = {
-          value: serializeValue(value),
-          category: column.category,
-          header: column.header,
-        };
+      const aliasFor = (keyValue, stored) => {
+        const key = `${prefix}:${valueKey(keyValue)}`;
+        let alias = tokenByValue.get(key);
+        if (!alias) {
+          counters[prefix] += 1;
+          alias = createEntityToken({ label: column.header, category: column.category, prefix, sequence: counters[prefix], taskId });
+          tokenByValue.set(key, alias);
+          mapping[alias] = { value: stored, category: column.category, header: column.header };
+        }
+        return alias;
+      };
+      // Several names in one cell each get their own alias, so one of them written elsewhere is replaced too.
+      // A bare place name in an address column (广州, 佛山南海) is a region, not an address: it stays, so the
+      // word is not replaced all over the file.
+      if (typeof visibleValue === "string" && /地址|address/i.test(column.header) && visibleValue.trim().length < 6 && !/\d/.test(visibleValue)) continue;
+      const pieces = column.category === "customer" || column.category === "sales" ? splitNames(visibleValue, column.category) : null;
+      if (pieces) {
+        cell.value = pieces.map((piece, index) => {
+          if (index % 2) return piece;
+          const alias = aliasFor(piece, { type: "string", value: piece });
+          if (!dictionaryBySource.has(piece)) dictionaryBySource.set(piece, alias);
+          return alias;
+        }).join("");
+        if (richTextCellValue(value)) notices.push({ location: `${worksheet.name}!${cell.address}`, reason: "一格里的多个名称已分别替换，局部文字样式已统一" });
+        replacedCells += 1;
+        continue;
       }
+      const token = aliasFor(visibleValue, serializeValue(value));
       const source = String(visibleValue);
       if (inlineDictionaryEligible(source) && !dictionaryBySource.has(source)) dictionaryBySource.set(source, token);
       cell.value = token;
@@ -498,6 +640,23 @@ export function tokenizeWorkbook(workbook, selectedColumns, taskId, candidates =
     dictionaryBySource.set(source, token);
     forced.add(source);
   }
+
+  // Excel starts a note with its author ("刘妍妍:" in bold on the first line). That is a person's name too.
+  workbook.eachSheet((worksheet) => {
+    worksheet.eachRow({ includeEmpty: false }, (row) => row.eachCell({ includeEmpty: true }, (cell) => {
+      const author = /^([^\n:：]{2,20})[:：][ \t]*\n/.exec(noteText(cell.note))?.[1].trim();
+      if (!author || !/[一-龥A-Za-z]/.test(author) || isPlaceholderValue(author) || dictionaryBySource.has(author)) return;
+      let token = tokenByText.get(author);
+      if (!token) {
+        counters.S += 1;
+        token = createEntityToken({ label: "批注作者", category: "sales", prefix: "S", sequence: counters.S, taskId });
+        mapping[token] = { value: { type: "string", value: author }, category: "sales", header: "批注作者" };
+        tokenByText.set(author, token);
+      }
+      dictionaryBySource.set(author, token);
+      forced.add(author);
+    }));
+  });
 
   const dictionary = Array.from(dictionaryBySource, ([source, token]) => ({ source, token, force: forced.has(source) }))
     .sort((left, right) => right.source.length - left.source.length);
@@ -543,8 +702,16 @@ export function tokenizeWorkbook(workbook, selectedColumns, taskId, candidates =
     }
   }
 
-  const elsewhere = replaceAcrossWorkbook(workbook, dictionary, handled, notices);
+  // A text cell that is exactly one of the selected values is that value, however short: "A1" in a summary
+  // sheet is the same code as "A1" in the chosen column.
+  const exact = new Map();
+  for (const [token, entry] of Object.entries(mapping)) {
+    const text = entry.value?.type === "richText" ? entry.value.text : entry.value?.type === "string" ? entry.value.value : null;
+    if (typeof text === "string" && text.trim() && !exact.has(text.trim())) exact.set(text.trim(), token);
+  }
+  const elsewhere = replaceAcrossWorkbook(workbook, dictionary, handled, notices, exact);
   replacedCells += elsewhere.cells;
+  replaceOutsideCells(workbook, dictionary.filter(({ source, force }) => force || spreadsAcrossWorkbook(source)), notices);
 
   return { mapping, replacedCells, uniqueValues: Object.keys(mapping).length, warnings, notices, elsewhere };
 }
@@ -559,15 +726,16 @@ export function tokenizeWorkbook(workbook, selectedColumns, taskId, candidates =
 // the selected columns; plain numbers and short codes could equal a quantity or a grade by chance.
 export function spreadsAcrossWorkbook(source) {
   const text = String(source ?? "").trim();
+  if (isLongNumber(text)) return true;
   if (/[^\x00-\x7F]/.test(text)) return text.length >= 2 && !/^[\d\s.,%+\-]+$/.test(text);
   return text.length >= 4 && /[A-Za-z]/.test(text);
 }
 
-function replaceAcrossWorkbook(workbook, allEntries, handled, notices) {
+function replaceAcrossWorkbook(workbook, allEntries, handled, notices, exactValues = new Map()) {
   const elsewhere = { cells: 0, sheets: new Map() };
   const dictionary = allEntries.filter(({ source, force }) => force || spreadsAcrossWorkbook(source));
-  if (!dictionary.length) return elsewhere;
-  const tokenBySource = new Map(dictionary.map(({ source, token }) => [source, token]));
+  if (!dictionary.length && !exactValues.size) return { cells: 0, sheets: [] };
+  const tokenBySource = new Map([...exactValues, ...dictionary.map(({ source, token }) => [source, token])]);
   const count = sheetName => { elsewhere.cells += 1; elsewhere.sheets.set(sheetName, (elsewhere.sheets.get(sheetName) ?? 0) + 1); };
   workbook.eachSheet(worksheet => {
     if (worksheet.name === "__AI安全任务") return;
@@ -634,7 +802,7 @@ export function addTaskMarker(workbook, metadata) {
   const sheet = workbook.addWorksheet("__AI安全任务", { state: "veryHidden" });
   sheet.addRows([
     ["文件脱敏助手", "请勿修改此页"],
-    ["版本", "1"],
+    ["版本", 1],
     ["任务指纹", metadata.taskId],
     ["生成时间", metadata.createdAt],
   ]);
@@ -667,6 +835,9 @@ export function inspectWorkbookTokens(workbook) {
         } else if (value && typeof value === "object" && "formula" in value) {
           text = String(value.formula ?? "");
           kind = "formula";
+        } else if (value && typeof value === "object" && "hyperlink" in value && typeof value.text === "string") {
+          text = value.text;
+          kind = "link";
         } else return;
 
         for (const match of textTokens(text)) {
@@ -731,11 +902,27 @@ export function restoreWorkbookValues(workbook, mapping) {
   }
   if (unresolved.length) return { restoredOccurrences: 0, unresolved, inspection };
 
+  const restoreText = (text) => replaceAliases(text, (token) => {
+    const entry = mapping[token];
+    if (!entry) return token;
+    restoredOccurrences += 1;
+    return replacementText(entry.value);
+  });
   workbook.eachSheet((worksheet) => {
     if (worksheet.name === "__AI安全任务") return;
     worksheet.eachRow({ includeEmpty: false }, (row) => {
-      row.eachCell({ includeEmpty: false }, (cell) => {
+      row.eachCell({ includeEmpty: true }, (cell) => {
+        // Notes carry aliases too; they are put back but not counted as restored cells.
+        if (cell.note && tokenPattern("").test(noteText(cell.note))) {
+          const counted = restoredOccurrences;
+          rewriteNote(cell, restoreText);
+          restoredOccurrences = counted;
+        }
         const value = cell.value;
+        if (value && typeof value === "object" && "hyperlink" in value && typeof value.text === "string" && !("formula" in value)) {
+          cell.value = { ...value, text: restoreText(value.text) };
+          return;
+        }
         if (typeof value === "string") {
           const exact = mapping[value];
           if (exact) {
@@ -743,7 +930,7 @@ export function restoreWorkbookValues(workbook, mapping) {
             restoredOccurrences += 1;
             return;
           }
-          cell.value = value.replace(tokenPattern(), (token) => {
+          cell.value = replaceAliases(value, (token) => {
             const entry = mapping[token];
             if (!entry) return token;
             restoredOccurrences += 1;
@@ -754,7 +941,7 @@ export function restoreWorkbookValues(workbook, mapping) {
             ...value,
             richText: value.richText.map((part) => ({
               ...part,
-              text: String(part.text ?? "").replace(tokenPattern(), (token) => {
+              text: replaceAliases(part.text ?? "", (token) => {
                 const entry = mapping[token];
                 if (!entry) return token;
                 restoredOccurrences += 1;

@@ -26,12 +26,31 @@ export function isValidBankCard(value) {
   return sum % 10 === 0;
 }
 
+// Unified social credit code (GB 32100): 18 characters with its own check character.
+const CREDIT_CHARS = "0123456789ABCDEFGHJKLMNPQRTUWXY";
+const CREDIT_WEIGHTS = [1, 3, 9, 27, 19, 26, 16, 17, 20, 29, 25, 13, 8, 24, 10, 30, 28];
+export function isValidCreditCode(value) {
+  const code = String(value).toUpperCase();
+  if (!/^[0-9A-HJ-NPQRTUWXY]{2}\d{6}[0-9A-HJ-NPQRTUWXY]{10}$/.test(code)) return false;
+  const sum = CREDIT_WEIGHTS.reduce((total, weight, index) => total + weight * CREDIT_CHARS.indexOf(code[index]), 0);
+  return CREDIT_CHARS[(31 - (sum % 31)) % 31] === code[17];
+}
+
+const digitsOnly = value => value.replace(/\D/g, "");
+
 // Earlier rules win when two of them match the same text.
 const RULES = [
   { label: "身份证号", pattern: /(?<!\d)[1-9]\d{16}[\dXx](?!\d)/g, valid: isValidIdNumber },
   { label: "手机号", pattern: /(?<!\d)1[3-9]\d{9}(?!\d)/g },
+  // Written apart or with the country code: 138-1234-5678, 138 1234 5678, +86 13812345678.
+  { label: "手机号", pattern: /(?<![\d\-])(?:\+?86[ \-]?)?1[3-9]\d(?:[ \-]?\d{4}){2}(?![\d\-])/g, valid: value => /[ \-+]/.test(value) || value.startsWith("86") },
   { label: "固定电话", pattern: /(?<!\d)0\d{2,3}[-\s]\d{7,8}(?!\d)/g },
+  { label: "统一社会信用代码", pattern: /(?<![0-9A-Za-z])[0-9A-HJ-NPQRTUWXY]{2}\d{6}[0-9A-HJ-NPQRTUWXY]{10}(?![0-9A-Za-z])/g, valid: isValidCreditCode },
   { label: "银行卡号", pattern: /(?<!\d)[3-6]\d{15,18}(?!\d)/g, valid: isValidBankCard },
+  // Card numbers written in groups: 6222 0212 3456 7890 123.
+  { label: "银行卡号", pattern: /(?<![\d\-])[3-6]\d{3}(?:[ \-]\d{4}){3}(?:[ \-]\d{1,3})?(?![\d\-])/g, valid: value => isValidBankCard(digitsOnly(value)) },
+  // Company accounts have no check digit, so they are only taken when the text says it is an account.
+  { label: "银行账号", pattern: /(?<=(?:账号|帐号|账户|卡号)(?:为|是)?[：:\s]{0,3})\d(?:[ \-]?\d){8,29}(?!\d)/g },
   { label: "邮箱", pattern: /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g },
 ];
 

@@ -47,9 +47,54 @@ export function errorCodeOf(caught) {
   return typeof code === "string" && /^[A-Z][A-Z0-9_]{1,39}$/.test(code) ? code : "PROCESSING_ERROR";
 }
 
+// Where in a file a stopped operation found its problem. Only the kind of place is recorded with a failure,
+// never the name or the cell: the records are the evidence for improving the rules, not a copy of the content.
+export const ERROR_PLACE_LABELS = {
+  cell: "单元格", formula: "公式", comment: "批注", chart: "图表或图形", pivot: "数据透视表", table: "超级表列名",
+  sheetName: "工作表名称", properties: "文件属性", link: "链接", externalLink: "外部工作簿链接", connection: "数据连接",
+  macro: "宏或控件", document: "文档正文以外的区域", other: "其他位置",
+};
+const PLACE_BY_LABEL = [
+  ["工作表单元格或公式", "formula"], ["单元格文字", "cell"], ["批注", "comment"], ["图表或图形里的文字", "chart"], ["数据透视表", "pivot"],
+  ["表格（超级表）的列名", "table"], ["工作表名称或定义的名称", "sheetName"], ["文件属性", "properties"], ["文件的其他部分", "other"],
+];
+const PLACE_BY_PART = [
+  [/comments?/i, "comment"], [/^xl\/(?:charts|drawings)\//i, "chart"], [/^xl\/pivot/i, "pivot"], [/^xl\/tables\//i, "table"],
+  [/^xl\/externalLinks\//i, "externalLink"], [/^xl\/connections\.xml$/i, "connection"], [/vbaProject|activeX/i, "macro"],
+  [/^xl\/_rels\/workbook\.xml\.rels$/i, "externalLink"], [/\.rels$/i, "link"], [/^xl\/worksheets\//i, "cell"], [/^xl\/workbook\.xml$/i, "sheetName"],
+  [/^docProps\//i, "properties"], [/^(?:word|ppt)\//i, "document"],
+];
+function placeOf(detail) {
+  if (detail && typeof detail === "object") return detail.sheetName && detail.row ? "cell" : "other";
+  const text = String(detail ?? "");
+  const label = PLACE_BY_LABEL.find(([prefix]) => text.startsWith(prefix));
+  if (label) return label[1];
+  if (/^[\w\[\]./-]+\.(?:xml|rels|vml|bin)$/i.test(text)) return PLACE_BY_PART.find(([pattern]) => pattern.test(text))?.[1] ?? "other";
+  // "销售明细!B5：原因" from the cell checks.
+  return /^[^!：:]{1,40}![A-Z]{1,3}\d{1,7}(?:[：:]|$)/.test(text) ? "cell" : "other";
+}
+
+// The kinds of place behind a failure with how many of each, most frequent first: ["comment:3", "sheetName:1"].
+export function errorPlacesOf(caught) {
+  const counts = new Map();
+  for (const detail of Array.isArray(caught?.details) ? caught.details : []) {
+    const place = placeOf(detail);
+    counts.set(place, (counts.get(place) ?? 0) + 1);
+  }
+  return [...counts].sort((left, right) => right[1] - left[1]).slice(0, 8).map(([place, count]) => `${place}:${Math.min(count, 99999)}`);
+}
+
+export function isErrorPlace(value) {
+  const match = typeof value === "string" && /^([a-zA-Z]{2,20}):([1-9]\d{0,4})$/.exec(value);
+  return Boolean(match) && Object.hasOwn(ERROR_PLACE_LABELS, match[1]);
+}
+
 // The short reason shown next to a failed record; unknown codes show nothing rather than a raw code.
-export function failureReason(code) {
-  return (code && ERROR_PRESENTATION[code]?.title) || "";
+// With places: "还有真实名称没有替换掉（批注 3 处、工作表名称 1 处）".
+export function failureReason(code, places) {
+  const title = (code && ERROR_PRESENTATION[code]?.title) || "";
+  const where = (Array.isArray(places) ? places : []).filter(isErrorPlace).map((item) => { const [place, count] = item.split(":"); return `${ERROR_PLACE_LABELS[place]} ${count} 处`; });
+  return title && where.length ? `${title}（${where.join("、")}）` : title;
 }
 
 // A place in a sheet or CSV from a candidate's locations: "「重点客户资料表」第 4 行 B 列" or "第 2 行第 3 列".

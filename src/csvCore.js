@@ -1,6 +1,7 @@
-import { classifyHeader, findKnownShortTokens, isEmptyColumn, isPlaceholderValue, recommendedProcessingMode, spreadsAcrossWorkbook } from "./xlsxCore.js";
+import { classifyHeader, findKnownShortTokens, isEmptyColumn, isPlaceholderValue, recommendedProcessingMode, splitNames, spreadsAcrossWorkbook } from "./xlsxCore.js";
 import { sensitiveNumberCandidates } from "./sensitivePatterns.js";
-import { createEntityToken, parseEntityToken, tokenPattern, tokenOccurrence } from "./tokenFormat.js";
+import { shortNameCandidates } from "./companyAbbreviations.js";
+import { aliasWithGap, createEntityToken, parseEntityToken, replaceAliases, tokenPattern, tokenOccurrence } from "./tokenFormat.js";
 
 const DELIMITER_CANDIDATES = [",", "\t", ";"];
 export const CSV_LIMITS = { rows: 200_000, columns: 500, cells: 5_000_000 };
@@ -178,6 +179,9 @@ export function analyzeCsv(document) {
     for (const row of document.rows.slice(column.headerRow)) covered.add(String(row[column.columnNumber - 1] ?? "").trim());
   }
   const candidates = sensitiveNumberCandidates(sourceText).filter((item) => !covered.has(item.value));
+  // Short forms of the company names in the chosen columns that are written somewhere else on their own.
+  const chosenCells = new Set(suggestedColumns.filter((item) => item.suggested && !isEmptyColumn(item)).map((item) => item.columnNumber));
+  candidates.push(...shortNameCandidates(covered, csvCells(document).filter((cell) => !chosenCells.has(cell.column) || cell.row <= headerRow), new Set([...covered, ...candidates.map((item) => item.value)])));
 
   return {
     format: "csv",
@@ -274,7 +278,8 @@ function replaceEntityInSegment(text, source, token) {
       continue;
     }
     if (index > copiedUntil) parts.push({ text: text.slice(copiedUntil, index), protected: false });
-    parts.push({ text: token, protected: true });
+    // A letter, digit or hyphen right after an alias would be read as part of it; a space keeps them apart.
+    parts.push({ text: aliasWithGap(token, text.slice(index + source.length)), protected: true });
     replacements += 1;
     copiedUntil = index + source.length;
     cursor = copiedUntil;
@@ -336,18 +341,32 @@ export function tokenizeCsv(document, selectedColumns, taskId, candidates = []) 
       }
 
       const prefix = column.prefix || "X";
-      const key = `${prefix}:${valueKey(value)}`;
-      let token = tokenByValue.get(key);
-      if (!token) {
-        counters[prefix] += 1;
-        token = createEntityToken({ label: column.header, category: column.category, prefix, sequence: counters[prefix], taskId });
-        tokenByValue.set(key, token);
-        mapping[token] = {
-          value: { type: "string", value: String(value) },
-          category: column.category,
-          header: column.header,
-        };
+      const aliasFor = (text) => {
+        const key = `${prefix}:${valueKey(text)}`;
+        let alias = tokenByValue.get(key);
+        if (!alias) {
+          counters[prefix] += 1;
+          alias = createEntityToken({ label: column.header, category: column.category, prefix, sequence: counters[prefix], taskId });
+          tokenByValue.set(key, alias);
+          mapping[alias] = { value: { type: "string", value: String(text) }, category: column.category, header: column.header };
+        }
+        return alias;
+      };
+      // Several names in one field each get their own alias, so one of them written elsewhere is replaced too.
+      if (/地址|address/i.test(column.header) && String(value).trim().length < 6 && !/\d/.test(String(value))) continue;
+      const pieces = column.category === "customer" || column.category === "sales" ? splitNames(String(value), column.category) : null;
+      if (pieces) {
+        while (row.length <= columnIndex) row.push("");
+        row[columnIndex] = pieces.map((piece, index) => {
+          if (index % 2) return piece;
+          const alias = aliasFor(piece);
+          if (!dictionaryBySource.has(piece)) dictionaryBySource.set(piece, alias);
+          return alias;
+        }).join("");
+        replacedCells += 1;
+        continue;
       }
+      const token = aliasFor(value);
       const source = String(value);
       if (inlineDictionaryEligible(source) && !dictionaryBySource.has(source)) dictionaryBySource.set(source, token);
       while (row.length <= columnIndex) row.push("");
@@ -495,7 +514,7 @@ export function restoreCsvValues(document, mapping) {
   let restoredOccurrences = 0;
   document.rows.forEach((row) => {
     row.forEach((value, columnIndex) => {
-      row[columnIndex] = String(value).replace(tokenPattern(), (token) => {
+      row[columnIndex] = replaceAliases(value, (token) => {
         restoredOccurrences += 1;
         return replacementText(mapping[token].value);
       });
