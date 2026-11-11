@@ -487,6 +487,33 @@ export function flattenHyperlinks(workbook) {
   return removed;
 }
 
+// A formula that reads another workbook ([1]Sheet1!A1, '[报价.xlsx]明细'!B2). The other file is not part of
+// this one, and the library that writes the result cannot carry the link, so such a cell keeps the value it
+// last showed and loses the formula. Returns how many cells were changed.
+const EXTERNAL_REFERENCE = /\[[^\[\]]+\][^\[\]!+\-*\/^&=<>,();:]*'?!/;
+export function flattenExternalReferences(workbook) {
+  let changed = 0;
+  workbook.eachSheet((worksheet) => {
+    worksheet.eachRow({ includeEmpty: false }, (row) => {
+      row.eachCell({ includeEmpty: false }, (cell) => {
+        const value = cell.value;
+        if (!formulaCellValue(value)) return;
+        let formula = "";
+        try { formula = String(cell.formula ?? value.formula ?? ""); } catch { formula = String(value.formula ?? ""); }
+        if (!EXTERNAL_REFERENCE.test(formula)) return;
+        cell.value = value.result ?? null;
+        changed += 1;
+      });
+    });
+  });
+  // Names that point into another workbook go with it.
+  const names = workbook.definedNames;
+  for (const item of names?.model ?? []) {
+    if ((item.ranges ?? []).some((range) => EXTERNAL_REFERENCE.test(String(range)))) names.remove?.(item.ranges[0], item.name);
+  }
+  return changed;
+}
+
 export const noteText = note => typeof note === "string" ? note : Array.isArray(note?.texts) ? note.texts.map(part => part.text ?? "").join("") : "";
 // Rewrites a cell note with the given text function, keeping its formatting runs.
 function rewriteNote(cell, change) {

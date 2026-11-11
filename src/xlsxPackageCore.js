@@ -41,10 +41,11 @@ export async function preflightXlsxPackage(input, limits = XLSX_LIMITS) {
   if (!/spreadsheetml\.sheet\.main\+xml/i.test(contentTypes)) throw packageError("FORMAT_MISMATCH", "文件扩展名是 XLSX，但内部内容不是标准工作簿。");
   for (const entry of entries.filter((item) => /\.rels$/i.test(item.name))) {
     const relationships = await entry.async("string");
-    // An ordinary link in a cell only opens when someone clicks it; linked workbooks, data connections and
-    // remote pictures fetch on their own, so only those stop the file.
+    // An ordinary link in a cell only opens when someone clicks it, and a formula that reads another workbook
+    // is turned into its last value when the file is read (see flattenExternalReferences). Data connections,
+    // linked objects and remote pictures fetch on their own, so only those stop the file.
     const external = [...relationships.matchAll(/<Relationship\b[^>]*>/gi)].map(match => match[0]).filter(tag => /TargetMode=["']External["']/i.test(tag));
-    if (external.some(tag => !/Type=["'][^"']*\/hyperlink["']/i.test(tag))) {
+    if (external.some(tag => !/Type=["'][^"']*\/(?:hyperlink|externalLinkPath|externalLinkLongPath|xlExternalLinkPath\/[A-Za-z]+)["']/i.test(tag))) {
       throw packageError("EXTERNAL_RELATIONSHIPS", "XLSX 包含外部链接或远程连接，已停止处理。", [entry.name]);
     }
   }

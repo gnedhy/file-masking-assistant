@@ -25,7 +25,7 @@ export const ERROR_PRESENTATION = {
   CSV_LIMIT_EXCEEDED: { title: "表格太大了", description: "行数、列数太多，超出了一次能处理的范围。", guidance: "按月份或部门拆成几份，分别处理。" },
   CSV_FORMULA_INJECTION: { title: "有些格子会被 Excel 当成公式", description: "以 =、+、-、@ 开头的内容，在 Excel 里打开时可能被当成公式运行，不安全，所以没有生成。", guidance: "按下面列出的位置修改原文件，例如把“+86-138…”写成“86-138…”，再重新选择。" },
   SUSPICIOUS_TEXT: { title: "文件里有看不见的特殊字符", description: "这些字符可能藏着内容，或者打乱代号的识别。", guidance: "复制一份文件，把内容粘贴到记事本里重新保存后再试。" },
-  EXTERNAL_RELATIONSHIPS: { title: "文件里有指向外部的链接", description: "文件打开时会去连接外部网址或其他文件，可能带出信息。", guidance: "在 Excel 或 Word 里“断开链接”后另存一份，再重新选择。" },
+  EXTERNAL_RELATIONSHIPS: { title: "文件里有会自动联网的外部连接", description: "文件里有数据连接、链接的对象或远程图片，打开时会自己去连接外部网址或其他文件，可能带出信息。普通超链接和引用其他工作簿的公式不在此列，系统会自动处理。", guidance: "在 Excel 的“数据 → 查询和连接”里删除连接，或把链接的对象、图片改成嵌入后另存一份，再重新选择。" },
   SENSITIVE_RESIDUALS: { title: "还有真实名称没有替换掉", description: "已选的真实名称还出现在没有选中的列里，或者出现在系统不能安全改写的地方（例如工作表名称、批注、图表、下拉选项、公式）。为了不把它们交给 AI，系统没有生成。", guidance: "按下面列出的位置处理：点“调整选择字段”，用“手动添加”把这个名称加进去再重新生成；或者在原文件副本里改掉、删掉这些名称（例如重命名工作表、删除批注），再重新选择。" },
   MEDIA_LEFT: { title: "附件没能去掉", description: "文件里嵌入的附件没能从脱敏文件里去掉，为了安全没有生成。", guidance: "在原文件副本里删除嵌入的附件后再试。" },
   INVALID_OFFICE_PACKAGE: { title: "这个 Office 文件读不出来", description: "文件可能已经损坏、设置了密码，或者不是标准格式。", guidance: "用 Word 或 PowerPoint 打开，去掉密码后另存一份，再重新选择。" },

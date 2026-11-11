@@ -338,3 +338,58 @@ test("手机号的其他写法、HYPERLINK 公式、批注作者", async () => {
 test("简称本身是行业词时不建议（广州发展贸易有限公司 → 不建议「发展」）", () => {
   assert.deepEqual(companyShortNames("广州发展贸易有限公司"), ["发展贸易"]);
 });
+
+// ---------- Formulas that read another workbook ----------
+import { flattenExternalReferences } from "../src/xlsxCore.js";
+
+async function withExternalLink(book, relType = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLinkPath") {
+  const zip = await JSZip.loadAsync(await book.xlsx.writeBuffer());
+  zip.file("xl/externalLinks/externalLink1.xml", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><externalLink xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><externalBook r:id="rId1"><sheetNames><sheetName val="客户"/></sheetNames><sheetDataSet><sheetData sheetId="0"><row r="2"><cell r="A2" t="str"><v>东莞恒通贸易有限公司</v></cell></row></sheetData></sheetDataSet></externalBook></externalLink>');
+  zip.file("xl/externalLinks/_rels/externalLink1.xml.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="${relType}" Target="file:///D:/客户/东莞恒通贸易有限公司报价.xlsx" TargetMode="External"/></Relationships>`);
+  zip.file("xl/_rels/workbook.xml.rels", (await zip.file("xl/_rels/workbook.xml.rels").async("string")).replace("</Relationships>", '<Relationship Id="rId77" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLink" Target="externalLinks/externalLink1.xml"/></Relationships>'));
+  zip.file("xl/workbook.xml", (await zip.file("xl/workbook.xml").async("string")).replace("</sheets>", '</sheets><externalReferences><externalReference r:id="rId77"/></externalReferences>'));
+  zip.file("[Content_Types].xml", (await zip.file("[Content_Types].xml").async("string")).replace("</Types>", '<Override PartName="/xl/externalLinks/externalLink1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.externalLink+xml"/></Types>'));
+  return zip.generateAsync({ type: "nodebuffer" });
+}
+
+test("引用其他工作簿的公式不再被拦下：公式换成当前显示的值，外部文件的路径和缓存不带进脱敏文件", async () => {
+  const book = salesBook();
+  const sheet = book.getWorksheet("销售明细");
+  sheet.getCell("D1").value = "开票单位";
+  sheet.getCell("D2").value = { formula: "[1]客户!$A$2", result: "东莞恒通贸易有限公司" };
+  sheet.getCell("D3").value = { formula: "'D:\客户\[报价.xlsx]客户'!$B$3*2", result: 40 };
+  sheet.getCell("E2").value = { formula: "C2*2", result: 200 };
+  const buffer = await withExternalLink(book);
+  await preflightXlsxPackage(buffer);
+  await preflightXlsxPackage(await withExternalLink(book, "http://schemas.microsoft.com/office/2006/relationships/xlExternalLinkPath/xlPathMissing"));
+  const loaded = new ExcelJS.Workbook();
+  await loaded.xlsx.load(buffer);
+  assert.equal(flattenExternalReferences(loaded), 2);
+  const out = loaded.getWorksheet("销售明细");
+  assert.equal(out.getCell("D2").value, "东莞恒通贸易有限公司");
+  assert.equal(out.getCell("D3").value, 40);
+  assert.equal(out.getCell("E2").value.formula, "C2*2");
+  const found = findWorkbookCandidates(loaded, coveredValues(loaded, chosenColumns(loaded)));
+  const result = tokenizeWorkbook(loaded, chosenColumns(loaded), TASK, found.candidates);
+  const output = await loaded.xlsx.writeBuffer();
+  await assertNoSensitiveValuesInXlsxPackage(output, result.mapping);
+  const zip = await JSZip.loadAsync(output);
+  assert.deepEqual(Object.keys(zip.files).filter(name => /externalLink/i.test(name)), []);
+  let all = "";
+  for (const file of Object.values(zip.files)) if (/\.(xml|rels)$/.test(file.name)) all += await file.async("string");
+  for (const real of ["东莞恒通", "报价.xlsx", "externalReference", "[1]"]) assert.ok(!all.includes(real), real);
+  // The protected copy opens again and restores.
+  await preflightXlsxPackage(output);
+  const back = new ExcelJS.Workbook();
+  await back.xlsx.load(output);
+  restoreWorkbookValues(back, result.mapping);
+  assert.equal(back.getWorksheet("销售明细").getCell("D2").value, "东莞恒通贸易有限公司");
+});
+
+test("表格的结构化引用不算引用其他工作簿；数据连接仍然拦截", async () => {
+  const book = salesBook();
+  book.getWorksheet("销售明细").getCell("E2").value = { formula: "SUM(表1[数量])+表1[@数量]*Sheet2!A1", result: 5 };
+  assert.equal(flattenExternalReferences(book), 0);
+  const buffer = await withExternalLink(salesBook(), "http://schemas.openxmlformats.org/officeDocument/2006/relationships/oleObject");
+  await assert.rejects(preflightXlsxPackage(buffer), { code: "EXTERNAL_RELATIONSHIPS" });
+});

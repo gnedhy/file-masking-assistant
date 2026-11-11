@@ -2,6 +2,7 @@ import {
   addTaskMarker,
   analyzeWorkbook,
   coveredValues,
+  flattenExternalReferences,
   flattenHyperlinks,
   hiddenContent,
   inspectWorkbookAlteredTokens,
@@ -54,6 +55,7 @@ async function loadWorkbook(file) {
     const preflight = await preflightXlsxPackage(buffer);
     await workbook.xlsx.load(buffer);
     workbook.fileMedia = preflight.media;
+    workbook.externalFormulas = flattenExternalReferences(workbook);
   } catch (error) {
     if (error?.code) throw new SafeFileError(error.code, error.message, error.details || []);
     throw new SafeFileError("INVALID_XLSX", "无法读取这个 XLSX。它可能已损坏、加密或不是标准 XLSX 文件。", [String(error.message || error)]);
@@ -174,7 +176,11 @@ export async function createSafeWorkbook(file, selectedColumns, options) {
     elsewhere: result.elsewhere,
     removedMedia: workbook.fileMedia,
     warnings: result.warnings,
-    notices: removedLinks ? [...result.notices, { location: "整个文件", reason: `${removedLinks} 个单元格的超链接已去掉，文字保留` }] : result.notices,
+    notices: [
+      ...result.notices,
+      ...(removedLinks ? [{ location: "整个文件", reason: `${removedLinks} 个单元格的超链接已去掉，文字保留` }] : []),
+      ...(workbook.externalFormulas ? [{ location: "整个文件", reason: `${workbook.externalFormulas} 个引用其他工作簿的公式已换成当前显示的值` }] : []),
+    ],
   };
 }
 
