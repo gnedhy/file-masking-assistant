@@ -393,3 +393,41 @@ test("表格的结构化引用不算引用其他工作簿；数据连接仍然�
   const buffer = await withExternalLink(salesBook(), "http://schemas.openxmlformats.org/officeDocument/2006/relationships/oleObject");
   await assert.rejects(preflightXlsxPackage(buffer), { code: "EXTERNAL_RELATIONSHIPS" });
 });
+
+// ---------- Values only ----------
+import { keepValuesOnly, nonValueContent } from "../src/xlsxCore.js";
+
+test("只保留值：公式变成结果，批注、下拉、页眉页脚、条件格式去掉，带客户名的工作表改名，替换后能还原", async () => {
+  const book = new ExcelJS.Workbook();
+  const sheet = book.addWorksheet(CUSTOMER);
+  sheet.addRows([["客户名称", "数量", "金额", "是否重点"], [CUSTOMER, 2, { formula: "B2*10", result: 20 }, { formula: `IF(A2="${CUSTOMER}","是","否")`, result: "是" }], ["佛山南海新材料有限公司", 3, { formula: "B3*10", result: 30 }, { formula: "1/0", result: { error: "#DIV/0!" } }]]);
+  sheet.getCell("B2").note = `${CUSTOMER} 加急`;
+  sheet.getCell("D2").dataValidation = { type: "list", formulae: ['"是,否"'] };
+  sheet.headerFooter.oddHeader = `&C${CUSTOMER}`;
+  sheet.addConditionalFormatting({ ref: "B2:B3", rules: [{ type: "expression", formulae: ["B2>2"], style: { font: { bold: true } } }] });
+  const other = book.addWorksheet("汇总");
+  other.addRow(["合计", { formula: `SUM('${CUSTOMER}'!B2:B3)`, result: 5 }]);
+  const { loaded } = await reload(book);
+  assert.deepEqual(nonValueContent(loaded), { formulas: 5, notes: 1, validations: 1, headers: 1, conditional: 1 });
+  assert.deepEqual(keepValuesOnly(loaded), { formulas: 5, notes: 1, validations: 1, headers: 1, conditional: 1 });
+  assert.equal(nonValueContent(loaded), null);
+  const first = loaded.getWorksheet(CUSTOMER);
+  assert.equal(first.getCell("C2").value, 20);
+  assert.equal(first.getCell("D2").value, "是");
+  assert.deepEqual(first.getCell("D3").value, { error: "#DIV/0!" });
+  const result = tokenizeWorkbook(loaded, chosenColumns(loaded), TASK, [], { valuesOnly: true });
+  assert.equal(first.name, "工作表1");
+  assert.equal(loaded.getWorksheet("汇总").getCell("B1").value, 5);
+  const output = await loaded.xlsx.writeBuffer();
+  await assertNoSensitiveValuesInXlsxPackage(output, result.mapping);
+  await preflightXlsxPackage(output);
+  restoreWorkbookValues(loaded, result.mapping);
+  assert.equal(first.getCell("A2").value, CUSTOMER);
+});
+
+test("不开只保留值时，带客户名的工作表不改名", () => {
+  const book = new ExcelJS.Workbook();
+  book.addWorksheet(CUSTOMER).addRows([["客户名称"], [CUSTOMER]]);
+  tokenizeWorkbook(book, chosenColumns(book), TASK);
+  assert.ok(book.getWorksheet(CUSTOMER));
+});

@@ -5,6 +5,8 @@ import {
   flattenExternalReferences,
   flattenHyperlinks,
   hiddenContent,
+  keepValuesOnly,
+  nonValueContent,
   inspectWorkbookAlteredTokens,
   inspectWorkbookTokens,
   removeTaskMarker,
@@ -89,7 +91,9 @@ function baseName(filename) {
 
 export async function inspectProtectionFile(file) {
   const workbook = await loadWorkbook(file);
-  flattenHyperlinks(workbook);
+  // Counted before anything is changed, so the user sees what the file really holds.
+  const links = flattenHyperlinks(workbook);
+  const extras = { ...(nonValueContent(workbook) ?? {}), ...(links ? { links } : {}), ...(workbook.externalFormulas ? { externalFormulas: workbook.externalFormulas } : {}) };
   const analysis = analyzeWorkbook(workbook);
   // Names already covered by the suggested columns are not listed again.
   const covered = coveredValues(workbook, analysis.columns.filter((item) => analysis.suggestedColumnIds.includes(item.id)));
@@ -114,18 +118,20 @@ export async function inspectProtectionFile(file) {
   workbook.eachSheet((worksheet) => worksheet.eachRow({ includeEmpty: false }, (row) => row.eachCell({ includeEmpty: false }, (cell) => {
     if (typeof cell.text === "string") text.push(cell.text);
   })));
-  return { ...analysis, ...named, media: workbook.fileMedia, hidden: hiddenContent(workbook), riskFindings: highRiskTextFindings(text.join("\n")) };
+  return { ...analysis, ...named, media: workbook.fileMedia, extras: Object.keys(extras).length ? extras : null, hidden: hiddenContent(workbook), riskFindings: highRiskTextFindings(text.join("\n")) };
 }
 
 export async function createSafeWorkbook(file, selectedColumns, options) {
   if (!selectedColumns.length && !options?.candidates?.length) throw new SafeFileError("NO_COLUMNS", "请至少选择一列或一个名称。");
   const workbook = await loadWorkbook(file);
   const removedLinks = flattenHyperlinks(workbook);
+  // "只保留值": formulas become values and everything else that is not a cell value is taken out first.
+  const keptValues = options?.valuesOnly ? keepValuesOnly(workbook) : null;
   const identity = await createProtectionIdentity(options, JSON.stringify(workbook.model));
   const id = identity.taskId;
   const createdAt = new Date().toISOString();
   const taskName = baseName(file.name);
-  const result = tokenizeWorkbook(workbook, selectedColumns, protectionTokenIdentity(identity), options?.candidates ?? []);
+  const result = tokenizeWorkbook(workbook, selectedColumns, protectionTokenIdentity(identity), options?.candidates ?? [], { valuesOnly: Boolean(keptValues) });
   if (!result.replacedCells) {
     throw new SafeFileError("NO_VALUES", "所选列中没有找到可替换值，或文中替换列没有出现已确认实体。", result.warnings);
   }
@@ -175,6 +181,7 @@ export async function createSafeWorkbook(file, selectedColumns, options) {
     uniqueValues: result.uniqueValues,
     elsewhere: result.elsewhere,
     removedMedia: workbook.fileMedia,
+    valuesOnly: keptValues,
     warnings: result.warnings,
     notices: [
       ...result.notices,

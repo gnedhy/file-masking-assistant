@@ -487,6 +487,54 @@ export function flattenHyperlinks(workbook) {
   return removed;
 }
 
+const HEADER_FOOTER_KEYS = ["oddHeader", "oddFooter", "evenHeader", "evenFooter", "firstHeader", "firstFooter"];
+
+// What a workbook holds besides the values in its cells. Each of these can carry a name where choosing
+// columns does not reach (a formula that spells a customer, a note, a drop-down list, a page header), so the
+// user is told how much there is and can ask for a copy with the values only. Zero counts are left out;
+// null when there is nothing.
+export function nonValueContent(workbook) {
+  const found = { formulas: 0, notes: 0, validations: 0, headers: 0, names: 0, conditional: 0 };
+  workbook.eachSheet((worksheet) => {
+    if (worksheet.name === "__AI安全任务") return;
+    worksheet.eachRow({ includeEmpty: false }, (row) => {
+      row.eachCell({ includeEmpty: true }, (cell) => {
+        if (cell.isMerged && cell.master !== cell) return;
+        if (formulaCellValue(cell.value)) found.formulas += 1;
+        if (cell.note) found.notes += 1;
+      });
+    });
+    found.validations += Object.keys(worksheet.dataValidations?.model ?? {}).length;
+    if (HEADER_FOOTER_KEYS.some((key) => typeof worksheet.headerFooter?.[key] === "string" && worksheet.headerFooter[key].trim())) found.headers += 1;
+    found.conditional += (worksheet.conditionalFormattings ?? []).length;
+  });
+  found.names = (workbook.definedNames?.model ?? []).length;
+  const present = Object.fromEntries(Object.entries(found).filter(([, count]) => count > 0));
+  return Object.keys(present).length ? present : null;
+}
+
+// Leaves only what the cells show: every formula becomes its last value, and notes, drop-down lists, page
+// headers and footers, defined names and conditional formats are removed. Cell formats, widths and merged
+// cells stay. Returns what was taken out, in the shape of nonValueContent.
+export function keepValuesOnly(workbook) {
+  const removed = nonValueContent(workbook) ?? {};
+  workbook.eachSheet((worksheet) => {
+    if (worksheet.name === "__AI安全任务") return;
+    worksheet.eachRow({ includeEmpty: false }, (row) => {
+      row.eachCell({ includeEmpty: true }, (cell) => {
+        if (cell.isMerged && cell.master !== cell) return;
+        if (formulaCellValue(cell.value)) cell.value = cell.value.result ?? null;
+        if (cell.note) cell.note = undefined;
+      });
+    });
+    if (worksheet.dataValidations) worksheet.dataValidations.model = {};
+    for (const key of HEADER_FOOTER_KEYS) if (worksheet.headerFooter?.[key]) worksheet.headerFooter[key] = null;
+    if (worksheet.conditionalFormattings?.length) worksheet.conditionalFormattings = [];
+  });
+  if (workbook.definedNames?.model?.length) workbook.definedNames.model = [];
+  return removed;
+}
+
 // A formula that reads another workbook ([1]Sheet1!A1, '[报价.xlsx]明细'!B2). The other file is not part of
 // this one, and the library that writes the result cannot carry the link, so such a cell keeps the value it
 // last showed and loses the formula. Returns how many cells were changed.
@@ -563,7 +611,9 @@ function replaceOutsideCells(workbook, dictionary, notices) {
 }
 
 // candidates: names confirmed from forms and text (see workbookCandidates.js), each { value, label, category, prefix }.
-export function tokenizeWorkbook(workbook, selectedColumns, taskId, candidates = []) {
+// options.valuesOnly: the workbook was reduced to its values (keepValuesOnly), so no formula refers to a sheet
+// by name and a sheet named after a customer can safely be renamed.
+export function tokenizeWorkbook(workbook, selectedColumns, taskId, candidates = [], options = {}) {
   const counters = { C: 0, P: 0, S: 0, X: 0 };
   const tokenByValue = new Map();
   const mapping = {};
@@ -739,6 +789,20 @@ export function tokenizeWorkbook(workbook, selectedColumns, taskId, candidates =
   const elsewhere = replaceAcrossWorkbook(workbook, dictionary, handled, notices, exact);
   replacedCells += elsewhere.cells;
   replaceOutsideCells(workbook, dictionary.filter(({ source, force }) => force || spreadsAcrossWorkbook(source)), notices);
+  if (options.valuesOnly) {
+    const sources = [...new Set([...exact.keys(), ...dictionary.filter(({ source, force }) => force || spreadsAcrossWorkbook(source)).map(({ source }) => source)])];
+    const taken = new Set();
+    workbook.eachSheet((worksheet) => taken.add(worksheet.name));
+    let number = 0;
+    workbook.eachSheet((worksheet) => {
+      if (worksheet.name === "__AI安全任务" || !sources.some((source) => residualMatches(worksheet.name, source))) return;
+      let name;
+      do { number += 1; name = `工作表${number}`; } while (taken.has(name));
+      taken.add(name);
+      notices.push({ location: worksheet.name, reason: `工作表名称里有已选名称，已改名为「${name}」` });
+      worksheet.name = name;
+    });
+  }
 
   return { mapping, replacedCells, uniqueValues: Object.keys(mapping).length, warnings, notices, elsewhere };
 }
@@ -811,11 +875,13 @@ export function findWorkbookResiduals(workbook, values) {
         if (!matched.length) return;
         findings.push({
           location: `${worksheet.name}!${cell.address}`,
-          reason: "已选真实值仍出现在此处",
+          reason: formulaCellValue(value) ? "公式里写了已选真实值" : "已选真实值仍出现在此处",
           sheetName: worksheet.name,
           row: rowNumber,
           columnNumber,
-          eligible: matched.every(inlineDictionaryEligible),
+          // Choosing the column does not help when the name is written inside a formula.
+          formula: Boolean(formulaCellValue(value)),
+          eligible: !formulaCellValue(value) && matched.every(inlineDictionaryEligible),
         });
       });
     });

@@ -65,7 +65,7 @@ const PLACE_BY_PART = [
   [/^docProps\//i, "properties"], [/^(?:word|ppt)\//i, "document"],
 ];
 function placeOf(detail) {
-  if (detail && typeof detail === "object") return detail.sheetName && detail.row ? "cell" : "other";
+  if (detail && typeof detail === "object") return detail.formula ? "formula" : detail.sheetName && detail.row ? "cell" : "other";
   const text = String(detail ?? "");
   const label = PLACE_BY_LABEL.find(([prefix]) => text.startsWith(prefix));
   if (label) return label[1];
@@ -107,7 +107,7 @@ export function residualPlace(detail) {
   if (detail && typeof detail === "object" && detail.sheetName && detail.row) {
     let column = "", n = detail.columnNumber;
     while (n > 0) { const r = (n - 1) % 26; column = String.fromCharCode(65 + r) + column; n = Math.floor((n - 1) / 26); }
-    return detail.sheetName === "CSV" ? `第 ${detail.row} 行第 ${detail.columnNumber} 列` : `「${detail.sheetName}」第 ${detail.row} 行 ${column} 列`;
+    return detail.sheetName === "CSV" ? `第 ${detail.row} 行第 ${detail.columnNumber} 列` : `「${detail.sheetName}」第 ${detail.row} 行 ${column} 列${detail.formula ? "的公式" : ""}`;
   }
   const text = String(detail ?? "");
   const split = text.indexOf("：");

@@ -6940,3 +6940,18 @@ input {
 .record-filters-more > .record-scope { margin-top: 0; }
 /* Quick date chips show which range is active; "自定义" reveals the two date fields. */
 .record-date-shortcuts .secondary-button[aria-pressed="true"] { color: var(--blue); border-color: color-mix(in srgb, var(--blue) 40%, var(--line)); background: var(--blue-soft); }
+
+/* ---------- 只保留值: a row at the foot of the replacement card ---------- */
+.values-only { display: flex; align-items: center; gap: 20px; margin: 0 20px; padding: 14px 0 16px; border-top: 1px solid var(--line-soft); text-align: left; }
+.values-only__text { display: grid; gap: 3px; min-width: 0; flex: 1 1 auto; }
+.values-only__text strong { color: var(--ink); font-size: var(--fs-sm); font-weight: var(--fw-medium, 500); }
+.values-only__text small { color: var(--muted); font-size: var(--fs-xs); line-height: 1.6; }
+.switch { display: inline-flex; align-items: center; gap: 10px; flex: 0 0 auto; min-height: 36px; padding: 0 2px; border: 0; background: transparent; color: var(--ink); font-size: var(--fs-sm); font-weight: var(--fw-medium, 500); cursor: pointer; white-space: nowrap; }
+.switch__track { position: relative; width: 40px; height: 24px; border-radius: 999px; background: color-mix(in srgb, var(--ink) 18%, transparent); transition: background-color 160ms ease; }
+.switch__track i { position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: var(--surface-raised); box-shadow: 0 1px 2px color-mix(in srgb, var(--ink) 30%, transparent); transition: transform 160ms ease; }
+.switch[aria-checked="true"] .switch__track { background: var(--blue); }
+.switch[aria-checked="true"] .switch__track i { transform: translateX(16px); }
+.switch:hover .switch__track { background: color-mix(in srgb, var(--ink) 26%, transparent); }
+.switch[aria-checked="true"]:hover .switch__track { background: color-mix(in srgb, var(--blue) 88%, var(--ink)); }
+@media (max-width: 640px) { .values-only { flex-direction: column; align-items: flex-start; gap: 10px; } }
+@media (prefers-reduced-motion: reduce) { .switch__track, .switch__track i { transition: none; } }

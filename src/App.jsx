@@ -360,7 +360,7 @@ function SelectedFile({ file, onRemove }) {
   );
 }
 
-function ReadyState({ mode, file, analysis, selectedIds, fieldModes = {}, restoreInspection, regenerationNotice, detailsOpen, onRemove, onPrimary, onDetails }) {
+function ReadyState({ mode, file, analysis, selectedIds, fieldModes = {}, restoreInspection, regenerationNotice, detailsOpen, valuesOnly = false, onValuesOnly, onRemove, onPrimary, onDetails }) {
   const selectedCandidates = (analysis?.candidates ?? []).filter((candidate) => selectedIds.includes(candidate.id));
   const selectedColumns = (analysis?.columns ?? [])
     .filter((column) => selectedIds.includes(column.id))
@@ -452,6 +452,17 @@ function ReadyState({ mode, file, analysis, selectedIds, fieldModes = {}, restor
           <ReplacementPreview items={analysis?.kind === "text"
             ? selectedCandidates.map((item) => ({ key: item.id, title: item.value, detail: `${item.label} · ${item.count} 处` }))
             : [...selectedColumns.map((column) => ({ key: column.id, title: column.header, detail: `${column.processingMode === "whole" ? "" : "长文字 · "}${column.valueCount} 个值` })), ...selectedCandidates.map((item) => ({ key: item.id, title: item.value, detail: `${item.label} · ${item.count} 处` }))]} />
+          {hasRemovableExtras(analysis?.extras) && (
+            <div className="values-only" data-on={valuesOnly}>
+              <span className="values-only__text">
+                <strong>文件里除了数值，还有{extrasPhrase(analysis.extras)}</strong>
+                <small>{valuesOnly
+                  ? "脱敏文件将只保留数值：公式换成当前的结果，批注、下拉、页眉页脚等不带进去。原文件不受影响。"
+                  : "这些地方也可能带着客户名、人名。打开「只保留值」，脱敏文件里公式换成当前的结果，其余不带进去；原文件不受影响。"}</small>
+              </span>
+              <button className="switch" type="button" role="switch" aria-checked={valuesOnly} onClick={() => onValuesOnly(!valuesOnly)}><span className="switch__track" aria-hidden="true"><i /></span>只保留值</button>
+            </div>
+          )}
         </div>
       ) : null}
       <button className="primary-button" type="button" onClick={onPrimary} disabled={mode === "protect" ? (!(analysis?.kind === "text" ? selectedCandidates.length : selectedColumns.length + selectedCandidates.length) || hasOnlyInlineFields) : false}>
@@ -572,6 +583,14 @@ function mediaPhrase(media) {
   return parts.join("和 ");
 }
 
+// "公式 120 个、批注 8 条、超链接 3 个": what the workbook holds besides cell values.
+const EXTRA_LABELS = [["formulas", "公式", "个"], ["externalFormulas", "引用其他工作簿的公式", "个"], ["notes", "批注", "条"], ["links", "超链接", "个"], ["validations", "下拉或输入限制", "处"], ["headers", "带页眉页脚的工作表", "个"], ["names", "定义的名称", "个"], ["conditional", "条件格式", "组"]];
+function extrasPhrase(extras) {
+  return EXTRA_LABELS.filter(([key]) => extras?.[key]).map(([key, label, unit]) => `${label} ${extras[key]} ${unit}`).join("、");
+}
+// Links and formulas that read another workbook are always turned into text and values; the switch is for the rest.
+const hasRemovableExtras = extras => Boolean(extras) && EXTRA_LABELS.some(([key]) => key !== "links" && key !== "externalFormulas" && extras[key]);
+
 // "2 个隐藏工作表、5 行隐藏行"
 function hiddenPhrase(hidden) {
   return [hidden?.sheets ? `${hidden.sheets} 个隐藏工作表` : "", hidden?.rows ? `${hidden.rows} 行隐藏行` : "", hidden?.columns ? `${hidden.columns} 列隐藏列` : ""].filter(Boolean).join("、");
@@ -606,7 +625,7 @@ function SuccessState({ mode, result, sourceFile, downloadRequested, detailsOpen
       {((protect && !handoff) || result.partialRestore || hasContentLoss) && <p className="state-description">{protect
         ? handoff
           ? ""
-          : `已选内容已替换为代号。${elsewhereSentence(result.elsewhere)}${result.removedMedia?.images ? `${result.removedMedia.images} 张图片原样保留，图片里的文字未替换。` : ""}${result.removedMedia?.attachments ? `${result.removedMedia.attachments} 个附件没有放进脱敏文件。` : ""}交给 AI 前请复核其余内容，并点击下方按钮下载。`
+          : `已选内容已替换为代号。${elsewhereSentence(result.elsewhere)}${result.removedMedia?.images ? `${result.removedMedia.images} 张图片原样保留，图片里的文字未替换。` : ""}${result.removedMedia?.attachments ? `${result.removedMedia.attachments} 个附件没有放进脱敏文件。` : ""}${result.valuesOnly ? "这份文件只保留了数值，公式已换成结果，批注等没有带进来。" : ""}交给 AI 前请复核其余内容，并点击下方按钮下载。`
         : result.partialRestore
           ? `另有 ${result.unresolvedOccurrences.length} 处被改写的代号未还原并原样保留，请下载后复核。`
           : hasContentLoss
@@ -664,7 +683,7 @@ function formulaIssueLabel(issue) {
   return `${issue.header ? `第 ${issue.row} 行 · ${issue.header}` : issue.location}：${issue.value}`;
 }
 
-function ErrorState({ mode, error, canAdjustFields, residualColumns = [], onAddResidualColumns, onAdjustFields, onReset, onDetails, onBackToProtect }) {
+function ErrorState({ mode, error, canAdjustFields, canKeepValues = false, residualColumns = [], onAddResidualColumns, onAdjustFields, onKeepValues, onReset, onDetails, onBackToProtect }) {
   const copy = ERROR_PRESENTATION[error?.code] ?? {
     title: "这个文件暂时处理不了",
     description: "安全检查没有通过，所以系统没有生成文件，原文件没有受影响。",
@@ -685,7 +704,7 @@ function ErrorState({ mode, error, canAdjustFields, residualColumns = [], onAddR
           <p>这些没有选中的列里还有真实值：</p>
           <ul>{residualColumns.map((column) => <li key={column.id}>{column.sheetName === "CSV" ? "" : `${column.sheetName} · `}{spreadsheetColumnLabel(column.columnNumber)} 列 · {column.header}</li>)}</ul>
         </div>
-      ) : <p className="error-guidance">{copy.guidance}</p>}
+      ) : <p className="error-guidance">{canKeepValues ? "点「只保留值后重新生成」最省事：公式换成当前的结果，批注、下拉、页眉页脚不带进去，带真实名称的工作表会改名，原文件不受影响。也可以自己在原文件副本里改下面这些位置。" : copy.guidance}</p>}
       {residualPlaces.length > 0 && (
         <div className="error-issues">
           <p>需要处理的位置：</p>
@@ -702,8 +721,9 @@ function ErrorState({ mode, error, canAdjustFields, residualColumns = [], onAddR
       )}
       <div className="action-row error-actions">
         {residualColumns.length > 0 && <button className="primary-button primary-button--compact" type="button" onClick={onAddResidualColumns}>加入这 {residualColumns.length} 列并重新生成</button>}
-        {canAdjustFields && <button className={residualColumns.length > 0 ? "secondary-button" : "primary-button primary-button--compact"} type="button" onClick={onAdjustFields}>调整选择字段</button>}
-        <button className={canAdjustFields ? "secondary-button" : "primary-button primary-button--compact"} type="button" onClick={onReset}>重新选择文件</button>
+        {canKeepValues && residualColumns.length === 0 && <button className="primary-button primary-button--compact" type="button" onClick={onKeepValues}>只保留值后重新生成</button>}
+        {canAdjustFields && <button className={residualColumns.length > 0 || canKeepValues ? "secondary-button" : "primary-button primary-button--compact"} type="button" onClick={onAdjustFields}>调整选择字段</button>}
+        <button className={canAdjustFields || canKeepValues ? "secondary-button" : "primary-button primary-button--compact"} type="button" onClick={onReset}>重新选择文件</button>
         {mode === "restore" && <button className="secondary-button" type="button" onClick={onBackToProtect}>返回制作脱敏文件</button>}
         <button className="text-button error-details-button" type="button" onClick={onDetails}>查看详细信息</button>
       </div>
@@ -1038,6 +1058,8 @@ export function App() {
   const recordFileOperation = (action, result, metadata = {}) => recordOperation(action, result, { ...metadata, operationId: operationIdRef.current });
   const [downloadRequested, setDownloadRequested] = useState(false);
   const [regenerationNotice, setRegenerationNotice] = useState(null);
+  // 只保留值: the protected copy carries cell values only (see keepValuesOnly).
+  const [valuesOnly, setValuesOnly] = useState(false);
   const [error, setError] = useState(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [localTasksOpen, setLocalTasksOpen] = useState(false);
@@ -1230,7 +1252,7 @@ export function App() {
       }
     }
     dragDepthRef.current = 0; setIsDraggingFile(false);
-    setMode(nextMode); setStatus("empty"); setFile(null); setAnalysis(null); setSelectedIds([]); setFieldModes({});
+    setMode(nextMode); setStatus("empty"); setFile(null); setAnalysis(null); setSelectedIds([]); setFieldModes({}); setValuesOnly(false);
     setRestoreInspection(null); setResult(null); setDownloadRequested(false); setRegenerationNotice(null); setError(null); setDetailsOpen(false); setLocalTasksOpen(false);
     return true;
   };
@@ -1280,7 +1302,7 @@ export function App() {
       showError(new SafeFileError("UNSUPPORTED_FILE", `此入口支持标准 ${formatList(mode)} 文件。`));
       return;
     }
-    setFile(selected); setStatus("inspecting"); setError(null); setDetailsOpen(false); setResult(null); setDownloadRequested(false); setRegenerationNotice(null);
+    setFile(selected); setStatus("inspecting"); setError(null); setDetailsOpen(false); setResult(null); setDownloadRequested(false); setRegenerationNotice(null); setValuesOnly(false);
     try {
       if (mode === "protect") {
         const nextAnalysis = await inspectProtectionFile(selected);
@@ -1336,7 +1358,7 @@ export function App() {
     if (dropped) inspectFile(dropped);
   };
 
-  const processFile = async ({ ids = selectedIds, modes = fieldModes } = {}) => {
+  const processFile = async ({ ids = selectedIds, modes = fieldModes, keepValues = valuesOnly } = {}) => {
     setStatus("processing"); setError(null); setDetailsOpen(false); setDownloadRequested(false); setRegenerationNotice(null);
     try {
       let output;
@@ -1346,7 +1368,7 @@ export function App() {
           : analysis.columns
             .filter((column) => ids.includes(column.id))
             .map((column) => ({ ...column, processingMode: modes[column.id] ?? column.recommendedMode ?? "whole" }));
-        output = await createSafeFile(file, selection, analysis.kind === "text" ? undefined : { candidates: (analysis.candidates ?? []).filter((candidate) => ids.includes(candidate.id)) });
+        output = await createSafeFile(file, selection, analysis.kind === "text" ? undefined : { candidates: (analysis.candidates ?? []).filter((candidate) => ids.includes(candidate.id)), valuesOnly: keepValues });
       } else {
         output = await restoreSafeFile(file, restoreInspection.taskId);
       }
@@ -1388,6 +1410,8 @@ export function App() {
     setDetailsOpen(true);
   };
 
+  // A workbook stopped by names left in formulas, notes, sheet names and the like can be retried with values only.
+  const canKeepValuesAndRetry = mode === "protect" && !valuesOnly && Boolean(analysis) && analysis.kind !== "text" && fileFormatFromName(file?.name ?? "") === "xlsx" && error?.code === "SENSITIVE_RESIDUALS";
   const canAdjustFailedProtectionSelection = mode === "protect"
     && Boolean(file && analysis)
     && ["NO_COLUMNS", "NO_TEXT_CANDIDATES", "NO_VALUES", "UNSUPPORTED_CELLS", "SENSITIVE_RESIDUALS", "VAULT_TASK_EXISTS"].includes(error?.code);
@@ -1421,10 +1445,10 @@ export function App() {
   let mainState;
   if (status === "empty") mainState = <EmptyState mode={mode} inputRef={inputRef} isDraggingFile={isDraggingFile} />;
   else if (status === "inspecting") mainState = <ProcessingState mode={mode} file={file} phase="inspect" />;
-  else if (status === "ready") mainState = <ReadyState mode={mode} file={file} analysis={analysis} selectedIds={selectedIds} fieldModes={fieldModes} restoreInspection={restoreInspection} regenerationNotice={regenerationNotice} detailsOpen={detailsOpen} onRemove={() => reset(mode)} onPrimary={processFile} onDetails={openDetails} />;
+  else if (status === "ready") mainState = <ReadyState mode={mode} file={file} analysis={analysis} selectedIds={selectedIds} fieldModes={fieldModes} restoreInspection={restoreInspection} regenerationNotice={regenerationNotice} detailsOpen={detailsOpen} valuesOnly={valuesOnly} onValuesOnly={setValuesOnly} onRemove={() => reset(mode)} onPrimary={() => processFile()} onDetails={openDetails} />;
   else if (status === "processing") mainState = <ProcessingState mode={mode} file={file} />;
   else if (status === "success") mainState = <SuccessState mode={mode} result={result} sourceFile={file} downloadRequested={downloadRequested} detailsOpen={detailsOpen} onDetails={openDetails} onDownloadRequested={() => setDownloadRequested(true)} onAdjust={adjustProtection} onNext={openRestorePicker} onReset={() => reset(mode)} />;
-  else mainState = <ErrorState mode={mode} error={error} canAdjustFields={canAdjustFailedProtectionSelection} residualColumns={residualColumns} onAddResidualColumns={addResidualColumns} onAdjustFields={adjustFailedProtectionSelection} onReset={() => reset(mode)} onDetails={openDetails} onBackToProtect={() => reset("protect")} />;
+  else mainState = <ErrorState mode={mode} error={error} canAdjustFields={canAdjustFailedProtectionSelection} canKeepValues={canKeepValuesAndRetry} onKeepValues={() => { setValuesOnly(true); processFile({ keepValues: true }); }} residualColumns={residualColumns} onAddResidualColumns={addResidualColumns} onAdjustFields={adjustFailedProtectionSelection} onReset={() => reset(mode)} onDetails={openDetails} onBackToProtect={() => reset("protect")} />;
 
   const routeStage = mode === "restore" ? "restore" : status === "success" && downloadRequested ? "ai" : "protect";
 
