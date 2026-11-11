@@ -1,6 +1,9 @@
 import { SafeFileError } from "./xlsxEngine.js";
 import { listVaultSummaries, loadVault, saveVault } from "./vaultStore.js";
-import { OFFICE_FORMATS, analyzeDocxProtectionPackage, findAlteredTokens, inspectOfficePackage, loadOfficePackage, restoreOfficePackage, tokenizeDocxPackage } from "./officeOpenXmlCore.js";
+import { createProtectionIdentity, protectionTokenIdentity, protectionResult, resolveRestoreVault, taskEvidence } from "./taskIdentity.js";
+import { OFFICE_FORMATS, analyzeDocxProtectionPackage, assertNoSensitiveValuesInOfficePackage, findAlteredTokens, inspectOfficePackage, loadOfficePackage, restoreOfficePackage, tokenizeDocxPackage } from "./officeOpenXmlCore.js";
+import { scrubOfficeMetadata, allXmlText } from "./officeOpenXmlCore.js";
+import { highRiskTextFindings, occurrenceBaseline, occurrenceComparison, protectedOutputName, restoredOutputName } from "./fileSafety.js";
 
 function extensionOf(filename) {
   return filename.toLowerCase().match(/\.([a-z0-9]+)$/)?.[1] ?? "";
@@ -25,7 +28,7 @@ function validateInspection(inspection) {
   if (inspection.unsupportedOccurrences.length) {
     throw new SafeFileError(
       "UNSUPPORTED_CONTENT",
-      "代号出现在首版不主动修改的 Office 区域，已停止输出。",
+      "代号出现在暂不处理的 Office 区域，已停止输出。",
       inspection.unsupportedOccurrences.map((item) => `${item.location}：${item.token}`),
     );
   }
@@ -53,37 +56,39 @@ async function checkedPackage(file) {
   return loadOfficePackage(await file.arrayBuffer(), extensionOf(file.name));
 }
 
-function createTaskId() {
-  return [...crypto.getRandomValues(new Uint8Array(4))].map((byte) => byte.toString(16).padStart(2, "0")).join("").toUpperCase();
-}
-
 export async function inspectDocxProtectionFile(file) {
   try {
     const { zip, format } = await checkedPackage(file);
     if (format !== "docx") throw new SafeFileError("FORMAT_MISMATCH", "DOCX 脱敏入口只处理标准 Word 文件。");
-    return await analyzeDocxProtectionPackage(zip);
+    const analysis = await analyzeDocxProtectionPackage(zip);
+    return { ...analysis, riskFindings: highRiskTextFindings(analysis.sourceText) };
   } catch (error) {
     throw asSafeFileError(error);
   }
 }
 
-export async function createSafeDocx(file, selectedCandidates) {
+export async function createSafeDocx(file, selectedCandidates, options) {
   try {
     if (!selectedCandidates.length) throw new SafeFileError("NO_TEXT_CANDIDATES", "请至少选择一项需要替换的敏感内容。");
     const { zip, format } = await checkedPackage(file);
     if (format !== "docx") throw new SafeFileError("FORMAT_MISMATCH", "DOCX 脱敏入口只处理标准 Word 文件。");
     await analyzeDocxProtectionPackage(zip);
-    const taskId = createTaskId();
+    const sourceParts = await Promise.all(Object.values(zip.files).filter(entry => !entry.dir && /\.xml$/i.test(entry.name)).map(entry => entry.async("string")));
+    const identity = await createProtectionIdentity(options, sourceParts.map(allXmlText).join("\n"));
+    const taskId = identity.taskId;
     const taskName = cleanBaseName(file.name);
-    const result = await tokenizeDocxPackage(zip, selectedCandidates, taskId);
+    const result = await tokenizeDocxPackage(zip, selectedCandidates, protectionTokenIdentity(identity));
     if (!result.replacedOccurrences || !result.uniqueValues) throw new SafeFileError("NO_VALUES", "没有找到可替换的完整文字。");
     const postCheck = await inspectOfficePackage(zip, "docx");
     const unknown = postCheck.uniqueTokens.filter((token) => !result.mapping[token]);
-    if (postCheck.unsupportedOccurrences.length || unknown.length) throw new SafeFileError("UNSUPPORTED_CONTENT", "代号出现在 DOCX 首版不处理的区域。", [...postCheck.unsupportedOccurrences.map((item) => `${item.location}：${item.token}`), ...unknown]);
-    await saveVault({ version: 1, taskId, taskName, createdAt: new Date().toISOString(), sourceFileName: file.name, mapping: result.mapping });
+    if (postCheck.unsupportedOccurrences.length || unknown.length) throw new SafeFileError("UNSUPPORTED_CONTENT", "代号出现在 DOCX 暂不处理的区域。", [...postCheck.unsupportedOccurrences.map((item) => `${item.location}：${item.token}`), ...unknown]);
+    await assertNoSensitiveValuesInOfficePackage(zip, result.mapping);
+    await scrubOfficeMetadata(zip);
+    const buffer = await zip.generateAsync({ type: "arraybuffer", compression: "DEFLATE", compressionOptions: { level: 6 } });
+    await saveVault({ version: 2, ...identity, taskName, createdAt: new Date().toISOString(), sourceFormat: "docx", occurrenceBaseline: occurrenceBaseline(postCheck.occurrences), mapping: result.mapping });
     return {
-      buffer: await zip.generateAsync({ type: "arraybuffer", compression: "DEFLATE", compressionOptions: { level: 6 } }),
-      outputName: `${taskName}_脱敏版_${taskId}.docx`, mimeType: OFFICE_FORMATS.docx.mimeType,
+      ...protectionResult(identity, result.mapping), buffer,
+      outputName: protectedOutputName("docx", identity.marker || taskId), mimeType: OFFICE_FORMATS.docx.mimeType,
       format: "docx", formatLabel: "Word", taskId, taskName,
       replacedCells: result.replacedOccurrences, uniqueValues: result.uniqueValues,
       checkedAreas: result.checkedAreas, uncheckedAreas: OFFICE_FORMATS.docx.unchecked,
@@ -94,7 +99,7 @@ export async function createSafeDocx(file, selectedCandidates) {
   }
 }
 
-export async function inspectOfficeRestoreFile(file) {
+export async function inspectOfficeRestoreFile(file, context) {
   try {
     const { zip, format } = await checkedPackage(file);
     const initial = await inspectOfficePackage(zip, format);
@@ -103,12 +108,12 @@ export async function inspectOfficeRestoreFile(file) {
       if (altered.length) throw new SafeFileError("ALTERED_TOKENS", "文件中只剩下残缺或被改写的已知代号，已停止输出。", altered);
     }
     validateInspection(initial);
-    const taskId = initial.taskIds[0];
-    const vault = await loadVault(taskId);
-    if (!vault) throw new SafeFileError("VAULT_NOT_FOUND", `本机找不到任务 ${taskId} 的映射，已停止还原。`, [`任务 ${taskId}`]);
+    const vault = await resolveRestoreVault(initial, context);
+    const taskId = vault.taskId;
+    if (!vault) throw new SafeFileError("VAULT_NOT_FOUND", `本机找不到任务 ${taskId} 的还原记录，已停止还原。`, [`任务 ${taskId}`]);
     const inspection = await inspectOfficePackage(zip, format, vault.mapping);
     const unknown = inspection.uniqueTokens.filter((token) => !vault.mapping[token]);
-    if (unknown.length) throw new SafeFileError("UNRESOLVED_TOKENS", "文件中存在本机无法确认的正式代号，已停止输出。", unknown);
+    if (unknown.length) throw new SafeFileError("UNRESOLVED_TOKENS", "文件中存在本机无法确认的代号，已停止输出。", unknown);
     if (inspection.altered.length) {
       throw new SafeFileError("ALTERED_TOKENS", "文件中存在残缺或被改写的已知代号，已停止输出。", inspection.altered.map((item) => `${item.location}：${item.value}`));
     }
@@ -116,30 +121,29 @@ export async function inspectOfficeRestoreFile(file) {
       format,
       formatLabel: OFFICE_FORMATS[format].label,
       taskId,
-      taskName: vault.taskName,
+      ...taskEvidence(vault), taskName: vault.taskName,
       occurrences: inspection.occurrences.length,
       uniqueTokens: inspection.uniqueTokens.length,
       usedMappings: inspection.uniqueTokens.length,
       checkedAreas: inspection.checkedAreas,
       uncheckedAreas: inspection.uncheckedAreas,
-      warnings: ["图片未扫描，未出现的映射不代表异常。", "真实内容变长后可能产生换行或溢出，请在 Office 中复核版式。"],
+      warnings: ["图片未扫描，部分代号未出现不代表异常。", "真实内容变长后可能产生换行或溢出，请在 Office 中复核版式。"],
+      occurrenceComparison: occurrenceComparison(vault, inspection.occurrences, format),
     };
   } catch (error) {
     throw asSafeFileError(error);
   }
 }
 
-export async function restoreOfficeSafeFile(file, expectedTaskId) {
+export async function restoreOfficeSafeFile(file, expectedTaskId, context) {
   try {
     const { zip, format } = await checkedPackage(file);
     const initial = await inspectOfficePackage(zip, format);
     validateInspection(initial);
-    if (initial.taskIds[0] !== expectedTaskId) {
-      throw new SafeFileError("TASK_CHANGED", "文件与刚才检查通过的任务不一致，已停止还原。", initial.taskIds);
-    }
-    const vault = await loadVault(expectedTaskId);
-    if (!vault) throw new SafeFileError("VAULT_NOT_FOUND", "本机映射已不存在，无法还原。");
+    const vault = await resolveRestoreVault(initial, context, expectedTaskId);
+    if (!vault) throw new SafeFileError("VAULT_NOT_FOUND", "本机还原记录已不存在，无法还原。");
     const before = await inspectOfficePackage(zip, format, vault.mapping);
+    const comparison = occurrenceComparison(vault, before.occurrences, format);
     const unknown = before.uniqueTokens.filter((token) => !vault.mapping[token]);
     if (unknown.length || before.altered.length || before.unsupportedOccurrences.length) {
       throw new SafeFileError("UNRESOLVED_TOKENS", "文件未通过还原前的完整代号检查，已停止输出。", [
@@ -150,16 +154,17 @@ export async function restoreOfficeSafeFile(file, expectedTaskId) {
     }
     const restored = await restoreOfficePackage(zip, format, vault.mapping);
     const postCheck = await inspectOfficePackage(zip, format);
-    if (postCheck.occurrences.length || postCheck.unsupportedOccurrences.length) {
-      throw new SafeFileError("RESIDUAL_TOKENS", "还原后仍检测到正式代号，已停止输出。", [
+    if (postCheck.occurrences.length || postCheck.unsupportedOccurrences.length || postCheck.chartDataOccurrences.length) {
+      throw new SafeFileError("RESIDUAL_TOKENS", "还原后仍检测到代号，已停止输出。", [
         ...postCheck.occurrences.map((item) => `${item.location}：${item.token}`),
+        ...postCheck.chartDataOccurrences.map((item) => `${item.location}：${item.token}`),
         ...postCheck.unsupportedOccurrences.map((item) => `${item.location}：${item.token}`),
       ]);
     }
     const buffer = await zip.generateAsync({ type: "arraybuffer", compression: "DEFLATE", compressionOptions: { level: 6 } });
     return {
       buffer,
-      outputName: `${cleanBaseName(file.name)}_还原版_${expectedTaskId}.${format}`,
+      outputName: restoredOutputName(file.name, format, vault),
       mimeType: OFFICE_FORMATS[format].mimeType,
       format,
       formatLabel: OFFICE_FORMATS[format].label,
@@ -167,9 +172,10 @@ export async function restoreOfficeSafeFile(file, expectedTaskId) {
       taskName: vault.taskName,
       restoredOccurrences: restored.restoredOccurrences,
       usedMappings: before.uniqueTokens.length,
+      occurrenceComparison: comparison,
       checkedAreas: restored.checkedAreas,
       uncheckedAreas: OFFICE_FORMATS[format].unchecked,
-      warnings: ["图片未扫描，未出现的映射不代表异常。", "真实内容变长后可能产生换行或溢出，请在 Office 中复核版式。"],
+      warnings: ["图片未扫描，部分代号未出现不代表异常。", "真实内容变长后可能产生换行或溢出，请在 Office 中复核版式。"],
     };
   } catch (error) {
     throw asSafeFileError(error);

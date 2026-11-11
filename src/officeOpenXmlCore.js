@@ -1,9 +1,11 @@
 import JSZip from "jszip";
-import { classifyHeader, findKnownShortTokens, tokenPattern } from "./xlsxCore.js";
+import { FILE_SIZE_LIMITS } from "./filePreflight.js";
+import { classifyHeader, findKnownShortTokens } from "./xlsxCore.js";
 import { analyzeText } from "./textCore.js";
+import { createEntityToken, parseEntityToken, tokenPattern, tokenOccurrence } from "./tokenFormat.js";
 
 export const OFFICE_LIMITS = {
-  compressedBytes: 50 * 1024 * 1024,
+  compressedBytes: FILE_SIZE_LIMITS.docx,
   uncompressedBytes: 250 * 1024 * 1024,
   entries: 5000,
 };
@@ -31,10 +33,88 @@ export const OFFICE_FORMATS = {
     supported: [
       { pattern: /^ppt\/slides\/slide\d+\.xml$/i, area: "幻灯片文字和表格" },
       { pattern: /^ppt\/notesSlides\/notesSlide\d+\.xml$/i, area: "演讲者备注" },
+      { pattern: /^ppt\/charts\/chart\d+\.xml$/i, area: "图表文字和数据" },
     ],
-    unchecked: ["图片中的文字", "批注、图表、SmartArt、动画文本和嵌入对象"],
+    unchecked: ["图片中的文字", "批注、SmartArt、动画文本和其他嵌入对象"],
   },
 };
+
+// Chart values sit in <c:pt><c:v>; the chart's own data workbook keeps strings in <si> and inline <is>.
+const CHART_VALUE_NODES = { paragraphTag: "c:pt", textTag: "c:v" };
+const WORKBOOK_TEXT_NODES = [
+  { pattern: /^xl\/sharedStrings\.xml$/i, config: { paragraphTag: "si", textTag: "t" } },
+  { pattern: /^xl\/worksheets\/sheet\d+\.xml$/i, config: { paragraphTag: "is", textTag: "t" } },
+];
+const UNSAFE_PACKAGE_ENTRY = /(^|\/)(embeddings|activeX)\/|vbaProject\.bin$/i;
+// AI tools often put the deck title into the document properties, and PowerPoint lists slide titles in app.xml.
+// Each property is a single text element, so tokens there are restored element by element.
+const DOCUMENT_PROPERTIES = { pattern: /^docProps\/(?:core|app)\.xml$/i, area: "文档属性（标题、主题等）" };
+const PART_LABELS = [
+  [/^docProps\/custom\.xml$/i, "自定义文档属性"],
+  [/^(?:word|ppt)\/comments/i, "批注"],
+  [/^ppt\/diagrams\//i, "SmartArt"],
+  [/^word\/(?:footnotes|endnotes)\.xml$/i, "脚注或尾注"],
+  [/^(?:word|ppt)\/(?:slideMasters|slideLayouts|theme)\//i, "母版、版式或主题"],
+  [/\.rels$/i, "文件内部链接"],
+];
+
+function partLocation(name) {
+  const label = PART_LABELS.find(([pattern]) => pattern.test(name))?.[1];
+  return label ? `${label}（${name}）` : name;
+}
+
+function replacePropertyText(xml, mapping) {
+  let count = 0;
+  const output = xml.replace(/>([^<>]+)</g, (match, text) => {
+    const restored = decodeXml(text).replace(tokenPattern(), (token) => {
+      const entry = mapping[token];
+      if (!entry) return token;
+      count += 1;
+      return serializedValueAsText(entry);
+    });
+    return restored === decodeXml(text) ? match : `>${encodeXml(restored)}<`;
+  });
+  return { xml: output, count };
+}
+
+function resolvePartPath(base, target) {
+  const parts = base.split("/").slice(0, -1);
+  for (const segment of target.split("/")) {
+    if (segment === "..") parts.pop();
+    else if (segment && segment !== ".") parts.push(segment);
+  }
+  return parts.join("/");
+}
+
+// A PowerPoint chart always embeds a workbook with its data. Only workbooks a chart points to are allowed.
+async function chartDataWorkbooks(zip) {
+  const names = new Set();
+  for (const rels of Object.values(zip.files).filter((entry) => /^ppt\/charts\/_rels\/chart\d+\.xml\.rels$/i.test(entry.name))) {
+    const xml = await rels.async("string");
+    for (const relationship of xml.matchAll(/<Relationship\b[^>]*>/g)) {
+      if (/TargetMode\s*=\s*"External"/i.test(relationship[0])) continue;
+      const target = relationship[0].match(/Target\s*=\s*"([^"]+)"/)?.[1];
+      const name = target && resolvePartPath(rels.name.replace("/_rels/", "/").replace(/\.rels$/i, ""), target);
+      if (name && /^ppt\/embeddings\/[^/]+\.xlsx$/i.test(name) && zip.file(name)) names.add(name);
+    }
+  }
+  return names;
+}
+
+async function loadChartWorkbook(zip, name) {
+  let nested;
+  try {
+    nested = await JSZip.loadAsync(await zip.file(name).async("uint8array"));
+  } catch (error) {
+    throw Object.assign(new Error("图表数据无法读取。"), { code: "INVALID_OFFICE_PACKAGE", details: [name], cause: error });
+  }
+  const unsafe = Object.values(nested.files).find((entry) => !entry.dir && UNSAFE_PACKAGE_ENTRY.test(entry.name));
+  const contentTypes = await nested.file("[Content_Types].xml")?.async("string");
+  if (unsafe || !contentTypes || /macroEnabled|vnd\.ms-office\.vbaProject/i.test(contentTypes)) {
+    throw Object.assign(new Error("图表数据里包含宏或嵌入对象，暂不处理。"), { code: "EMBEDDED_OBJECTS", details: [unsafe ? `${name}：${unsafe.name}` : name] });
+  }
+  return nested;
+}
 
 function decodeXml(value) {
   return String(value)
@@ -98,9 +178,11 @@ function isIndependentMatch(text, source, index) {
     && !(/[A-Za-z0-9]/.test(source.at(-1)) && /[A-Za-z0-9]/.test(after));
 }
 
-function allXmlText(xml) {
+export function allXmlText(xml) {
   const values = [];
-  for (const match of xml.matchAll(/>([^<>]+)</g)) values.push(decodeXml(match[1]));
+  // Chart points, formulas and workbook cells are separate values; joining them would glue "客户-K7M4-02" to "Sheet1".
+  const separated = xml.replace(/<\/(?:c:v|c:f|si|is|c)>/g, "$&\n");
+  for (const match of separated.matchAll(/>([^<>]+)</g)) values.push(decodeXml(match[1]));
   return values.join("");
 }
 
@@ -154,7 +236,10 @@ function replaceParagraph(paragraph, mapping) {
 }
 
 export function replaceSupportedXml(xml, format, mapping) {
-  const config = OFFICE_FORMATS[format];
+  return replaceXmlText(xml, OFFICE_FORMATS[format], mapping);
+}
+
+function replaceXmlText(xml, config, mapping) {
   const paragraphs = collectParagraphs(xml, config);
   let output = xml;
   let count = 0;
@@ -173,7 +258,8 @@ function replaceParagraphValues(paragraph, replacementsByValue) {
   for (let cursor = 0; cursor < combined.length;) {
     const entry = entries.find(([source]) => combined.startsWith(source, cursor) && isIndependentMatch(combined, source, cursor));
     if (!entry) { cursor += 1; continue; }
-    replacements.push({ start: cursor, end: cursor + entry[0].length, value: entry[1] });
+    // A letter, digit or hyphen right after an alias would be read as part of it; a space keeps them apart.
+    replacements.push({ start: cursor, end: cursor + entry[0].length, value: /[A-Za-z0-9-]/.test(combined[cursor + entry[0].length] ?? "") ? `${entry[1]} ` : entry[1] });
     cursor += entry[0].length;
   }
   if (!replacements.length) return { xml: paragraph.raw, count: 0 };
@@ -235,13 +321,48 @@ function tableCandidates(xml, sourceText) {
 export async function validateDocxProtectionStructure(zip) {
   const details = [];
   for (const entry of Object.values(zip.files)) {
-    if (entry.dir || !/^word\/.*\.xml$/i.test(entry.name)) continue;
+    if (entry.dir || !/^word\/.*\.(?:xml|rels)$/i.test(entry.name)) continue;
     const xml = await entry.async("string");
     if (/^word\/comments\d*\.xml$/i.test(entry.name) && /<w:comment\b/i.test(xml)) details.push(`${entry.name}：批注`);
     if (/<w:(?:ins|del|moveFrom|moveTo|sdt|fldSimple|instrText|trackRevisions)\b/i.test(xml)) details.push(`${entry.name}：修订、内容控件或域`);
     if (/^word\/(?:footnotes|endnotes)\.xml$/i.test(entry.name) && /<w:(?:footnote|endnote)\b[^>]*w:id="(?:[1-9]\d*)"/i.test(xml)) details.push(`${entry.name}：脚注或尾注`);
+    if (/\.rels$/i.test(entry.name) && /TargetMode=["']External["']/i.test(xml)) details.push(`${entry.name}：外部链接或远程模板`);
   }
-  if (details.length) throw Object.assign(new Error("DOCX 包含首版无法完整脱敏的结构。"), { code: "UNSUPPORTED_DOCX_STRUCTURE", details });
+  if (details.length) throw Object.assign(new Error("DOCX 包含暂时无法完整脱敏的结构。"), { code: "UNSUPPORTED_DOCX_STRUCTURE", details });
+}
+
+export async function assertNoSensitiveValuesInOfficePackage(zip, mapping) {
+  const values = [...new Set(Object.values(mapping).map(serializedValueAsText).filter(Boolean))];
+  const findings = [];
+  for (const entry of Object.values(zip.files)) {
+    if (entry.dir || !/\.(?:xml|rels)$/i.test(entry.name)) continue;
+    const text = allXmlText(await entry.async("string"));
+    for (const value of values) if (text.includes(value)) findings.push(`${entry.name}：仍包含已选真实值`);
+  }
+  if (findings.length) throw Object.assign(new Error("Word 文件的未处理区域仍包含已选真实值，已停止生成。"), { code: "SENSITIVE_RESIDUALS", details: findings.slice(0, 50) });
+}
+
+export async function scrubOfficeMetadata(zip) {
+  const core = zip.file("docProps/core.xml");
+  if (core) {
+    let xml = await core.async("string");
+    xml = xml.replace(/<(?:dc:title|dc:subject|dc:creator|cp:keywords|dc:description|cp:lastModifiedBy|cp:revision|cp:category|cp:contentStatus|dc:identifier|dc:language|cp:version)\b[^>]*>[\s\S]*?<\/(?:dc:title|dc:subject|dc:creator|cp:keywords|dc:description|cp:lastModifiedBy|cp:revision|cp:category|cp:contentStatus|dc:identifier|dc:language|cp:version)>/gi, "");
+    zip.file("docProps/core.xml", xml);
+  }
+  const app = zip.file("docProps/app.xml");
+  if (app) {
+    let xml = await app.async("string");
+    xml = xml.replace(/<(Company|Manager|HyperlinkBase|Template)>[\s\S]*?<\/\1>/gi, "<$1></$1>");
+    zip.file("docProps/app.xml", xml);
+  }
+  const custom = zip.file("docProps/custom.xml");
+  if (custom) {
+    let sequence = 0;
+    let xml = await custom.async("string");
+    xml = xml.replace(/name="[^"]*"/gi, () => `name="Property${++sequence}"`);
+    xml = xml.replace(/<vt:[A-Za-z0-9]+\b[^>]*>[\s\S]*?<\/vt:[A-Za-z0-9]+>/gi, (match) => match.replace(/>[^<]*</, "></"));
+    zip.file("docProps/custom.xml", xml);
+  }
 }
 
 export async function analyzeDocxProtectionPackage(zip) {
@@ -282,7 +403,7 @@ export async function tokenizeDocxPackage(zip, selectedCandidates, taskId) {
   selectedCandidates.forEach((item) => {
     const prefix = item.prefix || "X";
     counters[prefix] += 1;
-    const token = `[[${prefix}${String(counters[prefix]).padStart(3, "0")}@${taskId}]]`;
+    const token = createEntityToken({ label: item.label, category: item.category, prefix, sequence: counters[prefix], taskId });
     replacements.set(item.value, token);
     mapping[token] = { value: { type: "string", value: item.value }, category: item.category, header: item.label };
   });
@@ -310,7 +431,7 @@ export async function tokenizeDocxPackage(zip, selectedCandidates, taskId) {
 function scanText(text, location) {
   const occurrences = [];
   for (const match of text.matchAll(tokenPattern())) {
-    occurrences.push({ token: match[0], shortToken: match[1], taskId: match[2], location });
+    occurrences.push({ ...tokenOccurrence(match[0]), location });
   }
   return occurrences;
 }
@@ -321,7 +442,7 @@ export function scanOfficeXml(xml, format, location) {
 
 export function findAlteredTokens(xml, format, mapping) {
   const texts = [allXmlText(xml)];
-  const knownShortTokens = new Set(Object.keys(mapping).map((token) => token.match(/^\[\[([^@]+)@/)?.[1]).filter(Boolean));
+  const knownShortTokens = new Set(Object.keys(mapping).map((token) => parseEntityToken(token)?.shortToken).filter(Boolean));
   const findings = [];
   for (const text of texts) {
     const withoutFull = text.replace(tokenPattern(), " ");
@@ -333,7 +454,7 @@ export function findAlteredTokens(xml, format, mapping) {
 
 export async function loadOfficePackage(input, declaredFormat, limits = OFFICE_LIMITS) {
   const byteLength = input?.byteLength ?? input?.size ?? 0;
-  if (byteLength > limits.compressedBytes) throw Object.assign(new Error("文件超过 50 MB。"), { code: "FILE_TOO_LARGE" });
+  if (byteLength > limits.compressedBytes) throw Object.assign(new Error("文件超过 20 MB。"), { code: "FILE_TOO_LARGE" });
   let zip;
   try {
     zip = await JSZip.loadAsync(input);
@@ -344,14 +465,18 @@ export async function loadOfficePackage(input, declaredFormat, limits = OFFICE_L
   if (entries.length > limits.entries) throw Object.assign(new Error("文件包含过多内部项目。"), { code: "PACKAGE_TOO_LARGE" });
   const totalSize = entries.reduce((sum, entry) => sum + (Number(entry?._data?.uncompressedSize) || 0), 0);
   if (totalSize > limits.uncompressedBytes) throw Object.assign(new Error("文件解包后的总量超过 250 MB。"), { code: "PACKAGE_TOO_LARGE" });
-  const unsafeEntry = entries.find((entry) => /(^|\/)(embeddings|activeX)\//i.test(entry.name) || /vbaProject\.bin$/i.test(entry.name));
-  if (unsafeEntry) throw Object.assign(new Error("文件包含宏、OLE 或嵌入包，首版不会处理。"), { code: "EMBEDDED_OBJECTS", details: [unsafeEntry.name] });
+  const chartWorkbooks = /\.presentationml\.presentation\.main\+xml/i.test(await zip.file("[Content_Types].xml")?.async("string") ?? "")
+    ? await chartDataWorkbooks(zip)
+    : new Set();
+  const unsafeEntry = entries.find((entry) => UNSAFE_PACKAGE_ENTRY.test(entry.name) && !chartWorkbooks.has(entry.name));
+  if (unsafeEntry) throw Object.assign(new Error("文件包含宏、OLE 或嵌入包，暂不处理。"), { code: "EMBEDDED_OBJECTS", details: [unsafeEntry.name] });
+  for (const name of chartWorkbooks) await loadChartWorkbook(zip, name);
 
   const contentTypesFile = zip.file("[Content_Types].xml");
   if (!contentTypesFile) throw Object.assign(new Error("缺少 Office 内容类型声明。"), { code: "INVALID_OFFICE_PACKAGE" });
   const contentTypes = await contentTypesFile.async("string");
   if (/macroEnabled|vnd\.ms-office\.vbaProject/i.test(contentTypes)) {
-    throw Object.assign(new Error("宏格式文件不在首版支持范围内。"), { code: "EMBEDDED_OBJECTS" });
+    throw Object.assign(new Error("宏格式文件暂不支持。"), { code: "EMBEDDED_OBJECTS" });
   }
   const detectedFormat = Object.entries(OFFICE_FORMATS).find(([, config]) => contentTypes.includes(config.mainContentType))?.[0];
   if (!detectedFormat) throw Object.assign(new Error("不是受支持的 DOCX 或 PPTX 文件。"), { code: "UNSUPPORTED_FILE" });
@@ -368,22 +493,45 @@ export async function inspectOfficePackage(zip, format, mapping = null) {
   const altered = [];
   const checkedAreas = new Set();
   for (const entry of Object.values(zip.files)) {
-    if (entry.dir || !entry.name.toLowerCase().endsWith(".xml")) continue;
+    if (entry.dir || !/\.(xml|rels)$/i.test(entry.name)) continue;
     const xml = await entry.async("string");
-    const area = supportedArea(entry.name, config);
-    const found = scanOfficeXml(xml, format, entry.name);
+    const area = supportedArea(entry.name, config) ?? (DOCUMENT_PROPERTIES.pattern.test(entry.name) ? DOCUMENT_PROPERTIES : null);
+    const hidden = [...xml.matchAll(/\b[\w:.-]+\s*=\s*(?:"([^"]*)"|'([^']*)')|<!--[\s\S]*?-->/g)]
+      .map(match => decodeXml(match[1] ?? match[2] ?? match[0])).join("\n");
+    unsupportedOccurrences.push(...scanText(hidden, `${partLocation(entry.name)} 的属性或注释`).filter(item => item.taskId.startsWith("short:")));
+    if (mapping) altered.push(...findKnownShortTokens(hidden.replace(tokenPattern(), " "), new Set()).map(value => ({ location: `${entry.name} 属性或注释`, value })));
+    const found = scanOfficeXml(xml, format, area ? entry.name : partLocation(entry.name));
     if (area) {
       occurrences.push(...found);
       if (found.length) checkedAreas.add(area.area);
     } else if (found.length) unsupportedOccurrences.push(...found);
     if (mapping) altered.push(...findAlteredTokens(xml, format, mapping).map((value) => ({ location: entry.name, value })));
   }
+  // The chart's data workbook repeats what the chart shows, so its tokens are checked but not counted again.
+  const chartDataOccurrences = [];
+  for (const name of format === "pptx" ? await chartDataWorkbooks(zip) : []) {
+    const nested = await loadChartWorkbook(zip, name);
+    for (const entry of Object.values(nested.files)) {
+      if (entry.dir || !/\.(xml|rels)$/i.test(entry.name)) continue;
+      const xml = await entry.async("string");
+      const location = `${name} 图表数据 ${entry.name}`;
+      const hidden = [...xml.matchAll(/\b[\w:.-]+\s*=\s*(?:"([^"]*)"|'([^']*)')|<!--[\s\S]*?-->/g)]
+        .map(match => decodeXml(match[1] ?? match[2] ?? match[0])).join("\n");
+      unsupportedOccurrences.push(...scanText(hidden, `${location} 属性或注释`).filter(item => item.taskId.startsWith("short:")));
+      const found = scanOfficeXml(xml, format, location);
+      if (WORKBOOK_TEXT_NODES.some((item) => item.pattern.test(entry.name))) chartDataOccurrences.push(...found);
+      else unsupportedOccurrences.push(...found);
+      if (mapping) altered.push(...findAlteredTokens(xml, format, mapping).map((value) => ({ location, value })));
+    }
+  }
+  const all = [...occurrences, ...unsupportedOccurrences, ...chartDataOccurrences];
   return {
     occurrences,
     unsupportedOccurrences,
+    chartDataOccurrences,
     altered,
-    taskIds: [...new Set([...occurrences, ...unsupportedOccurrences].map((item) => item.taskId))],
-    uniqueTokens: [...new Set([...occurrences, ...unsupportedOccurrences].map((item) => item.token))],
+    taskIds: [...new Set(all.map((item) => item.taskId))],
+    uniqueTokens: [...new Set(all.map((item) => item.token))],
     checkedAreas: [...checkedAreas],
     uncheckedAreas: config.unchecked,
   };
@@ -395,15 +543,38 @@ export async function restoreOfficePackage(zip, format, mapping) {
   const checkedAreas = new Set();
   for (const entry of Object.values(zip.files)) {
     if (entry.dir || !entry.name.toLowerCase().endsWith(".xml")) continue;
+    if (DOCUMENT_PROPERTIES.pattern.test(entry.name)) {
+      const replaced = replacePropertyText(await entry.async("string"), mapping);
+      if (replaced.count) {
+        zip.file(entry.name, replaced.xml);
+        restoredOccurrences += replaced.count;
+        checkedAreas.add(DOCUMENT_PROPERTIES.area);
+      }
+      continue;
+    }
     const area = supportedArea(entry.name, config);
     if (!area) continue;
     const xml = await entry.async("string");
     const replaced = replaceSupportedXml(xml, format, mapping);
-    if (replaced.count) {
-      zip.file(entry.name, replaced.xml);
-      restoredOccurrences += replaced.count;
+    // Chart categories and series names are <c:v> values, not paragraphs.
+    const values = /^ppt\/charts\//i.test(entry.name) ? replaceXmlText(replaced.xml, CHART_VALUE_NODES, mapping) : { xml: replaced.xml, count: 0 };
+    if (replaced.count + values.count) {
+      zip.file(entry.name, values.xml);
+      restoredOccurrences += replaced.count + values.count;
       checkedAreas.add(area.area);
     }
+  }
+  // Restore the chart's data workbook too, or PowerPoint would bring the tokens back when the data is edited.
+  for (const name of format === "pptx" ? await chartDataWorkbooks(zip) : []) {
+    const nested = await loadChartWorkbook(zip, name);
+    let changed = false;
+    for (const entry of Object.values(nested.files)) {
+      const nodes = !entry.dir && WORKBOOK_TEXT_NODES.find((item) => item.pattern.test(entry.name));
+      if (!nodes) continue;
+      const replaced = replaceXmlText(await entry.async("string"), nodes.config, mapping);
+      if (replaced.count) { nested.file(entry.name, replaced.xml); changed = true; }
+    }
+    if (changed) zip.file(name, await nested.generateAsync({ type: "uint8array", compression: "DEFLATE" }));
   }
   return { restoredOccurrences, checkedAreas: [...checkedAreas] };
 }

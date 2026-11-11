@@ -1,7 +1,7 @@
-const DB_NAME = "ai-safe-file-vault";
-const DB_VERSION = 1;
-const KEY_ID = "device-aes-key";
-let keyCreationPromise = null;
+import { recordOperation } from "./operationLog.js";
+import { AuthRequiredError, clearSession, getSession } from "./session.js";
+
+const API = "/api/v1";
 
 export class VaultStoreError extends Error {
   constructor(code, message, cause) {
@@ -11,144 +11,75 @@ export class VaultStoreError extends Error {
   }
 }
 
-function requestResult(request) {
-  return new Promise((resolve, reject) => {
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
+function notifyVaultChange() {
+  globalThis.window?.dispatchEvent(new Event("vault-changed"));
 }
 
-function transactionDone(transaction) {
-  return new Promise((resolve, reject) => {
-    transaction.oncomplete = () => resolve();
-    transaction.onerror = () => reject(transaction.error);
-    transaction.onabort = () => reject(transaction.error || new Error("本机存储事务已中止"));
-  });
-}
-
-function openDatabase() {
-  return new Promise((resolve, reject) => {
-    let request;
-    try {
-      request = indexedDB.open(DB_NAME, DB_VERSION);
-    } catch (error) {
-      reject(new VaultStoreError("VAULT_STORAGE_FAILED", "当前浏览器无法打开本机映射存储。", error));
-      return;
-    }
-    request.onupgradeneeded = () => {
-      const database = request.result;
-      if (!database.objectStoreNames.contains("settings")) database.createObjectStore("settings");
-      if (!database.objectStoreNames.contains("vaults")) database.createObjectStore("vaults", { keyPath: "taskId" });
-    };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
-}
-
-async function getOrCreateKey(database) {
-  const readTransaction = database.transaction("settings", "readonly");
-  const existing = await requestResult(readTransaction.objectStore("settings").get(KEY_ID));
-  await transactionDone(readTransaction);
-  if (existing) return existing;
-
-  if (!keyCreationPromise) {
-    keyCreationPromise = (async () => {
-      const key = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
-      const writeTransaction = database.transaction("settings", "readwrite");
-      writeTransaction.objectStore("settings").put(key, KEY_ID);
-      await transactionDone(writeTransaction);
-      return key;
-    })().finally(() => { keyCreationPromise = null; });
+// Every failure becomes a VaultStoreError; callers never see raw network errors.
+async function request(path, { method = "GET", body, allow = [] } = {}) {
+  let response;
+  try {
+    const session = await getSession();
+    response = await fetch(`${API}${path}`, {
+      method,
+      credentials: "same-origin",
+      cache: "no-store",
+      signal: AbortSignal.timeout(15000),
+      headers: { ...(body ? { "content-type": "application/json" } : {}), ...(method === "GET" ? {} : { "x-csrf-token": session.csrf }) },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch (error) {
+    if (error instanceof AuthRequiredError) throw new VaultStoreError("AUTH_REQUIRED", error.message, error);
+    throw new VaultStoreError("VAULT_SERVICE_UNAVAILABLE", "暂时无法连接公司服务器，请检查网络后重试。", error);
   }
-  return keyCreationPromise;
-}
-
-async function getExistingKey(database) {
-  const transaction = database.transaction("settings", "readonly");
-  const key = await requestResult(transaction.objectStore("settings").get(KEY_ID));
-  await transactionDone(transaction);
-  return key;
+  if (response.status === 401) {
+    clearSession();
+    throw new VaultStoreError("AUTH_REQUIRED", "登录已过期，请重新进入应用。");
+  }
+  if (allow.includes(response.status)) return { status: response.status, data: null };
+  const data = response.status === 204 ? null : await response.json().catch(() => ({}));
+  if (!response.ok) throw new VaultStoreError(data?.code || "VAULT_SERVICE_FAILED", data?.message || "公司服务器暂时不可用，请稍后重试。");
+  return { status: response.status, data };
 }
 
 export async function saveVault(vault) {
-  let database;
   try {
-    database = await openDatabase();
-    const key = await getOrCreateKey(database);
-    const iv = crypto.getRandomValues(new Uint8Array(12));
-    const plaintext = new TextEncoder().encode(JSON.stringify(vault));
-    const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, plaintext);
-    const transaction = database.transaction("vaults", "readwrite");
-    transaction.objectStore("vaults").put({
-      taskId: vault.taskId,
-      taskName: vault.taskName,
-      createdAt: vault.createdAt,
-      uniqueValues: Object.keys(vault.mapping).length,
-      iv,
-      ciphertext,
-    });
-    await transactionDone(transaction);
+    await request("/vault-tasks", { method: "POST", body: vault });
+    notifyVaultChange();
+    await recordOperation("save_mapping", "success", vault);
   } catch (error) {
-    if (error?.code) throw error;
-    const message = error?.name === "QuotaExceededError"
-      ? "本机存储空间不足，无法保存还原映射。"
-      : "无法保存本机还原映射。";
-    throw new VaultStoreError("VAULT_SAVE_FAILED", message, error);
-  } finally {
-    database?.close();
+    await recordOperation("save_mapping", "failed");
+    if (error.code === "TASK_EXISTS") throw new VaultStoreError("VAULT_TASK_EXISTS", "任务编号已存在，原还原记录未改动。请重新生成脱敏文件。", error);
+    throw error;
   }
 }
 
 export async function loadVault(taskId) {
-  let database;
-  try {
-    database = await openDatabase();
-    const transaction = database.transaction("vaults", "readonly");
-    const record = await requestResult(transaction.objectStore("vaults").get(taskId));
-    await transactionDone(transaction);
-    if (!record) return null;
-    const key = await getExistingKey(database);
-    if (!key) throw new VaultStoreError("VAULT_KEY_MISSING", "本机映射仍在，但解密密钥已经丢失。映射无法恢复。");
-    try {
-      const plaintext = await crypto.subtle.decrypt({ name: "AES-GCM", iv: record.iv }, key, record.ciphertext);
-      return JSON.parse(new TextDecoder().decode(plaintext));
-    } catch (error) {
-      throw new VaultStoreError("VAULT_DECRYPT_FAILED", "本机映射已损坏或无法使用当前密钥解密。", error);
-    }
-  } finally {
-    database?.close();
-  }
+  const { status, data } = await request(`/vault-tasks/${encodeURIComponent(taskId)}/mapping`, { allow: [404] });
+  return status === 404 ? null : data;
 }
 
 export async function deleteVault(taskId) {
-  let database;
   try {
-    database = await openDatabase();
-    const transaction = database.transaction("vaults", "readwrite");
-    transaction.objectStore("vaults").delete(taskId);
-    await transactionDone(transaction);
+    await request(`/vault-tasks/${encodeURIComponent(taskId)}`, { method: "DELETE" });
+    notifyVaultChange();
+    await recordOperation("delete_mapping", "success", { taskId });
   } catch (error) {
-    if (error?.code) throw error;
-    throw new VaultStoreError("VAULT_DELETE_FAILED", "无法删除本机映射。", error);
-  } finally {
-    database?.close();
+    await recordOperation("delete_mapping", "failed", { taskId });
+    throw error;
   }
 }
 
 export async function listVaultSummaries() {
-  let database;
-  try {
-    database = await openDatabase();
-    const transaction = database.transaction("vaults", "readonly");
-    const records = await requestResult(transaction.objectStore("vaults").getAll());
-    await transactionDone(transaction);
-    return records
-      .map(({ taskId, taskName, createdAt, uniqueValues }) => ({ taskId, taskName, createdAt, uniqueValues }))
-      .sort((left, right) => String(right.createdAt).localeCompare(String(left.createdAt)));
-  } catch (error) {
-    if (error?.code) throw error;
-    throw new VaultStoreError("VAULT_READ_FAILED", "无法读取本机任务记录。", error);
-  } finally {
-    database?.close();
-  }
+  return (await request("/vault-tasks")).data.tasks;
+}
+
+export async function getMarkerOwner(marker) {
+  const { status, data } = await request(`/vault-markers/${encodeURIComponent(marker)}`, { allow: [404] });
+  return status === 404 ? null : data.taskId;
+}
+
+export async function reserveTaskMarker(marker, taskId) {
+  const { status } = await request("/vault-markers", { method: "POST", body: { marker, taskId }, allow: [409] });
+  return status !== 409;
 }

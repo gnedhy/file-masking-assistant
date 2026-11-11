@@ -1,7 +1,9 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { SECURITY_HEADERS } from "./server/security-headers.mjs";
 
 export default defineConfig({
+  preview: { host: "127.0.0.1", port: 5174, strictPort: true, headers: SECURITY_HEADERS },
   build: {
     outDir: "dist/client",
   },
@@ -9,8 +11,9 @@ export default defineConfig({
     include: ["react", "react-dom/client"],
   },
   server: {
-    host: "0.0.0.0",
-    allowedHosts: ["terminal.local"],
+    host: "127.0.0.1",
+    port: 5174,
+    strictPort: true,
     warmup: {
       clientFiles: ["./src/main.jsx"],
     },
