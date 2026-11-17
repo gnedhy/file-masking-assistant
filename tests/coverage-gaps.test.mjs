@@ -431,3 +431,11 @@ test("不开只保留值时，带客户名的工作表不改名", () => {
   tokenizeWorkbook(book, chosenColumns(book), TASK);
   assert.ok(book.getWorksheet(CUSTOMER));
 });
+
+test("列的「N 个值」不把合计行和「/」「无」这类占位符数进去", () => {
+  const book = workbook([["客户名称", "联系人"], [CUSTOMER, "张伟"], ["佛山南海新材料有限公司", "/"], ["合计", "无"]]);
+  const columns = Object.fromEntries(analyzeWorkbook(book).columns.map(column => [column.header, column.valueCount]));
+  assert.deepEqual(columns, { 客户名称: 2, 联系人: 1 });
+  const csv = analyzeCsv(parseCsvText(`客户名称,联系人\n${CUSTOMER},张伟\n佛山南海新材料有限公司,/\n合计,无\n`));
+  assert.deepEqual(Object.fromEntries(csv.columns.map(column => [column.header, column.valueCount])), { 客户名称: 2, 联系人: 1 });
+});

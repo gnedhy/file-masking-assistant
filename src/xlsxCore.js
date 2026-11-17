@@ -355,6 +355,8 @@ export function analyzeWorkbook(workbook) {
           complexCount += 1;
           continue;
         }
+        // "/", "无" and a 合计 row are never replaced, so they are not counted as values either.
+        if (typeof value === "string" && isPlaceholderValue(value)) continue;
         valueCount += 1;
         if (typeof value === "string" && looksLikeFieldLabel(value)) labelCount += 1;
         if (samples.length < 3) samples.push(valueAsText(value));

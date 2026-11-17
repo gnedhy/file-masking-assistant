@@ -139,7 +139,8 @@ export function analyzeCsv(document) {
     let valueCount = 0;
     for (let rowIndex = headerRow; rowIndex < document.rows.length; rowIndex += 1) {
       const value = document.rows[rowIndex][index] ?? "";
-      if (!String(value).trim()) continue;
+      // "/", "无" and a 合计 row are never replaced, so they are not counted as values either.
+      if (!String(value).trim() || isPlaceholderValue(value)) continue;
       valueCount += 1;
       if (samples.length < 3) samples.push(String(value));
     }
