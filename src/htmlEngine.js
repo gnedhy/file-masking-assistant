@@ -1,6 +1,8 @@
 import { SafeFileError } from "./xlsxEngine.js";
 import { listVaultSummaries, loadVault } from "./vaultStore.js";
 import { decodeHtmlFileBytes, inspectHtmlText, restoreHtmlText } from "./htmlCore.js";
+import { occurrenceComparison, restoredOutputName } from "./fileSafety.js";
+import { resolveRestoreVault, taskEvidence } from "./taskIdentity.js";
 
 function asSafeFileError(error) {
   if (error instanceof SafeFileError) return error;
@@ -17,6 +19,14 @@ async function allLocalMappings() {
   return Object.assign({}, ...vaults.filter(Boolean).map((vault) => vault.mapping));
 }
 
+function checkedAreas(keptScripts) {
+  return ["可见文字", "标题、图片说明和无障碍标签", ...(keptScripts ? ["图表脚本中的文字"] : [])];
+}
+
+function scriptWarning(keptScripts) {
+  return `还原版保留了 ${keptScripts} 段图表脚本，在隔离框架中运行，不能联网、弹窗或跳转；其他脚本、表单和远程资源已移除。`;
+}
+
 function validateInspection(inspection) {
   if (!inspection.occurrences.length && !inspection.unsupportedOccurrences.length) {
     throw new SafeFileError("NO_TOKENS", "HTML 中没有找到本应用生成的完整代号。");
@@ -29,7 +39,7 @@ function validateInspection(inspection) {
   }
 }
 
-export async function inspectHtmlRestoreFile(file) {
+export async function inspectHtmlRestoreFile(file, context) {
   try {
     const html = await readHtml(file);
     const initial = inspectHtmlText(html, window);
@@ -38,22 +48,23 @@ export async function inspectHtmlRestoreFile(file) {
       if (altered.length) throw new SafeFileError("ALTERED_TOKENS", "HTML 中只剩下残缺或被改写的已知代号。", altered.map((item) => `${item.location}：${item.value}`));
     }
     validateInspection(initial);
-    const taskId = initial.taskIds[0];
-    const vault = await loadVault(taskId);
-    if (!vault) throw new SafeFileError("VAULT_NOT_FOUND", `本机找不到任务 ${taskId} 的映射。`, [`任务 ${taskId}`]);
+    const vault = await resolveRestoreVault(initial, context);
+    const taskId = vault.taskId;
+    if (!vault) throw new SafeFileError("VAULT_NOT_FOUND", `本机找不到任务 ${taskId} 的还原记录。`, [`任务 ${taskId}`]);
     const inspection = inspectHtmlText(html, window, vault.mapping);
     const unknown = inspection.uniqueTokens.filter((token) => !vault.mapping[token]);
-    if (unknown.length) throw new SafeFileError("UNRESOLVED_TOKENS", "HTML 中存在本机无法确认的正式代号。", unknown);
+    if (unknown.length) throw new SafeFileError("UNRESOLVED_TOKENS", "HTML 中存在本机无法确认的代号。", unknown);
+    if (inspection.altered.length) throw new SafeFileError("ALTERED_TOKENS", "HTML 中存在残缺或被改写的已知代号，已停止输出。", inspection.altered.map((item) => `${item.location}：${item.value}`));
     return {
-      format: "html", formatLabel: "HTML", taskId, taskName: vault.taskName,
+      ...taskEvidence(vault), format: "html", formatLabel: "HTML", taskId, taskName: vault.taskName,
+      occurrenceComparison: occurrenceComparison(vault, inspection.occurrences, "html"),
       occurrences: inspection.occurrences.length, uniqueTokens: inspection.uniqueTokens.length,
       usedMappings: inspection.uniqueTokens.length,
-      partialRestore: inspection.altered.length > 0,
-      unresolvedOccurrences: inspection.altered,
-      checkedAreas: ["可见文字", "标题、图片说明和无障碍标签"],
+      partialRestore: false,
+      unresolvedOccurrences: [],
+      checkedAreas: checkedAreas(inspection.keptScripts),
       uncheckedAreas: ["图片中的文字"],
-      warnings: [
-        ...(inspection.altered.length ? [`发现 ${inspection.altered.length} 处被改写的代号；系统不会猜测，将原样保留并生成部分还原文件。`] : []),
+      warnings: inspection.keptScripts ? [scriptWarning(inspection.keptScripts)] : [
         "脚本、表单、嵌入页面、远程资源和事件处理器会从还原版中移除。",
         "还原版使用严格内容安全策略，原页面动画和联网能力不会保留。",
       ],
@@ -64,28 +75,27 @@ export async function inspectHtmlRestoreFile(file) {
   }
 }
 
-export async function restoreHtmlSafeFile(file, expectedTaskId) {
+export async function restoreHtmlSafeFile(file, expectedTaskId, context) {
   try {
     const html = await readHtml(file);
     const initial = inspectHtmlText(html, window);
     validateInspection(initial);
-    if (initial.taskIds[0] !== expectedTaskId) throw new SafeFileError("TASK_CHANGED", "HTML 与刚才检查通过的任务不一致。", initial.taskIds);
-    const vault = await loadVault(expectedTaskId);
-    if (!vault) throw new SafeFileError("VAULT_NOT_FOUND", "本机映射已不存在，无法还原。");
+    const vault = await resolveRestoreVault(initial, context, expectedTaskId);
+    if (!vault) throw new SafeFileError("VAULT_NOT_FOUND", "本机还原记录已不存在，无法还原。");
+    const comparison = occurrenceComparison(vault, initial.occurrences, "html");
     const restored = restoreHtmlText(html, window, vault.mapping);
     const buffer = new TextEncoder().encode(restored.html).buffer;
-    const baseName = file.name.replace(/\.html?$/i, "").replace(/_(?:脱敏版|安全副本|还原版)(?:_[A-F0-9]{8})?$/i, "");
     return {
-      buffer, outputName: `${baseName}_${restored.partialRestore ? "部分还原" : "还原版"}_${expectedTaskId}.html`, mimeType: "text/html;charset=utf-8",
+      buffer, outputName: restoredOutputName(file.name, "html", vault), mimeType: "text/html;charset=utf-8",
       format: "html", formatLabel: "HTML", taskId: expectedTaskId, taskName: vault.taskName,
       restoredOccurrences: restored.restoredOccurrences, usedMappings: restored.usedMappings,
+      occurrenceComparison: comparison,
       partialRestore: restored.partialRestore,
       unresolvedOccurrences: restored.unresolved,
-      checkedAreas: ["可见文字", "标题、图片说明和无障碍标签"],
+      checkedAreas: checkedAreas(restored.keptScripts),
       uncheckedAreas: ["图片中的文字"],
       warnings: [
-        ...(restored.partialRestore ? [`仍有 ${restored.unresolved.length} 处被改写的代号未还原，已原样保留。部分还原文件含有真实信息，请勿再次交给外部 AI。`] : []),
-        "已移除脚本、表单、嵌入页面、远程资源和事件处理器。",
+        restored.keptScripts ? scriptWarning(restored.keptScripts) : "已移除脚本、表单、嵌入页面、远程资源和事件处理器。",
         "请在下载后复核排版和交互退化。",
       ],
       removedContent: restored.removed,

@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>文件脱敏助手 · 反馈指引</title>
+<link rel="stylesheet" href="guide.css">
+<style>
+  .routes { margin-top: 34px; display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .route { display: flex; gap: 18px; align-items: flex-start; padding: 24px 26px; border-radius: 20px; background: var(--white); border: 1px solid var(--line); }
+  .route p { margin-top: 4px; color: var(--muted); font-size: 17px; }
+  .route .go { margin-top: 12px; font-size: 19px; }
+  section.card { margin-top: 24px; }
+  .row { margin-top: 22px; display: grid; gap: 26px; align-items: start; }
+  .row--a { grid-template-columns: 1fr 470px; }
+  .row--b { grid-template-columns: 1fr 560px; }
+  ul.points { list-style: none; display: grid; gap: 14px; }
+  ul.points li { display: flex; gap: 12px; }
+  ul.points li::before { content: ""; flex: none; width: 8px; height: 8px; margin-top: 11px; border-radius: 50%; background: var(--ink); }
+  .stack { display: grid; gap: 18px; }
+  .notes { margin-top: 24px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+</style>
+</head>
+<body>
+  <div class="brand">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.5-3 8.2-7 10-4-1.8-7-5.5-7-10V6l7-3z"/><path d="M9 12l2 2 4-4"/></svg>
+    文件脱敏助手<span class="tag">测试阶段</span>
+  </div>
+  <h1>遇到问题，这样反馈</h1>
+  <p class="lead">测试阶段难免有小问题。按情况选一个入口，管理员收到后会处理并回复你。</p>
+
+  <div class="routes">
+    <div class="route"><span class="num">1</span><div>
+      <h3>结果出来了，但不对</h3>
+      <p>例如有内容没被替换、还原后不完整</p>
+      <div class="go">点结果页下方的 <span class="kbd">不满意</span></div>
+    </div></div>
+    <div class="route"><span class="num">2</span><div>
+      <h3>报错、卡住，或想提建议</h3>
+      <p>没能出结果，或希望增加新功能</p>
+      <div class="go">点右上角的 <span class="kbd">反馈</span></div>
+    </div></div>
+  </div>
+
+  <section class="card">
+    <h2><span class="num">1</span>结果页：这次结果满意吗？</h2>
+    <div class="row row--a">
+      <div class="stack">
+        <figure class="shot" data-src="04-result" data-crop="560,560,720,400" data-marks="1@776,902,288,44"></figure>
+        <ul class="points">
+          <li><span>脱敏或还原完成后，结果页底部会问「这次结果满意吗？」</span></li>
+          <li><span><b>满意：</b>点一下就好，帮我们了解哪些文件处理得好。</span></li>
+          <li><span><b>不满意：</b>弹出右边的窗口，写下问题，点 <span class="kbd">发送反馈</span>。</span></li>
+        </ul>
+      </div>
+      <figure class="shot" data-src="05-dialog" data-crop="475,252,480,457"></figure>
+    </div>
+    <div class="note note--green" style="margin-top:20px">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.5-3 8.2-7 10-4-1.8-7-5.5-7-10V6l7-3z"/><path d="M9 12l2 2 4-4"/></svg>
+      <span>系统会自动附上本次检查结果和脱敏版文件（只含代号），方便管理员排查。<b>原文件和还原后的文件含真实信息，不会发送。</b></span>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2><span class="num">2</span>右上角：反馈</h2>
+    <div class="row row--b">
+      <div class="stack">
+        <figure class="shot" data-src="11-badge" data-crop="1090,14,330,82" data-marks="2@1207,34,74,40"></figure>
+        <ul class="points">
+          <li><span>任何页面都能点，写下问题或建议，发送给管理员。</span></li>
+          <li><span>管理员处理后，<b>回复显示在「我的反馈」里</b>（右图红框），两种入口提交的都在这里。</span></li>
+          <li><span>有新回复时，<span class="kbd">反馈</span> 按钮上会出现<b style="color:var(--mark)">红色数字</b>。</span></li>
+        </ul>
+      </div>
+      <figure class="shot" data-src="12-center" data-crop="275,505,870,290" data-marks="@297,671,836,87"></figure>
+    </div>
+  </section>
+
+  <div class="notes">
+    <div class="note note--amber">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.5v.01"/></svg>
+      <span>描述问题时<b>不要写客户名称、金额等真实信息</b>，写列名或位置即可，例如「供应商列有 3 行没替换」。</span>
+    </div>
+    <div class="note note--blue">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11H8l-4 4z"/></svg>
+      <span>写清楚<b>什么文件、哪一步、看到了什么</b>，能更快定位问题。</span>
+    </div>
+  </div>
+
+  <footer><span>文件脱敏助手 · 反馈指引</span><span>截图为测试数据</span></footer>
+<script src="guide.js"></script>
+</body>
+</html>

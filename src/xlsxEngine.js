@@ -1,14 +1,25 @@
 import {
   addTaskMarker,
   analyzeWorkbook,
+  coveredValues,
+  flattenExternalReferences,
+  flattenHyperlinks,
+  hiddenContent,
+  keepValuesOnly,
+  nonValueContent,
   inspectWorkbookAlteredTokens,
   inspectWorkbookTokens,
   removeTaskMarker,
   restoreWorkbookValues,
+  findWorkbookResiduals,
   tokenizeWorkbook,
 } from "./xlsxCore.js";
 import { deleteVault, listVaultSummaries, loadVault, saveVault } from "./vaultStore.js";
-import { preflightXlsxPackage } from "./xlsxPackageCore.js";
+import { createProtectionIdentity, protectionTokenIdentity, protectionResult, resolveRestoreVault, taskEvidence } from "./taskIdentity.js";
+import { assertNoAttachmentsInXlsxPackage, assertNoSensitiveValuesInXlsxPackage, mappingText, preflightXlsxPackage } from "./xlsxPackageCore.js";
+import { findWorkbookCandidates } from "./workbookCandidates.js";
+import { shortNameCandidates } from "./companyAbbreviations.js";
+import { highRiskTextFindings, occurrenceBaseline, occurrenceComparison, protectedOutputName, restoredOutputName } from "./fileSafety.js";
 
 export class SafeFileError extends Error {
   constructor(code, message, details = []) {
@@ -43,8 +54,10 @@ async function loadWorkbook(file) {
   const workbook = new ExcelJS.Workbook();
   try {
     const buffer = await file.arrayBuffer();
-    await preflightXlsxPackage(buffer);
+    const preflight = await preflightXlsxPackage(buffer);
     await workbook.xlsx.load(buffer);
+    workbook.fileMedia = preflight.media;
+    workbook.externalFormulas = flattenExternalReferences(workbook);
   } catch (error) {
     if (error?.code) throw new SafeFileError(error.code, error.message, error.details || []);
     throw new SafeFileError("INVALID_XLSX", "无法读取这个 XLSX。它可能已损坏、加密或不是标准 XLSX 文件。", [String(error.message || error)]);
@@ -60,11 +73,16 @@ function scrubWorkbookMetadata(workbook) {
   workbook.description = "";
   workbook.keywords = "";
   workbook.category = "";
-}
-
-function taskId() {
-  const bytes = crypto.getRandomValues(new Uint8Array(4));
-  return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("").toUpperCase();
+  workbook.title = "";
+  workbook.manager = "";
+  workbook.language = "";
+  workbook.revision = "";
+  workbook.contentStatus = "";
+  workbook.identifier = "";
+  workbook.version = "";
+  workbook.created = new Date(0);
+  workbook.modified = new Date(0);
+  workbook.lastPrinted = undefined;
 }
 
 function baseName(filename) {
@@ -73,20 +91,47 @@ function baseName(filename) {
 
 export async function inspectProtectionFile(file) {
   const workbook = await loadWorkbook(file);
+  // Counted before anything is changed, so the user sees what the file really holds.
+  const links = flattenHyperlinks(workbook);
+  const extras = { ...(nonValueContent(workbook) ?? {}), ...(links ? { links } : {}), ...(workbook.externalFormulas ? { externalFormulas: workbook.externalFormulas } : {}) };
   const analysis = analyzeWorkbook(workbook);
-  if (!analysis.columns.length) {
-    throw new SafeFileError("NO_TABLE", "没有识别到可处理的表头，请确认文件中包含普通表格。");
+  // Names already covered by the suggested columns are not listed again.
+  const covered = coveredValues(workbook, analysis.columns.filter((item) => analysis.suggestedColumnIds.includes(item.id)));
+  // Header rows of tables with a suggested column are read as column names; form rows are still read as labels.
+  const headerRows = new Map();
+  for (const column of analysis.columns.filter((item) => analysis.suggestedColumnIds.includes(item.id))) {
+    if (!headerRows.has(column.sheetName)) headerRows.set(column.sheetName, new Set());
+    headerRows.get(column.sheetName).add(`${column.headerRow}:${column.columnNumber}`);
   }
-  return analysis;
+  const chosen = analysis.columns.filter((item) => analysis.suggestedColumnIds.includes(item.id));
+  const inChosenColumn = (cell) => chosen.some((column) => column.sheetName === cell.sheet && column.columnNumber === cell.column && cell.row > column.headerRow && cell.row <= (column.endRow ?? Infinity));
+  const named = findWorkbookCandidates(workbook, covered, headerRows, inChosenColumn);
+  // Short forms of the company names (宏图化工 for 广州宏图化工有限公司) that are written somewhere on their own.
+  const companies = [...covered, ...named.candidates.filter((item) => item.category === "customer").map((item) => item.value)];
+  const shortNames = shortNameCandidates(companies, named.cells.filter((cell) => cell.note || !inChosenColumn(cell)), new Set([...covered, ...named.candidates.map((item) => item.value)]));
+  named.candidates.push(...shortNames);
+  named.suggestedCandidateIds.push(...shortNames.map((item) => item.id));
+  if (!analysis.columns.length && !named.candidates.length) {
+    throw new SafeFileError("NO_TABLE", "没有识别到表格或需要保护的名称。");
+  }
+  const text = [];
+  workbook.eachSheet((worksheet) => worksheet.eachRow({ includeEmpty: false }, (row) => row.eachCell({ includeEmpty: false }, (cell) => {
+    if (typeof cell.text === "string") text.push(cell.text);
+  })));
+  return { ...analysis, ...named, media: workbook.fileMedia, extras: Object.keys(extras).length ? extras : null, hidden: hiddenContent(workbook), riskFindings: highRiskTextFindings(text.join("\n")) };
 }
 
-export async function createSafeWorkbook(file, selectedColumns) {
-  if (!selectedColumns.length) throw new SafeFileError("NO_COLUMNS", "请至少选择一列需要替换的内容。");
+export async function createSafeWorkbook(file, selectedColumns, options) {
+  if (!selectedColumns.length && !options?.candidates?.length) throw new SafeFileError("NO_COLUMNS", "请至少选择一列或一个名称。");
   const workbook = await loadWorkbook(file);
-  const id = taskId();
+  const removedLinks = flattenHyperlinks(workbook);
+  // "只保留值": formulas become values and everything else that is not a cell value is taken out first.
+  const keptValues = options?.valuesOnly ? keepValuesOnly(workbook) : null;
+  const identity = await createProtectionIdentity(options, JSON.stringify(workbook.model));
+  const id = identity.taskId;
   const createdAt = new Date().toISOString();
   const taskName = baseName(file.name);
-  const result = tokenizeWorkbook(workbook, selectedColumns, id);
+  const result = tokenizeWorkbook(workbook, selectedColumns, protectionTokenIdentity(identity), options?.candidates ?? [], { valuesOnly: Boolean(keptValues) });
   if (!result.replacedCells) {
     throw new SafeFileError("NO_VALUES", "所选列中没有找到可替换值，或文中替换列没有出现已确认实体。", result.warnings);
   }
@@ -98,36 +143,55 @@ export async function createSafeWorkbook(file, selectedColumns) {
     );
   }
 
+  // Pictures stay where they are and are not read; attached files (embedded PDF, Word …) are never written back
+  // by the workbook library, so they are left out of the protected copy.
   addTaskMarker(workbook, { taskId: id, taskName, createdAt });
   scrubWorkbookMetadata(workbook);
   workbook.calcProperties.fullCalcOnLoad = true;
   workbook.calcProperties.forceFullCalc = true;
   const buffer = await workbook.xlsx.writeBuffer();
+  await assertNoAttachmentsInXlsxPackage(buffer);
+  try {
+    await assertNoSensitiveValuesInXlsxPackage(buffer, result.mapping);
+  } catch (error) {
+    if (error.code !== "SENSITIVE_RESIDUALS") throw error;
+    const cells = findWorkbookResiduals(workbook, Object.values(result.mapping).map(mappingText));
+    throw new SafeFileError(error.code, error.message, cells.length ? cells : error.details);
+  }
   const vault = {
-    version: 1,
-    taskId: id,
+    version: 2,
+    ...identity,
     taskName,
     createdAt,
-    sourceFileName: file.name,
+    sourceFormat: "xlsx",
+    occurrenceBaseline: occurrenceBaseline(inspectWorkbookTokens(workbook).occurrences),
     mapping: result.mapping,
   };
   await saveVault(vault);
 
   return {
     buffer,
-    outputName: `${taskName}_脱敏版_${id}.xlsx`,
+    ...protectionResult(identity, result.mapping),
+    outputName: protectedOutputName("xlsx", identity.marker || id),
     mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     format: "xlsx",
     taskId: id,
     taskName,
     replacedCells: result.replacedCells,
     uniqueValues: result.uniqueValues,
+    elsewhere: result.elsewhere,
+    removedMedia: workbook.fileMedia,
+    valuesOnly: keptValues,
     warnings: result.warnings,
-    notices: result.notices,
+    notices: [
+      ...result.notices,
+      ...(removedLinks ? [{ location: "整个文件", reason: `${removedLinks} 个单元格的超链接已去掉，文字保留` }] : []),
+      ...(workbook.externalFormulas ? [{ location: "整个文件", reason: `${workbook.externalFormulas} 个引用其他工作簿的公式已换成当前显示的值` }] : []),
+    ],
   };
 }
 
-export async function inspectRestoreFile(file) {
+export async function inspectRestoreFile(file, context) {
   const workbook = await loadWorkbook(file);
   const inspection = inspectWorkbookTokens(workbook);
   if (!inspection.occurrences.length) {
@@ -144,21 +208,21 @@ export async function inspectRestoreFile(file) {
     throw new SafeFileError(
       "MIXED_TASKS",
       "文件中混入了多个脱敏任务的代号，已停止还原。",
-      inspection.taskIds.map((id) => `任务指纹 ${id}`),
+      inspection.taskIds.map((id) => `任务编号 ${id}`),
     );
   }
 
-  const id = inspection.taskIds[0];
-  const vault = await loadVault(id);
+  const vault = await resolveRestoreVault(inspection, context);
+  const id = vault.taskId;
   if (!vault) {
-    throw new SafeFileError("VAULT_NOT_FOUND", `本机找不到任务 ${id} 的映射，已停止还原。`, [`任务指纹 ${id}`]);
+    throw new SafeFileError("VAULT_NOT_FOUND", `本机找不到任务 ${id} 的还原记录，已停止还原。`, [`任务编号 ${id}`]);
   }
   const unresolved = inspection.uniqueTokens.filter((token) => !vault.mapping[token]);
   const unsupported = inspection.occurrences.filter((item) => item.kind === "formula");
   const altered = inspectWorkbookAlteredTokens(workbook, vault.mapping);
   if (unresolved.length || unsupported.length || altered.length) {
     const details = [
-      ...unresolved.map((token) => `${token}：本机没有映射`),
+      ...unresolved.map((token) => `${token}：本机没有还原记录`),
       ...unsupported.map((item) => `${item.sheetName}!${item.address}：公式中的代号不自动改写`),
       ...altered.map((item) => `${item.sheetName}!${item.address}：代号已改写为 ${item.value}`),
     ];
@@ -166,21 +230,20 @@ export async function inspectRestoreFile(file) {
   }
 
   return {
-    taskId: id,
+    ...taskEvidence(vault), taskId: id,
     taskName: vault.taskName,
     occurrences: inspection.occurrences.length,
     uniqueTokens: inspection.uniqueTokens.length,
+    occurrenceComparison: occurrenceComparison(vault, inspection.occurrences, "xlsx"),
   };
 }
 
-export async function restoreSafeWorkbook(file, expectedTaskId) {
+export async function restoreSafeWorkbook(file, expectedTaskId, context) {
   const workbook = await loadWorkbook(file);
   const inspection = inspectWorkbookTokens(workbook);
-  if (inspection.taskIds.length !== 1 || inspection.taskIds[0] !== expectedTaskId) {
-    throw new SafeFileError("TASK_CHANGED", "文件与刚才检查通过的任务不一致，已停止还原。", inspection.taskIds);
-  }
-  const vault = await loadVault(expectedTaskId);
-  if (!vault) throw new SafeFileError("VAULT_NOT_FOUND", "本机映射已不存在，无法还原。");
+  const vault = await resolveRestoreVault(inspection, context, expectedTaskId);
+  if (!vault) throw new SafeFileError("VAULT_NOT_FOUND", "本机还原记录已不存在，无法还原。");
+  const comparison = occurrenceComparison(vault, inspection.occurrences, "xlsx");
   const altered = inspectWorkbookAlteredTokens(workbook, vault.mapping);
   if (altered.length) {
     throw new SafeFileError("ALTERED_TOKENS", "文件中存在残缺或被改写的已知代号，已停止输出。", altered.map((item) => `${item.sheetName}!${item.address}：${item.value}`));
@@ -207,10 +270,11 @@ export async function restoreSafeWorkbook(file, expectedTaskId) {
   workbook.calcProperties.forceFullCalc = true;
   return {
     buffer: await workbook.xlsx.writeBuffer(),
-    outputName: `${baseName(file.name).replace(/_(?:脱敏版|安全副本)(?:_[A-F0-9]{8})?$/i, "")}_还原版_${expectedTaskId}.xlsx`,
+    outputName: restoredOutputName(file.name, "xlsx", vault),
     taskId: expectedTaskId,
     taskName: vault.taskName,
     restoredOccurrences: result.restoredOccurrences,
     usedMappings: result.inspection.uniqueTokens.length,
+    occurrenceComparison: comparison,
   };
 }

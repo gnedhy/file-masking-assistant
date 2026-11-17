@@ -1,7 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import JSZip from "jszip";
-import pptxgen from "pptxgenjs";
 import {
   AlignmentType,
   Document,
@@ -77,90 +76,10 @@ async function writeCsvAssets() {
   await fs.writeFile(path.join(outputRoot, "00_测试说明", `本机映射_仅测试_${taskId}.json`), JSON.stringify({ taskId, taskName: "多格式销售验证", mapping }, null, 2), "utf8");
 }
 
-function addSlideChrome(slide, index, title, section) {
-  slide.background = { color: index % 3 === 0 ? "111827" : "F8FAFC" };
-  const dark = index % 3 === 0;
-  slide.addText(section.toUpperCase(), { x: 0.45, y: 0.25, w: 4.5, h: 0.28, fontFace: "Aptos", fontSize: 9, bold: true, color: dark ? "93C5FD" : "2563EB", charSpacing: 1.5 });
-  slide.addText(`${String(index).padStart(2, "0")} / 08`, { x: 11.6, y: 0.25, w: 1.1, h: 0.28, fontFace: "Aptos", fontSize: 9, color: dark ? "CBD5E1" : "64748B", align: "right" });
-  slide.addText(title, { x: 0.45, y: 0.75, w: 12.1, h: 0.68, fontFace: "Microsoft YaHei", fontSize: 28, bold: false, color: dark ? "FFFFFF" : "0F172A", margin: 0 });
-  return { dark };
-}
-
 async function writePptxAssets() {
-  const pptx = new pptxgen();
-  pptx.layout = "LAYOUT_WIDE";
-  pptx.author = "文件脱敏助手验证";
-  pptx.subject = "跨格式实名还原压力测试";
-  pptx.title = "销售经营分析（脱敏代号版）";
-  pptx.company = "Local Validation";
-  pptx.lang = "zh-CN";
-  pptx.theme = { headFontFace: "Microsoft YaHei", bodyFontFace: "Microsoft YaHei", lang: "zh-CN" };
-
-  let slide = pptx.addSlide();
-  slide.background = { color: "0018A8" };
-  slide.addText("SALES / SAFE ROUND TRIP", { x: 0.55, y: 0.45, w: 5.2, h: 0.3, fontFace: "Aptos", fontSize: 10, color: "DBEAFE", charSpacing: 2 });
-  slide.addText([ { text: "销售经营分析\n", options: { breakLine: true } }, { text: tokens.customer1, options: { italic: true } } ], { x: 0.55, y: 1.45, w: 11.8, h: 2.2, fontFace: "Microsoft YaHei", fontSize: 38, color: "FFFFFF", bold: false, margin: 0 });
-  slide.addText(`任务 ${taskId} · 代号应保持完整，实名只在本机还原`, { x: 0.55, y: 5.95, w: 8, h: 0.45, fontSize: 15, color: "DBEAFE" });
-  slide.addNotes(`封面只说明任务边界，不包含代号映射。`);
-
-  slide = pptx.addSlide(); addSlideChrome(slide, 2, "销售总览", "Overview");
-  slide.addText("642,100", { x: 0.55, y: 1.8, w: 3.2, h: 1.05, fontSize: 46, color: "2563EB", bold: true, margin: 0 });
-  slide.addText("累计销售金额", { x: 0.6, y: 2.9, w: 2.8, h: 0.4, fontSize: 15, color: "64748B" });
-  slide.addText(`${tokens.customer1} 与 ${tokens.customer2} 贡献主要收入；${tokens.sales1} 负责最大单客户。`, { x: 4.2, y: 1.9, w: 8, h: 1.3, fontSize: 21, color: "0F172A", breakLine: false, margin: 0.08 });
-  slide.addNotes(`核对总额与客户贡献，不要改写 ${tokens.customer1}。`);
-
-  slide = pptx.addSlide(); addSlideChrome(slide, 3, "客户贡献", "Customers");
-  slide.addTable([
-    [{ text: "客户代号" }, { text: "销售额" }, { text: "占比" }],
-    [{ text: tokens.customer1 }, { text: "269,000" }, { text: "41.9%" }],
-    [{ text: tokens.customer2 }, { text: "209,300" }, { text: "32.6%" }],
-    [{ text: tokens.customer3 }, { text: "163,800" }, { text: "25.5%" }],
-  ], { x: 0.65, y: 1.7, w: 12, h: 3.7, border: { pt: 1, color: "475569" }, color: "FFFFFF", fill: "111827", fontFace: "Aptos", fontSize: 17, margin: 0.1, rowH: 0.7 });
-  slide.addNotes("表格内代号覆盖客户排名和多页重复场景。");
-
-  slide = pptx.addSlide(); addSlideChrome(slide, 4, "产品结构", "Products");
-  slide.addText(`${tokens.product1}`, { x: 0.6, y: 1.8, w: 3.6, h: 0.7, fontSize: 30, color: "2563EB", bold: true });
-  slide.addText(`${tokens.product2}`, { x: 4.6, y: 1.8, w: 3.6, h: 0.7, fontSize: 30, color: "16A34A", bold: true });
-  slide.addText(`${tokens.product3}`, { x: 8.6, y: 1.8, w: 4.1, h: 0.7, fontSize: 25, color: "EA580C", bold: true });
-  slide.addShape(pptx.ShapeType.rect, { x: 1.1, y: 3.2, w: 2.2, h: 2.4, fill: { color: "2563EB" }, line: { color: "2563EB" } });
-  slide.addShape(pptx.ShapeType.rect, { x: 5.1, y: 3.8, w: 2.2, h: 1.8, fill: { color: "16A34A" }, line: { color: "16A34A" } });
-  slide.addShape(pptx.ShapeType.rect, { x: 9.1, y: 4.9, w: 2.2, h: 0.7, fill: { color: "EA580C" }, line: { color: "EA580C" } });
-  slide.addNotes("图表数据不含正式代号，代号只在普通文字区域。");
-
-  slide = pptx.addSlide(); addSlideChrome(slide, 5, "销售人员表现", "People");
-  slide.addText(`${tokens.sales1} 269,000`, { x: 0.7, y: 1.8, w: 4.2, h: 0.75, fontSize: 28, color: "0F172A" });
-  slide.addText(`${tokens.sales2} 209,300`, { x: 0.7, y: 3, w: 4.2, h: 0.75, fontSize: 28, color: "0F172A" });
-  slide.addText(`${tokens.sales3} 163,800`, { x: 0.7, y: 4.2, w: 5.2, h: 0.75, fontSize: 28, color: "0F172A" });
-  slide.addText("长实名还原后可能换行；这属于需要人工复核的视觉风险，不应被描述为视觉无损。", { x: 6.4, y: 2, w: 5.7, h: 1.8, fontSize: 21, color: "334155", margin: 0 });
-  slide.addNotes("销售人员页覆盖中文、英文和中英混合姓名。");
-
-  slide = pptx.addSlide(); addSlideChrome(slide, 6, "月度趋势", "Trend");
-  slide.addText("JAN 224,500  →  FEB 216,200  →  MAR 201,400", { x: 0.7, y: 2.3, w: 7.2, h: 1.2, fontSize: 26, color: "DBEAFE", bold: true, margin: 0 });
-  slide.addText(`${tokens.customer1} 在 2 月达到单月峰值；${tokens.product1} 在三个客户中均有成交。`, { x: 8.5, y: 2.2, w: 4, h: 2, fontSize: 22, color: "FFFFFF", margin: 0 });
-  slide.addNotes("趋势页检验图表保留以及普通文字代号还原。");
-
-  slide = pptx.addSlide(); addSlideChrome(slide, 7, "客户 × 产品交叉分析", "Cross Analysis");
-  const splitToken = tokens.customer2;
-  slide.addText([
-    { text: splitToken.slice(0, 5), options: { bold: true, color: "2563EB" } },
-    { text: splitToken.slice(5, 12), options: { italic: true, color: "7C3AED" } },
-    { text: splitToken.slice(12), options: { underline: { color: "EA580C" }, color: "EA580C" } },
-  ], { x: 0.7, y: 1.8, w: 5.3, h: 0.8, fontSize: 27, margin: 0 });
-  slide.addText(`跨文本片段代号与 ${tokens.product1} 同时出现。`, { x: 0.7, y: 3, w: 6.2, h: 0.8, fontSize: 22, color: "0F172A" });
-  slide.addText(`${tokens.customer3} → ${tokens.product3}`, { x: 7.2, y: 2.2, w: 5.2, h: 0.8, fontSize: 23, color: "0F172A" });
-  slide.addNotes("本页第一个客户代号被拆成三个连续文本片段，必须精确拼接。");
-
-  slide = pptx.addSlide(); addSlideChrome(slide, 8, "风险、机会与行动建议", "Actions");
-  slide.addText("01", { x: 0.6, y: 1.7, w: 1.1, h: 0.8, fontSize: 42, color: "2563EB" });
-  slide.addText(`${tokens.customer1}：扩大 ${tokens.product2} 复购。`, { x: 1.8, y: 1.8, w: 9.8, h: 0.7, fontSize: 23, color: "0F172A" });
-  slide.addText("02", { x: 0.6, y: 3, w: 1.1, h: 0.8, fontSize: 42, color: "2563EB" });
-  slide.addText(`${tokens.sales2}：跟进 ${tokens.customer2} 的下一阶段需求。`, { x: 1.8, y: 3.1, w: 10.2, h: 0.7, fontSize: 23, color: "0F172A" });
-  slide.addText("03", { x: 0.6, y: 4.3, w: 1.1, h: 0.8, fontSize: 42, color: "2563EB" });
-  slide.addText(`复核 ${tokens.sales3} 的长实名换行与演讲者备注。`, { x: 1.8, y: 4.4, w: 10.2, h: 0.7, fontSize: 23, color: "0F172A" });
-  slide.addNotes(`最后复核：${tokens.sales3} 的代号也出现在演讲者备注中。`);
-
   const baseline = path.join(outputRoot, "03_PPTX样本", `销售经营分析_代号版_${taskId}.pptx`);
-  await pptx.writeFile({ fileName: baseline });
+  const template = path.resolve("tests/fixtures/validation", `销售经营分析_代号版_${taskId}.pptx`);
+  await fs.copyFile(template, baseline);
 
   const baseBytes = await fs.readFile(baseline);
   const variants = [

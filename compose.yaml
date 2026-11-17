@@ -1,0 +1,38 @@
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    env_file: .env.enterprise
+    environment:
+      DATABASE_URL: postgres://filemask:${POSTGRES_PASSWORD}@postgres:5432/filemask
+      WECOM_SECRET_FILE: /run/secrets/wecom_secret
+      SESSION_SECRET_FILE: /run/secrets/session_secret
+      VAULT_MASTER_KEY_FILE: /run/secrets/vault_master_key
+    secrets: [wecom_secret, session_secret, vault_master_key]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # Put HTTPS in front (Nginx, Caddy or the company gateway); only expose 8080 to that proxy.
+    ports: ["127.0.0.1:8080:8080"]
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: filemask
+      POSTGRES_USER: filemask
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes: ["filemask_postgres:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U filemask -d filemask"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+volumes:
+  filemask_postgres:
+secrets:
+  wecom_secret:
+    file: ./secrets/wecom_secret.txt
+  session_secret:
+    file: ./secrets/session_secret.txt
+  vault_master_key:
+    file: ./secrets/vault_master_key.txt

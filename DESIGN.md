@@ -95,7 +95,7 @@ components:
     persistence: "localStorage"
     rounded: "10px"
   local-task-panel:
-    purpose: "summarize local restoration tasks and mapping totals without becoming a security dashboard"
+    purpose: "summarize task count and latest task; mapping totals remain in the task drawer"
     rounded: "16px"
     maxVisibleTasks: 1
   local-tasks-drawer:
@@ -132,13 +132,15 @@ components:
 
 # Design System: 文件脱敏助手
 
+本文记录当前设计原则；精确尺寸、主题变量和响应式断点以 `src/styles.css` 与 `src/App.jsx` 的实现为准。早期视觉验收记录保留在 `design-qa.md`，不代表当前版本重新验收。
+
 ## Overview
 
 **Creative North Star: "脱敏后使用，还原后交付"**
 
 “脱敏后使用，还原后交付”把企业内敏感文件的处理变成一条可见、可复核、低负担的操作路径。界面采用高频内部工具的 Operate 模式：默认只呈现两项任务、当前文件和唯一主动作，证据按需展开，不把使用者置于复杂安全后台中。
 
-视觉以暖白纸面和炭黑文本建立安静的文档感，钴蓝只推动关键动作，墨绿只标记已验证结果；细边框承担大部分分层，阴影只提示结构或交互状态。桌面保留主工作区与证据抽屉的并列关系，窄屏将抽屉转为受控模态层。拒绝营销式 AIDA、滚动叙事、复杂仪表盘和夸张动效。
+视觉以暖白纸面和炭黑文本建立安静的文档感，钴蓝只推动关键动作，墨绿只标记已验证结果；细边框承担大部分分层，阴影只提示结构或交互状态。证据抽屉在桌面与窄屏均为受控覆盖层，打开时不挤压或拉伸工作区。拒绝营销式 AIDA、滚动叙事、复杂仪表盘和夸张动效。
 
 **Key Characteristics:**
 
@@ -180,15 +182,15 @@ components:
 
 ## Typography
 
-**Display Font:** Segoe UI Variable（回退至 Segoe UI、苹方和微软雅黑 UI）
-**Body Font:** Segoe UI Variable（使用同一回退栈）
+**Display Font:** Geist Variable（回退至 Segoe UI Variable、Segoe UI、苹方和微软雅黑 UI）
+**Body Font:** Geist Variable（使用同一回退栈）
 **Label/Mono Font:** 同一 UI 字体栈；数字通过等宽数字特性对齐，不另引入等宽字体
 
 **Character:** 这是一套清楚、耐读、适合 Windows 企业环境的工作字体。层级依靠字号、字重和紧凑的负字距形成，不依赖装饰性字体或夸张大字。
 
 ### Hierarchy
 
-- **Display:** 仅用于产品名，固定在 28px 左右，作为应用识别而非营销标题。
+- **Display:** 产品名在桌面约 24px、窄屏约 18–21px，作为应用识别而非营销标题。
 - **Headline:** 用于处理中、成功和拦截等关键状态结论。
 - **Title:** 用于两项任务选择及主要文件标题。
 - **Body:** 用于流程说明、结果解释和较长的安全边界文字。
@@ -200,9 +202,9 @@ components:
 
 ## Layout
 
-桌面基线是顶部页眉与下方任务区：页眉高 84px；证据抽屉打开时，主区与抽屉形成 `minmax(620px, 1fr) / minmax(390px, 485px)` 两列，在 1440px 视口呈现约 64/36 的工作与证据比例。无抽屉时，工作区限制在 1120px 内；两个任务卡采用接近等分的双列，任务卡高 132px，下面是随视口在 500–620px 之间调整的虚线处理台。
+桌面基线是紧凑顶部页眉、左侧纵向任务轨道与右侧文件处理台。本机任务位于左侧任务选择下方；本机任务抽屉从左侧覆盖进入，安全详情从右侧覆盖进入，两者都不改变主工作区宽度。
 
-在 1180px 及以下缩短任务卡和处理台；在 960px 及以下改为单列，证据抽屉成为右侧固定覆盖层，宽度不超过 490px 或视口的 92%；在 640px 及以下以及低高度手机横屏中，任务入口改为横向双选项，标题与说明保持单行，主按钮保留可触达尺寸，抽屉铺满屏幕。抽屉开启时窄屏背景不可交互，焦点留在抽屉内。
+手机竖屏与低高度手机横屏采用紧凑单列：任务说明、横向双选项、有任务时的本机任务续办区、文件操作面与处理边界。脱敏和还原模式顺序一致，首屏优先露出选文件按钮；窄屏抽屉铺满屏幕。各尺寸下抽屉打开时背景不可交互，焦点留在抽屉内。
 
 常规间距使用 frontmatter 中已提取的 8–36px 节奏。关键区域依靠留白、细线和单一对齐轴组织，不加入可折叠导航树、指标墙或多栏控制台。
 
@@ -218,8 +220,7 @@ components:
 - **Active task** (`0 7px 20px rgba(7, 91, 229, 0.13)`): 表示当前选中的任务卡。
 - **Primary action rest** (`0 8px 20px rgba(7, 91, 229, 0.17)`): 让唯一主动作在宽阔处理台中可立即定位。
 - **Primary action hover** (`0 10px 25px rgba(7, 91, 229, 0.23)`): 仅在精细指针设备上增强响应。
-- **Desktop drawer seam** (`-5px 0 18px rgba(25, 31, 39, 0.025)`): 强调桌面证据区域的结构接缝。
-- **Overlay drawer** (`-18px 0 48px rgba(18, 25, 33, 0.16)`): 只用于 960px 以下的模态覆盖层。
+- **Overlay drawer** (`--shadow-raised`): 桌面与窄屏均使用主题化阴影标记模态覆盖层，不形成常驻并列面板。
 - **Toast** (`0 16px 38px rgba(16, 21, 27, 0.2)`): 只用于短暂的全局反馈。
 
 **The Structural Shadow Rule.** 阴影必须说明选中、边缘层级或临时反馈；普通卡片不得用浓重悬浮阴影制造后台面板感。
@@ -228,7 +229,7 @@ components:
 
 形态以轻柔圆角矩形为主：进度轨道最克制，标签与数据格略小，按钮和状态摘要统一为控件圆角，任务卡和品牌标记略宽松。圆形只用于文件/安全图标容器、步骤编号和结果印章；常规按钮不做胶囊形。
 
-处理台用钴蓝细虚线界定文件落点，卡片、抽屉与表格用灰色细实线建立结构。当前任务卡底部保留一个小型向下指示角，明确它与处理台的从属关系；映射表和拦截表通过容器裁切保持连续表格轮廓。
+处理台用边框和文件拖入反馈界定落点，卡片、抽屉与表格用灰色细实线建立结构。当前桌面任务卡使用左侧细线标记选中，移动端分段控件取消该标记；映射表和拦截表通过容器裁切保持连续表格轮廓。
 
 **The Rectangles Stay Rectangular Rule.** 主要控件保持克制圆角，不把按钮、卡片和状态条全部胶囊化；圆形只承担图标和步骤语义。
 
@@ -236,14 +237,14 @@ components:
 
 ### Buttons
 
-- **Primary:** 钴蓝渐变、白字和右向图标构成唯一主动作；常规形态高 82px，结果页紧凑形态高 56px。
+- **Primary:** 钴蓝渐变与白字构成唯一主动作；按状态与视口使用紧凑尺寸，上传按钮与结果页按钮不强制同高。
 - **Secondary:** 白色底、灰色细边框和较低字级，用于重置、返回或补充动作。
 - **Hover / Focus / Active:** 精细指针悬停只增加阴影；键盘焦点使用 3px 钴蓝外轮廓并偏移 3px；按下缩放至 0.975，不加入弹跳或旋转。
 
 ### Task Switcher
 
 - **Default:** 白色半透明任务卡、圆形文件图标和两级文字，保持可扫描但不抢主流程。
-- **Active:** 钴蓝渐变、白色文字、轻阴影和底部指示角共同表达选中；移动端改为横向分段控件并取消指示角。
+- **Active:** 钴蓝渐变、白色文字、轻阴影和左侧细线共同表达选中；移动端改为横向分段控件并取消细线。
 
 ### Local Task Panel
 
@@ -256,8 +257,8 @@ components:
 
 ### Selected File & Empty State
 
-- **Selected file:** 白色文件卡包含真实文件类型图标、文件名、大小、修改时间和移除按钮；长文件名截断而不破坏布局。
-- **Empty state:** 整个处理台中央区域可触发选文件，支持拖放；上传图标、文件类型说明和小型按钮形成单一路径。
+- **Selected file:** 主题化文件卡包含真实文件类型图标与文件信息；长文件名受限显示而不破坏布局，移动端最多两行，任务号独立完整展示。
+- **Empty state:** 只有选文件按钮触发文件选择，整个处理台不响应点击或普通鼠标悬停高亮；文件拖入时才改变落点样式并提示松开上传。
 
 ### Evidence Trigger
 
@@ -266,15 +267,15 @@ components:
 
 ### Security Drawer
 
-- **Desktop:** 作为全高右侧结构区与工作台并列，包含摘要、四条证据、映射示例、说明和明细入口。
-- **Narrow:** 在 960px 及以下成为带遮罩的模态抽屉，支持焦点约束、Escape 关闭与关闭后焦点还原；在 640px 及以下全宽。
+- **Desktop:** 从右侧打开独立滚动的模态抽屉，不拉伸工作台；先显示现状分析、调整建议和问题概要，错误代码与位置明细按需展开。
+- **Narrow:** 同一抽屉适配为全屏，保留焦点约束、Escape 关闭与关闭后焦点还原；不改变主流程顺序。
 - **Motion:** 抽屉以 260ms 的短距离横移淡入；遮罩淡入 180ms。所有常规控件使用 160ms 状态过渡。
 
 ### Protection Items
 
 - **Placement:** 只在“制作脱敏文件”的安全详情中出现，不增加主界面步骤，也不形成独立高级模式。
 - **Column input:** XLSX 与 CSV 使用相同的候选列确认方式。TXT、MD 与 DOCX 使用“敏感内容候选—上下文—出现次数—手动增删”的共用确认方式。
-- **Safety cue:** 金额、日期等分析指标默认保留并解释原因；任务标识在抽屉底部用普通语言说明，短代号仅用于界面展示。
+- **Safety cue:** 金额、日期等分析指标默认保留并解释原因；需要复制或核对时展示完整语义代号及任务指纹，短码只能补充显示，旧格式仍兼容。
 - **Format identity:** 制作端根据 XLSX、CSV、TXT、MD、DOCX 切换文件标记；还原端根据 XLSX、CSV、TXT、MD、DOCX、PPTX、HTML 自动切换文件图标、格式说明和原格式下载扩展名。
 - **Restore evidence:** 安全详情显示文件格式、任务指纹、发现代号数、使用映射数、已检查区域和首版不承诺范围，并明确图片未扫描、未出现的映射不代表异常。
 
@@ -286,7 +287,7 @@ components:
 
 ### Chip
 
-- **Validation chip:** 小型白底灰边标签只标注“验证版”，不承担筛选、导航或主状态职责。
+- **Validation chip:** 主题化标签显示应用版本与“验证版”，不承担筛选、导航或主状态职责。
 
 ## Do's and Don'ts
 
@@ -295,7 +296,7 @@ components:
 - Do show one explicit primary action per task state and keep evidence subordinate.
 - Do pair every status color with an icon and plain-language text.
 - Do preserve the warm-paper base, cobalt action, green verification and hairline structure.
-- Do turn the evidence drawer into a focus-contained overlay at the implemented narrow breakpoint.
+- Do keep the evidence drawer a focus-contained overlay at every viewport size.
 - Do keep motion brief, state-driven and fully reduced by the existing reduced-motion behavior.
 
 ### Don't:

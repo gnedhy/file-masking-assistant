@@ -122,26 +122,30 @@ test("PPTX failure variants are blocked with the expected reason", async () => {
   }
 });
 
-test("Swiss HTML restores visible tokens, removes executable content and retains static layout CSS", async () => {
+test("Swiss HTML restores visible tokens, keeps only its inline script and retains static layout CSS", async () => {
   const html = await fs.readFile(path.join(root, "05_HTML样本", `销售经营分析_Swiss代号版_${taskId}.html`), "utf8");
   const inspection = inspectHtmlText(html, window, mapping);
   assert.equal(inspection.taskIds[0], taskId);
   assert.ok(inspection.occurrences.length >= 18);
   assert.equal(inspection.unsupportedOccurrences.length, 0);
   const result = restoreHtmlText(html, window, mapping);
-  const restoredDocument = new JSDOM(result.html).window.document;
-  assert.equal(restoredDocument.querySelectorAll("script,iframe,form,object,embed").length, 0);
+  const wrapper = new JSDOM(result.html).window.document;
+  assert.equal(wrapper.querySelector("iframe").getAttribute("sandbox"), "allow-scripts");
+  const restoredDocument = new JSDOM(wrapper.querySelector("iframe").getAttribute("srcdoc")).window.document;
+  assert.equal(restoredDocument.querySelectorAll("iframe,form,object,embed").length, 0);
+  // The page's own inline script plus the prelude that disables WebRTC and nested frames.
+  assert.equal(restoredDocument.querySelectorAll("script:not([src])").length, result.keptScripts + 1);
   assert.equal(restoredDocument.querySelectorAll('[src^="http"], [href^="http"]').length, 0);
   assert.match(result.html, /<style/i);
   assert.match(result.html, /浙江ABC染整有限公司/);
-  assert.match(result.html, /Content-Security-Policy/i);
+  assert.match(result.html, /Content-Security-Policy[^>]*connect-src 'none'/i);
   assert.doesNotMatch(result.html, /\[\[/);
   await fs.writeFile(path.join(outputDir, `销售经营分析_Swiss还原版_${taskId}.html`), result.html, "utf8");
 });
 
 test("HTML token placement and tampering variants fail closed", async () => {
   const cases = [
-    ["异常_脚本位置含代号", "UNSUPPORTED_CONTENT"], ["异常_URL位置含代号", "UNSUPPORTED_CONTENT"],
+    ["异常_URL位置含代号", "UNSUPPORTED_CONTENT"],
     ["异常_事件属性含代号", "UNSUPPORTED_CONTENT"], ["异常_混合任务", "MIXED_TASKS"],
   ];
   for (const [name, expected] of cases) {
@@ -150,10 +154,15 @@ test("HTML token placement and tampering variants fail closed", async () => {
   }
 });
 
-test("HTML with one altered token restores exact tokens and reports a partial result", async () => {
-  const html = await fs.readFile(path.join(root, "05_HTML样本", `异常_残缺代号_${taskId}.html`), "utf8");
+// Inline scripts are kept for charts, so a token inside one is restored like visible text.
+test("HTML with a token in its inline script restores it inside the script", async () => {
+  const html = await fs.readFile(path.join(root, "05_HTML样本", `异常_脚本位置含代号_${taskId}.html`), "utf8");
   const result = restoreHtmlText(html, window, mapping);
-  assert.equal(result.partialRestore, true);
-  assert.ok(result.restoredOccurrences > 0);
-  assert.ok(result.unresolved.length > 0);
+  assert.match(result.html, /window\.__unsafeCustomer='浙江ABC染整有限公司'/);
+  assert.doesNotMatch(result.html, /\[\[/);
+});
+
+test("HTML with one altered token fails closed", async () => {
+  const html = await fs.readFile(path.join(root, "05_HTML样本", `异常_残缺代号_${taskId}.html`), "utf8");
+  assert.throws(() => restoreHtmlText(html, window, mapping), (error) => error.code === "ALTERED_TOKENS");
 });
