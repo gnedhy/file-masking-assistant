@@ -4,6 +4,13 @@
 // package.json "version" should match the first entry. The type chip says 新增/改进/修复, so the text doesn't repeat it.
 export const CHANGELOG = [
   {
+    version: "1.0.5",
+    date: "2026-11-17",
+    items: [
+      ["improve", "使用指南补充了「只保留值」的用法和截图，注意事项里写明哪些列会自动建议替换"],
+    ],
+  },
+  {
     version: "1.0.4",
     date: "2026-11-11",
     items: [
